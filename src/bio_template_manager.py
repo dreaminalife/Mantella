@@ -201,7 +201,18 @@ class BioTemplateManager:
         if not tags_string or not tags_string.strip():
             return []
 
-        return [tag.strip() for tag in tags_string.split(',') if tag.strip()]
+        # Deduplicate while preserving input order so repeated tags do not
+        # duplicate bio sections or dynamic events.
+        deduped_tags: List[str] = []
+        seen: set[str] = set()
+        for tag in (tag.strip() for tag in tags_string.split(',')):
+            if not tag:
+                continue
+            if tag in seen:
+                continue
+            seen.add(tag)
+            deduped_tags.append(tag)
+        return deduped_tags
 
     def expand_bio_with_tags(self, base_bio: str, tags_string: str) -> str:
         """Expand base bio with tag templates.
