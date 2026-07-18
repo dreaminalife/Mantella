@@ -408,9 +408,9 @@ class ChatManager:
         # Reset TTS logging tracking for new response
         self.__logged_tts_characters.clear()
 
+        settings: sentence_generation_settings = sentence_generation_settings(active_character)
         try:
             current_sentence: str = ''
-            settings: sentence_generation_settings = sentence_generation_settings(active_character)
             # llm_logged = False  # Track if we've logged the LLM model for this response
             # Choose per-request random clients once per request (outside retry loop)
             selected_client_for_request: AIClient | None = None
@@ -589,7 +589,32 @@ class ChatManager:
                     #     logging.info(f"[LLM: {current_client.model_name}]")
                     #     llm_logged = True
                     blocking_queue.put(new_sentence)
-            
+
+            # Flush any trailing text in the accumulator that never reached a
+            # sentence-ending character, so the final partial sentence is not
+            # silently dropped. The leftover is, by definition, plain text in
+            # the current sentence_type (any cut indicator would already have
+            # been extracted during streaming), so it does not need to go
+            # through the full parser chain again.
+            if not settings.stop_generation:
+                leftover = accumulator.flush_remaining()
+                if leftover and leftover.strip():
+                    if pending_sentence and pending_sentence.speaker == settings.current_speaker:
+                        pending_sentence.append_other_sentence_content(leftover, [])
+                    else:
+                        # pending_sentence is older than leftover, so emit it first
+                        # when they cannot be merged (different speakers).
+                        if pending_sentence:
+                            blocking_queue.put(self.generate_sentence(pending_sentence))
+                            pending_sentence = None
+                        final_sentence = SentenceContent(
+                            settings.current_speaker,
+                            leftover,
+                            settings.sentence_type,
+                            False,
+                        )
+                        blocking_queue.put(self.generate_sentence(final_sentence))
+
             if pending_sentence:
                 if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or pending_sentence.sentence_type != SentenceTypeEnum.NARRATION:
                     new_sentence = self.generate_sentence(pending_sentence)

@@ -43,6 +43,20 @@ class sentence_accumulator:
     
     def refuse(self, refused_text: str):
         self.__unparseable = refused_text
+
+    def flush_remaining(self) -> str:
+        """Emits any accumulated text that has not yet formed a complete sentence.
+
+        Called when the LLM stream has ended. Returns whatever is left in the
+        accumulator (any refused text, prepared match, or trailing output that
+        never reached a sentence-ending character) so the final partial sentence
+        is not silently dropped. Returns an empty string if nothing remains.
+        """
+        remaining = self.__unparseable + self.__prepared_match + self.__cleaned_llm_output
+        self.__unparseable = ""
+        self.__prepared_match = ""
+        self.__cleaned_llm_output = ""
+        return remaining
     
 
 
