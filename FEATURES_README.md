@@ -24,13 +24,11 @@ When an NPC loads, Mantella appends the matching descriptions to their bio under
 
 ### Why use character tags?
 
-
 - Give NPCs shared knowledge (a hold, a guild, a questline, etc) without rewriting every bio by hand. Update one template (for example `whiterun_hold`) and every NPC with that tag picks up the change.
 - Use community-ready assignments so you do not have to decide which NPCs belong to which hold or quest.
-- assign personalities or moods to NPCs randomly to add more variety to your gameplay.
+- Assign personalities or moods to NPCs randomly to add more variety to your gameplay.
 
-Note that there is no correct answers for how to create tags. It is up to your creativity and the story they want to tell. 
-
+Note that there are no correct answers for how to create tags. It is up to your creativity and the story you want to tell.
 
 Enable or disable this feature with **Enable Character Tag Reading** in the LLM settings.
 
@@ -41,7 +39,7 @@ Strongly recommended: use the character CSV and bio templates from [Nexus](https
 That pack is built for this tag system:
 
 - Its **`skyrim_characters.csv`** has the correct columns (`tags`, `tags_overwrite`, and related fields). Use that file (or start from it) so columns match what Mantella expects.
-- Its bio_templates csvs include the essential tags and already assign them to the right NPCs. You do not need to figure out who should get `whiterun_hold` — that tag is already on the correct characters. It also includes tags for quests, some popular mods and more.
+- Its bio_templates CSVs include the essential tags and already assign them to the right NPCs. You do not need to figure out who should get `whiterun_hold` — that tag is already on the correct characters. It also includes tags for quests, some popular mods, and more.
 
 Using those files is the fastest way to get a working, game-wide tag setup.
 
@@ -66,7 +64,7 @@ Any `.csv` name is fine. Columns must be `tag` and `description`. You can also u
 
 **2. Assign the tag to a character (`tags` vs `tags_overwrite`)**
 
-Open the character's existing row in your character override CSV . You only need the **`tags`** / **`tags_overwrite`** columns.
+Open the character's existing row in your character override CSV. You only need the **`tags`** / **`tags_overwrite`** columns.
 
 **When to use which column**
 
@@ -75,8 +73,8 @@ Open the character's existing row in your character override CSV . You only need
 | **Add** tag(s) on top of what the NPC already has | `tags` | `tags_overwrite` |
 | **Replace** the NPC's entire tag list with a new set | `tags_overwrite` | - |
 
-- Use **`tags`** for most edits. Example: NPC already has `companion` in the base file; you set `tags` in your override csv to `whiterun_hold` → effective tags become `companion,whiterun_hold`.
-- Use **`tags_overwrite`** only when you don't like the tags the npc is assigned in the base character file and want to clear them and replace them with your own defined tags. Example: you set `tags_overwrite` to `riften_hold,thieves_guild` → effective tags are **only** those two; everything from  `tags` columns is ignored.
+- Use **`tags`** for most edits. Example: NPC already has `companion` in the base file; you set `tags` in your override CSV to `whiterun_hold` → effective tags become `companion,whiterun_hold`.
+- Use **`tags_overwrite`** only when you don't like the tags the NPC is assigned in the base character file and want to clear them and replace them with your own. Example: you set `tags_overwrite` to `riften_hold,thieves_guild` → effective tags are **only** those two; everything from the `tags` column is ignored.
 - Assign tags as a comma-separated list (for example: `warrior,mage,whiterun_hold`).
 
 **3. Reload**
@@ -106,21 +104,19 @@ Later layers win (except `tags`, which appends).
 
 | Layer | Role | Path |
 |-------|------|------|
-| **1. Base** | this is the base file, usually what you download from the Nexus page above. | `<Mantella install>\\data\\Skyrim\\skyrim_characters.csv` |
+| **1. Base** | The base file, usually what you download from the Nexus page above. | `<Mantella install>\\data\\Skyrim\\skyrim_characters.csv` |
 | **2. Mod overrides** | Shared / mod-manager overrides, usually from mod authors | `<Skyrim Data>\\SKSE\\Plugins\\MantellaSoftware\\data\\Skyrim\\character_overrides\\` |
-| **3. Personal overrides** | Your private edits (safest place  for you to customize/edit) | `Documents\\My Games\\Mantella\\data\\Skyrim\\character_overrides\\` |
+| **3. Personal overrides** | Your private edits (safest place for you to customize) | `Documents\\My Games\\Mantella\\data\\Skyrim\\character_overrides\\` |
 
 Load order: **base → mod overrides → personal overrides**.
 Later layers win: mod overrides overwrite the base; personal overrides overwrite both. (Exception: `tags` appends instead of replacing, as mentioned above.)
+
 **File naming (character overrides)**
 
 - You can put **multiple files** in an override folder.
 - Names are free: `my_edits.csv`, `companions.json`, `whiterun_npcs.csv`, etc. — only the extension matters.
 - Supported extensions: **`.csv`** and **`.json`**.
 - Every file in the folder is loaded; there is no required filename.
-
-
-
 
 #### Bio templates (what each tag means)
 
@@ -132,6 +128,7 @@ Later layers win: mod overrides overwrite the base; personal overrides overwrite
 
 Load order: **base → mod → personal**.
 Later layers win: mod overwrites base; personal overwrites both. Same tag name in a later folder replaces the earlier description.
+
 **File naming (bio templates)**
 
 - You can put **multiple CSV files** in the same `bio_templates` folder.
@@ -150,19 +147,17 @@ data\\Skyrim\\bio_templates\\
   my_custom_tags.csv     ← fine
 ```
 
-
-
 ### Reloading after file changes
 
 Editing CSVs on disk does **not** update Mantella automatically — character data and bio templates are loaded into memory at startup.
 
 After you change `skyrim_characters.csv`, any `character_overrides` file, or any file under `bio_templates`:
 
-1. Open the **Other** settings tab in this UI.
+1. Open the **Other** settings tab in the Mantella UI.
 2. Find **Reload Character Data**.
 3. Click the **Reload** button.
 
-That reloads character CSVs, overrides, **and** bio templates from disk (it recreates the game data in memory).
+That reloads character CSVs, overrides, **and** bio templates from disk (it recreates the game data in memory). See also [Reload Character Data](#reload-character-data).
 
 **Notes**
 
@@ -191,19 +186,23 @@ Format for an event line (must start the line):
 
 ### Quick Start: create a dynamic event in a tag
 
+Example tag description (static text + two dated event lines):
+
 | tag | description |
 |-----|-------------|
-| `whiterun_hold` | NPCs in Whiterun Hold know of the Dragonborn. (Static tag)<br>`- 1739270400: {player_name} became Thane of Whiterun (Dynamic event)`<br>`- 1740000000: {player_name} defeated Alduin (Dynamic event)` |
+| `whiterun_hold` | `NPCs in Whiterun Hold know of the Dragonborn.` *(static — goes into the bio)* <br>`- 1739270400: {player_name} became Thane of Whiterun` *(dynamic event)* <br>`- 1740000000: {player_name} defeated Alduin` *(dynamic event)* |
 
-Need a Unix timestamp? Open the **Other** tab and use **Real World Timestamp** → **Get Timestamp** to generate the current one, then paste it into your event line.
+Need a Unix timestamp? Open the **Other** tab and use **Real World Timestamp** → **Get Timestamp** (see [Real World Timestamp](#real-world-timestamp)), then paste it into your event line.
 
 Assign the tag the same way as any other tag (`tags` / `tags_overwrite`). After editing templates, use **Other → Reload Character Data → Reload**.
 
 ---
+
 Now let's talk about what a dynamic event does, and when you need it.
+
 ### Feature 1: Chronological mixing with summaries
 
-Conversation summaries and dynamic events can both carry **Unix timestamps**. Open the Other tab and use Real World Timestamp → Get Timestamp to generate the current one, then paste it into your event line. At runtime, when Mantella builds an NPC's memory for an active conversation, timestamped dynamic events are **mixed with timestamped summaries in time order**. Timestamps are stripped before the text is sent to the LLM — the model only sees the ordered story.
+Conversation summaries and dynamic events can both carry **Unix timestamps**. At runtime, when Mantella builds an NPC's memory for an active conversation, timestamped dynamic events are **mixed with timestamped summaries in time order**. Timestamps are stripped before the text is sent to the LLM — the model only sees the ordered story.
 
 #### What about content that is *not* timestamped?
 
@@ -283,7 +282,7 @@ You later become Thane of Whiterun. Below: same fact, two ways to put it on the 
 Bio gets the Thane line under `## Additional info`. Memory is only the old summaries — no order that puts Thane *after* the insults:
 
 ```
-### Additional info
+## Additional info
 NPCs in Whiterun Hold know of the Dragonborn. {player_name} became Thane of Whiterun.
 
 (memory)
@@ -310,7 +309,7 @@ He often stays rude. The model sees past contempt *and* “you are Thane” at t
 Static tag text still goes to the bio. The dated line goes into memory, sorted after both summaries. Because its timestamp is later than the latest summary, it also appears under **New developments**:
 
 ```
-### Additional info
+## Additional info
 NPCs in Whiterun Hold know of the Dragonborn.
 
 (memory)
@@ -343,9 +342,9 @@ Unlike character tags (which permanently expand an NPC's bio), lorebook entries 
 
 **Examples**
 
-1.**Breezehome (location-triggered).** You want NPCs to know how your Breezehome looks. Create a lorebook entry describing the decorations, hearth location, furniture, rooms, etc. Because Mantella supports `{location}`, when you are at Breezehome the location value is `Breezehome`, the lore is pulled in, and the NPC can be aware of your home and surroundings in the current conversation without that text living in every bio.
+1. **Breezehome (location-triggered).** You want NPCs to know how your Breezehome looks. Create a lorebook entry describing the decorations, hearth location, furniture, rooms, etc. Because Mantella supports `{location}`, when you are at Breezehome the location value is `Breezehome`, the lore is pulled in, and the NPC can be aware of your home and surroundings in the current conversation without that text living in every bio.
 
-2.**Custom lore talked about in chat.** You opened a famous restaurant in Riverwood called **In and Out**. Instead of putting that in every bio, prompt, or tag (so it burns tokens and can distract from the current topic), put it in the lorebook. It only appears when you or an NPC mentions it — for example you say *"Hey, let's go to the In and Out."* You do not have to explain what that is; the lore is pulled up and the NPC already knows.
+2. **Custom lore talked about in chat.** You opened a famous restaurant in Riverwood called **In and Out**. Instead of putting that in every bio, prompt, or tag (so it burns tokens and can distract from the current topic), put it in the lorebook. It only appears when you or an NPC mentions it — for example you say *"Hey, let's go to the In and Out."* You do not have to explain what that is; the lore is pulled up and the NPC already knows.
 
 Note that there is no single "correct" lorebook. Keys and descriptions are up to your creativity and the story you want the LLM to know.
 
@@ -376,7 +375,7 @@ Mantella scans text from:
 | Prompt variables used in that prompt (e.g. `{location}`, `{name}`, `{weather}`, `{time}`, etc) | Yes |
 | Conversation history (spoken turns) | Yes |
 | Recent in-game / custom events | Yes |
-| `{bio}` / `{bios}` / `{conversation_summary}` / related memory blocks | **No** (excluded on purpose) |
+| `{bio}` / `{bios}` / `{conversation_summary}` / `{bios_and_summaries}` / related memory blocks | **No** (excluded on purpose) |
 | `{lorebook}` itself | **No** (avoids recursion) |
 
 So `{location}` becoming `Breezehome`, or the player saying "Let's go to the In and Out", can trigger an entry — but text that only exists inside the NPC bio or summary will not, by design. Put shared world facts in the lorebook (or tags) instead of relying on bios to trigger keys.
@@ -405,7 +404,7 @@ Any `.csv` name is fine. Columns must be **`key`** and **`description`**.
 
 **2. Put `{lorebook}` in your prompt**
 
-Open the relevant prompt in **LLM** settings (for example **Skyrim Prompt**) and add `{lorebook}` where you want matched entries to appear — often near the end, after location / weather / summary.
+Open the relevant prompt in the **Prompts** tab (for example **Skyrim Prompt**) and add `{lorebook}` where you want matched entries to appear — often near the end, after location / weather / summary.
 
 Example snippet:
 
@@ -481,11 +480,11 @@ Editing CSVs on disk does **not** update Mantella automatically — lorebook ent
 
 After you change any file under `lorebook`:
 
-1. Open the **Other** settings tab in this UI.
+1. Open the **Other** settings tab in the Mantella UI.
 2. Find **Reload Character Data**.
 3. Click the **Reload** button.
 
-That recreates game data and the rememberer from disk (including lorebook CSVs). Starting a new conversation then loads a fresh lorebook for chat prompts as well.
+That recreates game data and the rememberer from disk (including lorebook CSVs). Starting a new conversation then loads a fresh lorebook for chat prompts as well. See also [Reload Character Data](#reload-character-data).
 
 **Notes**
 
@@ -506,7 +505,7 @@ Parameters such as `presence_penalty`, `temperature`, `top_p`, and `repetition_p
 - **Less predictable replies** — give profiles different `presence_penalty` / `temperature` values and pick randomly so responses stay more varied.
 - **Toggle reasoning/thinking** — enable, disable, or A/B test reasoning per profile; useful on models that otherwise ramble or overthink.
 - **Easy manual switching** — keep multiple saved sets and flip between them even when you are not using random selection (no retyping).
-- **Different jobs, different settings** — e.g. a creative profile for roleplay and a stricter one for summaries.(Summary will always uses the profile one regardless of the apply toggles)
+- **Different jobs, different settings** — e.g. a creative profile for roleplay and a stricter one for summaries. (Summaries always use Profile 1 regardless of the apply toggles.)
 - **Combine with random LLM pools** — both the model and its parameter set can vary together.
 
 ### What are model profiles?
@@ -598,7 +597,7 @@ For example, I use it on a **`Personal Secret`** section. Those details would gi
 
 Use it when bios are long and you want to save tokens or keep the model focused (for example drop `Personal History` in casual chats, or drop `Race` if it is redundant with other context).
 
-**Mid-conversation:** with **Enable Hot-Swap Settings** on (**Other** tab, default on), you can toggle **Enable Bio Section Filter** and edit **Bio Sections to Exclude** during an active conversation. The change applies on the next prompt without ending the chat — useful if you want full bios for a serious talk, then strip sections again afterward. See **Hot Swap** below.
+**Mid-conversation:** with **Enable Hot-Swap Settings** on (**Other** tab, default on), you can toggle **Enable Bio Section Filter** and edit **Bio Sections to Exclude** during an active conversation. The change applies on the next prompt without ending the chat — useful if you want full bios for a serious talk, then strip sections again afterward. See [Hot Swap](#hot-swap).
 
 ### Quick start
 
@@ -619,20 +618,20 @@ Personal History, Race
 That removes these blocks from the prompt:
 
 ```
-### Race
+## Race
 - Nord
 
-### Appearance
+## Appearance
 - Tall, grey eyes
 
-### Personal History
+## Personal History
 - Grew up in Whiterun...
 ```
 
 …leaving something like:
 
 ```
-### Appearance
+## Appearance
 - Tall, grey eyes
 ```
 
@@ -706,7 +705,7 @@ You can keep talking afterward. When the conversation later ends normally, Mante
 
 - Requires an active conversation; otherwise the button reports there is nothing to summarize.
 - Uses the currently selected summary model / settings (including recent UI changes to the summary LLM when possible).
-- Useful as a safety net during long roleplay sessions, not only after crashes.
+- After a manual save, a normal end-of-conversation summary may still run later — keep that in mind when comparing test summaries.
 
 ## Real World Timestamp
 
@@ -749,8 +748,8 @@ Character CSV / bio template / lorebook file edits are different — those still
 **Notes**
 
 - Hot swap runs when Mantella next processes a game request after config values have changed.
-- If hot swap fails or is disabled, Mantella reinitalizes the route (classic restart behavior).
-- Use **Reload Character Data** when you edited CSVs/templates on disk; use hot swap when you changed settings in the UI.
+- If hot swap fails or is disabled, Mantella reinitializes the route (classic restart behavior).
+- Use [Reload Character Data](#reload-character-data) when you edited CSVs/templates on disk; use hot swap when you changed settings in the UI. See [Reload Character Data](#reload-character-data).
 
 ## bios_and_summaries Prompt Variable
 
