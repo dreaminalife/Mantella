@@ -36,6 +36,7 @@ class ClientBase(AIClient):
         '''
         super().__init__()
         self._generation_lock: Lock = Lock()
+        self._service_name: str = api_url
         self._model_name: str = llm
         self._base_url = self.__get_endpoint(api_url)
         self._startup_async_client: AsyncOpenAI | None = None
@@ -72,6 +73,11 @@ class ClientBase(AIClient):
         """The name of the model
         """
         return self._model_name
+
+    @property
+    def service_name(self) -> str:
+        """The configured service name or endpoint."""
+        return self._service_name
     
     @property
     def is_local(self) -> bool:
@@ -275,6 +281,7 @@ class ClientBase(AIClient):
             try:
                 # Update model name
                 self._model_name = llm
+                self._service_name = api_url
                 
                 # Update base URL
                 self._base_url = self.__get_endpoint(api_url)

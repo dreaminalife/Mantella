@@ -9,11 +9,25 @@ import sys
 class ModelProfile:
     """Represents a model profile with LLM parameters"""
     
-    def __init__(self, name: str, service: str, model: str, parameters: Dict[str, Any]):
+    MAX_PROFILES_PER_MODEL = 10
+
+    def __init__(
+        self,
+        name: str,
+        service: str,
+        model: str,
+        parameters: Dict[str, Any],
+        slot: int = 1,
+        enabled: bool = True,
+        weight: float = 1.0
+    ):
         self.name = name
         self.service = service
         self.model = model
         self.parameters = parameters
+        self.slot = slot
+        self.enabled = enabled
+        self.weight = max(0.0, float(weight))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert profile to dictionary for JSON serialization"""
@@ -28,13 +42,20 @@ class ModelProfile:
         service_id = service_map.get(self.service, self.service.lower())
         service_display = display_name_map.get(service_id, self.service)
         
-        return {
+        result = {
             "name": self.name,
             "service": service_id,  # Short identifier for consistency
             "service_display_name": service_display,  # Human readable name
             "model": self.model,
             "parameters": self.parameters
         }
+        if self.slot != 1:
+            result["slot"] = self.slot
+        if not self.enabled:
+            result["enabled"] = False
+        if self.weight != 1.0:
+            result["weight"] = self.weight
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ModelProfile':
@@ -56,7 +77,10 @@ class ModelProfile:
             name=data["name"],
             service=service,
             model=data["model"],
-            parameters=data["parameters"]
+            parameters=data["parameters"],
+            slot=int(data.get("slot", 1)),
+            enabled=bool(data.get("enabled", True)),
+            weight=float(data.get("weight", 1.0))
         )
     
     def get_profile_id(self) -> str:
@@ -68,7 +92,8 @@ class ModelProfile:
             "OpenAI": "openai"
         }
         service_id = service_map.get(self.service, self.service.lower())
-        return f"{service_id}:{self.model}"
+        base_id = f"{service_id}:{self.model}"
+        return base_id if self.slot == 1 else f"{base_id}#profile-{self.slot}"
 
 
 class ModelProfileManager:
@@ -148,7 +173,7 @@ class ModelProfileManager:
             data = {
                 "profiles": profiles_data,
                 "metadata": {
-                    "version": "1.0",
+                    "version": "2.1",
                     "total_profiles": len(self._profiles)
                 }
             }
@@ -160,7 +185,7 @@ class ModelProfileManager:
         except Exception as e:
             logging.error(f"Error saving model profiles: {e}")
     
-    def _get_service_short_name(self, service: str) -> str:
+    def get_service_short_name(self, service: str) -> str:
         """
         Convert service display name to short format used in profile IDs
         
@@ -178,6 +203,11 @@ class ModelProfileManager:
             'textgenwebui': 'textgen'
         }
         return service_mapping.get(service, service.lower())
+
+    def get_profile_id(self, service: str, model: str, slot: int = 1) -> str:
+        """Return the stable storage ID for a model profile slot."""
+        base_id = f"{self.get_service_short_name(service)}:{model}"
+        return base_id if slot == 1 else f"{base_id}#profile-{slot}"
 
     def create_or_update_profile(self, service: str, model: str, parameters: Dict[str, Any]) -> bool:
         """
@@ -207,6 +237,59 @@ class ModelProfileManager:
             
         except Exception as e:
             logging.error(f"Error creating/updating model profile: {e}")
+            return False
+
+    def save_profile_slots(
+        self,
+        service: str,
+        model: str,
+        slots: List[Optional[Dict[str, Any]]],
+        enabled_slots: List[bool],
+        weight_slots: Optional[List[float]] = None
+    ) -> bool:
+        """Save up to ten fixed profile slots without deleting existing profiles."""
+        try:
+            if len(slots) > ModelProfile.MAX_PROFILES_PER_MODEL:
+                raise ValueError("A model can have at most 10 profiles")
+
+            name = model.split('/')[-1] if '/' in model else model
+            changed = False
+            for index in range(ModelProfile.MAX_PROFILES_PER_MODEL):
+                slot = index + 1
+                profile_id = self.get_profile_id(service, model, slot)
+                parameters = slots[index] if index < len(slots) else None
+                enabled = enabled_slots[index] if index < len(enabled_slots) else False
+                weight = weight_slots[index] if weight_slots and index < len(weight_slots) else 1.0
+                if weight < 0:
+                    raise ValueError("Profile weights cannot be negative")
+                existing = self._profiles.get(profile_id)
+
+                # Empty UI slots never remove previously saved profile data.
+                if parameters is None:
+                    if existing and existing.enabled != enabled:
+                        existing.enabled = enabled
+                        changed = True
+                    if existing and existing.weight != weight:
+                        existing.weight = weight
+                        changed = True
+                    continue
+
+                self._profiles[profile_id] = ModelProfile(
+                    name=name,
+                    service=service,
+                    model=model,
+                    parameters=parameters,
+                    slot=slot,
+                    enabled=enabled,
+                    weight=weight
+                )
+                changed = True
+
+            if changed:
+                self._save_profiles()
+            return True
+        except Exception as e:
+            logging.error(f"Error saving model profile slots: {e}")
             return False
     
     def update_profile(self, profile_id: str, name: str, service: str, model: str, parameters: Dict[str, Any]) -> bool:
@@ -285,7 +368,7 @@ class ModelProfileManager:
             ModelProfile if found, None otherwise
         """
         # Convert service to short format for profile lookup
-        service_short = self._get_service_short_name(service)
+        service_short = self.get_service_short_name(service)
         profile_id = f"{service_short}:{model}"
         return self._profiles.get(profile_id)
     
@@ -301,7 +384,46 @@ class ModelProfileManager:
         """
         return self._profiles.get(profile_id)
     
-    def apply_profile_to_params(self, service: str, model: str, fallback_params: Dict[str, Any]) -> Dict[str, Any]:
+    def select_profile(
+        self,
+        service: str,
+        model: str,
+        random_enabled: bool = True
+    ) -> Optional[ModelProfile]:
+        """Select an enabled profile, falling back to Profile 1."""
+        profiles = list(self.get_profiles_for_model(service, model).values())
+        profiles.sort(key=lambda profile: profile.slot)
+        if not profiles:
+            return None
+
+        if random_enabled:
+            enabled_profiles = [
+                profile
+                for profile in profiles
+                if profile.enabled and profile.weight > 0
+            ]
+            if enabled_profiles:
+                import random
+                selected_profile = random.choices(
+                    enabled_profiles,
+                    weights=[profile.weight for profile in enabled_profiles],
+                    k=1
+                )[0]
+                logging.info(
+                    f"Randomly selected model profile {selected_profile.slot} "
+                    f"for {service}/{model}"
+                )
+                return selected_profile
+
+        return next((profile for profile in profiles if profile.slot == 1), None)
+
+    def apply_profile_to_params(
+        self,
+        service: str,
+        model: str,
+        fallback_params: Dict[str, Any],
+        random_enabled: bool = False
+    ) -> Dict[str, Any]:
         """
         Apply profile parameters to existing LLM parameters if a profile exists
         
@@ -314,9 +436,9 @@ class ModelProfileManager:
             Dictionary of LLM parameters (either from profile or fallback)
         """
         try:
-            profile = self.get_profile(service, model)
-            if profile and profile.parameters:
-                logging.info(f"Applying profile parameters for {service}/{model}")
+            profile = self.select_profile(service, model, random_enabled)
+            if profile is not None:
+                logging.info(f"Applying profile {profile.slot} parameters for {service}/{model}")
                 return profile.parameters.copy()
             else:
                 logging.debug(f"No profile found for {service}/{model}, using fallback parameters")
@@ -337,8 +459,7 @@ class ModelProfileManager:
             True if profile exists, False otherwise
         """
         try:
-            profile = self.get_profile(service, model) 
-            return profile is not None
+            return bool(self.get_profiles_for_model(service, model))
         except Exception as e:
             logging.error(f"Error checking if profile exists for {service}/{model}: {e}")
             return False
@@ -379,11 +500,22 @@ class ModelProfileManager:
         Returns:
             Dictionary of profile_id -> ModelProfile for the specified model
         """
-        return {
+        requested_service = self.get_service_short_name(service)
+        profiles = {
             profile_id: profile
             for profile_id, profile in self._profiles.items()
-            if profile.service == service and profile.model == model
+            if self.get_service_short_name(profile.service) == requested_service and profile.model == model
         }
+        return dict(sorted(profiles.items(), key=lambda item: item[1].slot))
+
+    def get_profile_slots(self, service: str, model: str) -> List[Optional[ModelProfile]]:
+        """Return all ten profile slots in stable slot order."""
+        profiles = self.get_profiles_for_model(service, model)
+        profiles_by_slot = {profile.slot: profile for profile in profiles.values()}
+        return [
+            profiles_by_slot.get(slot)
+            for slot in range(1, ModelProfile.MAX_PROFILES_PER_MODEL + 1)
+        ]
     
     def get_profile_for_model(self, service: str, model: str) -> Optional[ModelProfile]:
         """
@@ -396,15 +528,7 @@ class ModelProfileManager:
         Returns:
             ModelProfile if found, None otherwise
         """
-        # Map display name to short identifier for lookup
-        service_map = {
-            "OpenRouter": "or",
-            "NanoGPT": "nano", 
-            "OpenAI": "openai"
-        }
-        service_id = service_map.get(service, service.lower())
-        profile_id = f"{service_id}:{model}"
-        return self._profiles.get(profile_id)
+        return self.select_profile(service, model, random_enabled=False)
     
     def has_profile_for_model(self, service: str, model: str) -> bool:
         """
@@ -417,15 +541,7 @@ class ModelProfileManager:
         Returns:
             True if profile exists, False otherwise
         """
-        # Map display name to short identifier for lookup
-        service_map = {
-            "OpenRouter": "or",
-            "NanoGPT": "nano", 
-            "OpenAI": "openai"
-        }
-        service_id = service_map.get(service, service.lower())
-        profile_id = f"{service_id}:{model}"
-        return profile_id in self._profiles
+        return bool(self.get_profiles_for_model(service, model))
     
     def get_all_available_profiles(self) -> List[Dict[str, str]]:
         """

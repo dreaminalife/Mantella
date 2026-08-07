@@ -57,14 +57,15 @@ class OpenRouterServiceProvider(LLMServiceProvider):
         try:
             from src.model_profile_manager import ModelProfileManager
             profile_manager = ModelProfileManager()
-            llm_params = profile_manager.apply_profile_to_params(
-                service=self.get_display_name(),
-                model=model,
-                fallback_params=config.llm_params
-            )
+            if config.apply_profile_one_on_one:
+                llm_params = profile_manager.apply_profile_to_params(
+                    service=self.get_display_name(),
+                    model=model,
+                    fallback_params=config.llm_params
+                )
             
             # Log profile application for per-character override
-            has_profile = profile_manager.has_profile(self.get_display_name(), model)
+            has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
                 logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
                 logging.info(f"Per-character Profile Parameters: {llm_params}")
@@ -112,14 +113,15 @@ class NanoGPTServiceProvider(LLMServiceProvider):
         try:
             from src.model_profile_manager import ModelProfileManager
             profile_manager = ModelProfileManager()
-            llm_params = profile_manager.apply_profile_to_params(
-                service=self.get_display_name(),
-                model=model,
-                fallback_params=config.llm_params
-            )
+            if config.apply_profile_one_on_one:
+                llm_params = profile_manager.apply_profile_to_params(
+                    service=self.get_display_name(),
+                    model=model,
+                    fallback_params=config.llm_params
+                )
             
             # Log profile application for per-character override
-            has_profile = profile_manager.has_profile(self.get_display_name(), model)
+            has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
                 logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
                 logging.info(f"Per-character Profile Parameters: {llm_params}")
@@ -162,14 +164,15 @@ class OpenAIServiceProvider(LLMServiceProvider):
         try:
             from src.model_profile_manager import ModelProfileManager
             profile_manager = ModelProfileManager()
-            llm_params = profile_manager.apply_profile_to_params(
-                service=self.get_display_name(),
-                model=model,
-                fallback_params=config.llm_params
-            )
+            if config.apply_profile_one_on_one:
+                llm_params = profile_manager.apply_profile_to_params(
+                    service=self.get_display_name(),
+                    model=model,
+                    fallback_params=config.llm_params
+                )
             
             # Log profile application for per-character override
-            has_profile = profile_manager.has_profile(self.get_display_name(), model)
+            has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
                 logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
                 logging.info(f"Per-character Profile Parameters: {llm_params}")

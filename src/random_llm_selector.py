@@ -85,7 +85,12 @@ class RandomLLMSelector:
             
             return self._select_from_pool(
                 pool, conversation_type, fallback_service, fallback_model, 
-                fallback_params, fallback_token_count
+                fallback_params, fallback_token_count,
+                getattr(
+                    config,
+                    "apply_profile_one_on_one" if conversation_type == "one_on_one" else "apply_profile_multi_npc",
+                    False
+                )
             )
             
         except Exception as e:
@@ -154,7 +159,8 @@ class RandomLLMSelector:
         fallback_service: str,
         fallback_model: str,
         fallback_params: Dict[str, Any],
-        fallback_token_count: int
+        fallback_token_count: int,
+        apply_profile: bool
     ) -> LLMSelection:
         """Common logic for selecting an LLM from a pool.
         
@@ -198,15 +204,16 @@ class RandomLLMSelector:
         service = selected_llm['service']
         model = selected_llm['model']
         
-        # Try to apply profile for the selected LLM
-        profile_params = self.profile_manager.apply_profile_to_params(
-            service=service,
-            model=model,
-            fallback_params=fallback_params
-        )
-        
-        # Check if we got parameters from a profile or fallback
-        has_profile = self.profile_manager.has_profile(service, model)
+        profile_params = fallback_params if fallback_params else {}
+        if apply_profile:
+            profile_params = self.profile_manager.apply_profile_to_params(
+                service=service,
+                model=model,
+                fallback_params=fallback_params,
+                random_enabled=True
+            )
+
+        has_profile = apply_profile and self.profile_manager.has_profile(service, model)
         
         # Log the selection with parameter information
         profile_status = "with profile" if has_profile else "without profile"

@@ -56,7 +56,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
     def config_value_to_ui_element(self) -> dict[ConfigValue, gr.Column]:
         return self.__config_value_to_ui_element
     
-    def _get_profile_manager(self) -> ModelProfileManager:
+    def get_profile_manager(self) -> ModelProfileManager:
         """Lazily initialize and return the profile manager"""
         if self.__profile_manager is None:
             self.__profile_manager = ModelProfileManager()
@@ -174,7 +174,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                         # Load profile if it exists
                         service_value = profile_service_config.value
                         if service_value and new_model_value:
-                            profile = self._get_profile_manager().get_profile_for_model(service_value, new_model_value)
+                            profile = self.get_profile_manager().get_profile_for_model(service_value, new_model_value)
                             
                             if profile:
                                 import json
@@ -444,9 +444,158 @@ class SettingsUIConstructor(ConfigValueVisitor):
             # Clear the group after rendering
             del self.__row_groups[group_id]
 
+    def render_model_profile_editor(self, config_value: ConfigValueGroup) -> None:
+        """Render the fixed ten-slot model profile editor."""
+        import json
+        from src.llm.key_file_resolver import key_file_resolver
+
+        values_by_id = {value.identifier: value for value in config_value.value}
+        selected_service = values_by_id["profile_selected_service"].value
+        selected_model = values_by_id["profile_selected_model"].value
+
+        def get_model_dropdown(service: str, preferred_model: str | None = None) -> gr.Dropdown:
+            key_files = key_file_resolver.get_key_files_for_service(service, "GPT_SECRET_KEY.txt")
+            secret_key_file = key_files[0] if key_files else "GPT_SECRET_KEY.txt"
+            model_list = ClientBase.get_model_list(
+                service,
+                secret_key_file,
+                "google/gemma-2-9b-it:free",
+                False
+            )
+            model = preferred_model if preferred_model and model_list.is_model_in_list(preferred_model) else model_list.default_model
+            return gr.Dropdown(
+                value=model,
+                choices=model_list.available_models,
+                multiselect=False,
+                allow_custom_value=model_list.allows_manual_model_input,
+                label="Model"
+            )
+
+        def get_slot_values(service: str, model: str) -> list[Any]:
+            slots = self.get_profile_manager().get_profile_slots(service, model)
+            result: list[Any] = []
+            for index, profile in enumerate(slots):
+                result.append(profile.enabled if profile else index == 0)
+                result.append(profile.weight if profile else 1.0)
+                result.append(json.dumps(profile.parameters, indent=4) if profile else "")
+            return result
+
+        with gr.Row():
+            service_ui = gr.Dropdown(
+                value=selected_service,
+                choices=["OpenRouter", "OpenAI", "NanoGPT"],
+                allow_custom_value=False,
+                label="Service"
+            )
+            model_ui = get_model_dropdown(selected_service, selected_model)
+
+        slot_inputs: list[Any] = []
+        initial_slots = self.get_profile_manager().get_profile_slots(selected_service, model_ui.value)
+        for index in range(10):
+            profile = initial_slots[index]
+            with gr.Accordion(label=f"Profile {index + 1}", open=index == 0):
+                enabled_ui = gr.Checkbox(
+                    value=profile.enabled if profile else index == 0,
+                    label="Enabled for random selection"
+                )
+                weight_ui = gr.Number(
+                    value=profile.weight if profile else 1.0,
+                    label="Selection weight",
+                    minimum=0,
+                    step=0.1
+                )
+                parameters_ui = gr.Textbox(
+                    value=json.dumps(profile.parameters, indent=4) if profile else "",
+                    label="Parameters (JSON)",
+                    lines=8,
+                    max_lines=20,
+                    placeholder='{\n  "temperature": 0.8,\n  "max_tokens": 250\n}'
+                )
+                slot_inputs.extend([enabled_ui, weight_ui, parameters_ui])
+
+        save_ui = gr.Button("Save Profiles", variant="primary")
+        status_ui = gr.Markdown()
+
+        def load_service(service: str):
+            dropdown = get_model_dropdown(service)
+            values_by_id["profile_selected_service"].value = service
+            values_by_id["profile_selected_model"].value = dropdown.value
+            return [dropdown] + get_slot_values(service, dropdown.value)
+
+        def load_model(service: str, model: str):
+            values_by_id["profile_selected_service"].value = service
+            values_by_id["profile_selected_model"].value = model
+            return get_slot_values(service, model)
+
+        def save_profiles(service: str, model: str, *slot_values: Any) -> str:
+            import math
+
+            values_by_id["profile_selected_service"].value = service
+            values_by_id["profile_selected_model"].value = model
+            slots: list[Optional[dict[str, Any]]] = []
+            enabled_slots: list[bool] = []
+            weight_slots: list[float] = []
+            for index in range(0, len(slot_values), 3):
+                enabled_slots.append(bool(slot_values[index]))
+                try:
+                    weight = float(slot_values[index + 1])
+                except (TypeError, ValueError):
+                    return f"Profile {index // 3 + 1} weight must be a number."
+                if not math.isfinite(weight) or weight < 0:
+                    return f"Profile {index // 3 + 1} weight must be a non-negative number."
+                weight_slots.append(weight)
+                raw_parameters = str(slot_values[index + 2] or "").strip()
+                if not raw_parameters:
+                    slots.append(None)
+                    continue
+                try:
+                    parameters = json.loads(raw_parameters)
+                except json.JSONDecodeError as e:
+                    return f"Profile {index // 3 + 1} has invalid JSON: {e}"
+                if not isinstance(parameters, dict):
+                    return f"Profile {index // 3 + 1} parameters must be a JSON object."
+                slots.append(parameters)
+
+            success = self.get_profile_manager().save_profile_slots(
+                service,
+                model,
+                slots,
+                enabled_slots,
+                weight_slots
+            )
+            return "Profiles saved." if success else "Profiles could not be saved. Check the log."
+
+        service_ui.change(
+            load_service,
+            inputs=service_ui,
+            outputs=[model_ui] + slot_inputs
+        )
+        model_ui.change(
+            load_model,
+            inputs=[service_ui, model_ui],
+            outputs=slot_inputs
+        )
+        save_ui.click(
+            save_profiles,
+            inputs=[service_ui, model_ui] + slot_inputs,
+            outputs=status_ui
+        )
+
     def visit_ConfigValueGroup(self, config_value: ConfigValueGroup):
         if not config_value.is_hidden:
-            if config_value.description and config_value.name == "Model Profiles":
+            if config_value.name == "Model Profiles":
+                if config_value.description:
+                    gr.Markdown(config_value.description)
+                self.render_model_profile_editor(config_value)
+                for child_value in config_value.value:
+                    if child_value.identifier not in {
+                        "profile_selected_service",
+                        "profile_selected_model",
+                        "profile_parameters"
+                    }:
+                        child_value.accept_visitor(self)
+                return
+            if config_value.description:
                 gr.Markdown(config_value.description)
             
             has_advanced_values = False
@@ -709,7 +858,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                         return f" Invalid JSON: {str(e)}"
                     
                     # Create or update the profile
-                    success = self._get_profile_manager().create_or_update_profile(
+                    success = self.get_profile_manager().create_or_update_profile(
                         service.value,
                         model.value,
                         parameters
@@ -747,7 +896,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     }
                     service_id = service_map.get(service.value, service.value.lower())
                     profile_id = f"{service_id}:{model.value}"
-                    success = self._get_profile_manager().delete_profile(profile_id)
+                    success = self.get_profile_manager().delete_profile(profile_id)
                     
                     if success:
                         logging.info(f"Profile deleted successfully for {service.value}/{model.value}")

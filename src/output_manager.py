@@ -7,6 +7,7 @@ import unicodedata
 import wave
 import hashlib
 import json
+from typing import Any
 from openai import APIConnectionError
 from src.llm.output.sentence_accumulator import sentence_accumulator
 from src.config.definitions.llm_definitions import NarrationHandlingEnum
@@ -30,6 +31,8 @@ from src.llm.ai_client import AIClient
 from src.tts.ttsable import TTSable
 from src.tts.synthesization_options import SynthesizationOptions
 from src.random_llm_selector import RandomLLMSelector
+from src.random_llm_selector import LLMSelection
+from src.model_profile_manager import ModelProfileManager
 from src.llm.client_base import ClientBase
 from src.llm.key_file_resolver import key_file_resolver
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
@@ -124,6 +127,36 @@ class ChatManager:
         except Exception as e:
             logging.error(f"Failed to create random LLM client for {selection.service}/{selection.model}: {e}")
             raise
+
+    def get_profile_client_for_request(
+        self,
+        base_client: AIClient,
+        fallback_params: dict[str, Any],
+        fallback_token_count: int,
+        apply_profile: bool
+    ) -> AIClient:
+        """Choose one enabled profile for the base client's model for this request."""
+        if not apply_profile:
+            return base_client
+
+        service = getattr(base_client, "service_name", None)
+        model = getattr(base_client, "model_name", None)
+        if not service or not model:
+            return base_client
+
+        profile_manager = ModelProfileManager()
+        profile = profile_manager.select_profile(service, model, random_enabled=True)
+        if profile is None:
+            return base_client
+
+        selection = LLMSelection(
+            service=service,
+            model=model,
+            parameters=profile.parameters.copy(),
+            token_count=fallback_token_count,
+            from_profile=True
+        )
+        return self._get_or_create_random_client(selection)
     
     def _get_per_character_client(self, character: Character) -> AIClient:
         """Get or create a per-character LLM client based on the character's settings.
@@ -433,7 +466,8 @@ class ChatManager:
                     if selection is not None:
                         profile_status = "with profile" if selection.from_profile else "without profile"
                         # Check if the randomly selected model is exactly the same as the default client
-                        if (selection.service == self.__config.llm_api and 
+                        if (not selection.from_profile and
+                            selection.service == self.__config.llm_api and 
                             selection.model == self.__config.llm and
                             selection.parameters == (self.__config.llm_params or {})):
                             # Same model with same parameters - reuse default client
@@ -460,7 +494,8 @@ class ChatManager:
                     if selection_multi is not None:
                         profile_status = "with profile" if selection_multi.from_profile else "without profile"
                         # Check if the randomly selected model matches the multi-NPC client
-                        if (selection_multi.service == self.__config.multi_npc_llm_api and 
+                        if (not selection_multi.from_profile and
+                            selection_multi.service == self.__config.multi_npc_llm_api and 
                             selection_multi.model == self.__config.multi_npc_llm and
                             selection_multi.parameters == (self.__config.multi_npc_llm_params or {})):
                             # Same model with same parameters - reuse multi-NPC client
@@ -495,6 +530,23 @@ class ChatManager:
                         else:
                             per_char_client = self._get_per_character_client(active_character)
                             current_client = per_char_client if per_char_client != self.__client else self.__client
+
+                    # Per-request random-model selection already chose its profile. All
+                    # other conversation paths choose a profile here, once per LLM request.
+                    if is_multi_npc and selected_multi_client_for_request is None:
+                        current_client = self.get_profile_client_for_request(
+                            current_client,
+                            self.__config.multi_npc_llm_params or {},
+                            self.__config.multi_npc_custom_token_count,
+                            self.__config.apply_profile_multi_npc
+                        )
+                    elif not is_multi_npc and selected_client_for_request is None:
+                        current_client = self.get_profile_client_for_request(
+                            current_client,
+                            self.__config.llm_params or {},
+                            self.__config.custom_token_count,
+                            self.__config.apply_profile_one_on_one
+                        )
                     # Track last used client for logging/token counting
                     last_used_client = current_client
 
