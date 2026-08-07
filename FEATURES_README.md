@@ -2,6 +2,19 @@
 
 Trying my best to explain why I added these features and how to make the most of them. Currently it only works with Mantella below v 0.14.
 
+## Directory
+
+- [Character Tags](#character-tags)
+- [Dynamic Events (tag feature)](#dynamic-events-tag-feature)
+- [Lorebook](#lorebook)
+- [Multiple Profile System](#multiple-profile-system)
+- [Bio Sections to Exclude](#bio-sections-to-exclude)
+- [Reload Character Data](#reload-character-data)
+- [Save Summary Now](#save-summary-now)
+- [Real World Timestamp](#real-world-timestamp)
+- [Hot Swap](#hot-swap)
+- [bios_and_summaries Prompt Variable](#bios_and_summaries-prompt-variable)
+
 ## Character Tags
 
 ### What are character tags?
