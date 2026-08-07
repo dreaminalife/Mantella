@@ -86,6 +86,26 @@ class ConfigLoader:
     def update_config_loader_with_changed_config_values(self):
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
+
+    def sync_summary_llm_settings_from_definitions(self) -> None:
+        """Refresh summary LLM attributes from UI definitions without clearing the config-changed flag.
+
+        Used by Save Summary Now so the latest summary model is applied without preventing a later
+        full hot-swap of other pending settings.
+        """
+        self.apply_profile_summaries = self.__definitions.get_bool_value("apply_profile_summaries")
+        self.summary_llm_api = self.__definitions.get_string_value("summary_llm_api")
+        self.summary_llm = self.__definitions.get_string_value("summary_model")
+        self.summary_llm = self.summary_llm.split(' |')[0] if ' |' in self.summary_llm else self.summary_llm
+        self.summary_custom_token_count = self.__definitions.get_int_value("summary_custom_token_count")
+        try:
+            self.summary_llm_params: dict[str, Any] | None = json.loads(
+                self.__definitions.get_string_value("summary_llm_params").replace('\n', '')
+            )
+        except Exception as e:
+            logging.error(f"""Error in parsing Summary LLM parameter list: {e}
+Summary LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
+            self.summary_llm_params = None
     
     def __on_config_value_change(self):
         self.__has_any_value_changed = True

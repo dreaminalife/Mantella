@@ -43,84 +43,8 @@ class GameStateManager:
         # Create separate LLM client for summaries if different settings are configured
         from src.llm.client_base import ClientBase
         from src.llm.key_file_resolver import key_file_resolver
-        if (config.summary_llm_api != config.llm_api or 
-            config.summary_llm != config.llm or 
-            config.summary_llm_params != config.llm_params or 
-            config.summary_custom_token_count != config.custom_token_count):
-            # Create separate client for summaries with different settings
-            summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.summary_llm_api, api_file)
-            
-            # Apply profile parameters if enabled and profile exists
-            summary_llm_params = config.summary_llm_params
-            if config.apply_profile_summaries:
-                try:
-                    from src.model_profile_manager import ModelProfileManager
-                    profile_manager = ModelProfileManager()
-                    summary_llm_params = profile_manager.apply_profile_to_params(
-                        service=config.summary_llm_api,
-                        model=config.summary_llm,
-                        fallback_params=config.summary_llm_params
-                    )
-                    
-                    # Log profile application for summaries
-                    has_profile = profile_manager.has_profile(config.summary_llm_api, config.summary_llm)
-                    if has_profile:
-                        logging.info(f"Applied profile for summaries: {config.summary_llm_api}/{config.summary_llm}")
-                        logging.info(f"Summary Profile Parameters: {summary_llm_params}")
-                    else:
-                        logging.info(f"No profile found for summaries {config.summary_llm_api}/{config.summary_llm}, using manual parameters: {summary_llm_params}")
-                        
-                except Exception as e:
-                    logging.error(f"Error applying profile for summaries: {e}")
-                    summary_llm_params = config.summary_llm_params
-            else:
-                logging.info(f"Summary Parameters (manual): {summary_llm_params}")
-            
-            summary_client = ClientBase(
-                config.summary_llm_api,
-                config.summary_llm,
-                summary_llm_params,
-                config.summary_custom_token_count,
-                summary_secret_key_files
-            )
-        elif config.apply_profile_summaries:
-            # Same settings as main LLM but profile application is enabled for summaries
-            # Create a separate client with profile-applied parameters
-            summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.llm_api, api_file)
-            
-            summary_llm_params = config.llm_params
-            try:
-                from src.model_profile_manager import ModelProfileManager
-                profile_manager = ModelProfileManager()
-                summary_llm_params = profile_manager.apply_profile_to_params(
-                    service=config.llm_api,
-                    model=config.llm,
-                    fallback_params=config.llm_params
-                )
-                
-                # Log profile application for summaries (same model as main)
-                has_profile = profile_manager.has_profile(config.llm_api, config.llm)
-                if has_profile:
-                    logging.info(f"Applied profile for summaries (same model as main): {config.llm_api}/{config.llm}")
-                    logging.info(f"Summary Profile Parameters (same model): {summary_llm_params}")
-                else:
-                    logging.info(f"No profile found for summaries {config.llm_api}/{config.llm}, using manual parameters: {summary_llm_params}")
-                    
-            except Exception as e:
-                logging.error(f"Error applying profile for summaries: {e}")
-                summary_llm_params = config.llm_params
-            
-            summary_client = ClientBase(
-                config.llm_api,
-                config.llm,
-                summary_llm_params,
-                config.custom_token_count,
-                summary_secret_key_files
-            )
-        else:
-            # Use the same client for summaries
-            summary_client = None
-            
+        summary_client = GameStateManager.create_summary_client(config, api_file)
+        
         # Create separate LLM client for multi-NPC conversations if different settings are configured
         if (config.multi_npc_llm_api != config.llm_api or 
             config.multi_npc_llm != config.llm or 
@@ -269,83 +193,7 @@ class GameStateManager:
             # Create separate LLM client for summaries if different settings are configured
             from src.llm.client_base import ClientBase
             from src.llm.key_file_resolver import key_file_resolver
-            if (config.summary_llm_api != config.llm_api or 
-                config.summary_llm != config.llm or 
-                config.summary_llm_params != config.llm_params or 
-                config.summary_custom_token_count != config.custom_token_count):
-                # Create separate client for summaries with different settings
-                summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.summary_llm_api, secret_key_file)
-                
-                # Apply profile parameters if enabled and profile exists
-                summary_llm_params = config.summary_llm_params
-                if config.apply_profile_summaries:
-                    try:
-                        from src.model_profile_manager import ModelProfileManager
-                        profile_manager = ModelProfileManager()
-                        summary_llm_params = profile_manager.apply_profile_to_params(
-                            service=config.summary_llm_api,
-                            model=config.summary_llm,
-                            fallback_params=config.summary_llm_params
-                        )
-                        
-                        # Log profile application for summaries (hot-swap)
-                        has_profile = profile_manager.has_profile(config.summary_llm_api, config.summary_llm)
-                        if has_profile:
-                            logging.info(f"Hot-swap: Applied profile for summaries: {config.summary_llm_api}/{config.summary_llm}")
-                            logging.info(f"Hot-swap Summary Profile Parameters: {summary_llm_params}")
-                        else:
-                            logging.info(f"Hot-swap: No profile found for summaries {config.summary_llm_api}/{config.summary_llm}, using manual parameters: {summary_llm_params}")
-                            
-                    except Exception as e:
-                        logging.error(f"Error applying profile for summaries: {e}")
-                        summary_llm_params = config.summary_llm_params
-                else:
-                    logging.info(f"Hot-swap Summary Parameters (manual): {summary_llm_params}")
-                
-                summary_client = ClientBase(
-                    config.summary_llm_api,
-                    config.summary_llm,
-                    summary_llm_params,
-                    config.summary_custom_token_count,
-                    summary_secret_key_files
-                )
-            elif config.apply_profile_summaries:
-                # Same settings as main LLM but profile application is enabled for summaries
-                # Create a separate client with profile-applied parameters
-                summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.llm_api, secret_key_file)
-                
-                summary_llm_params = config.llm_params
-                try:
-                    from src.model_profile_manager import ModelProfileManager
-                    profile_manager = ModelProfileManager()
-                    summary_llm_params = profile_manager.apply_profile_to_params(
-                        service=config.llm_api,
-                        model=config.llm,
-                        fallback_params=config.llm_params
-                    )
-                    
-                    # Log profile application for summaries (same model as main - hot-swap)
-                    has_profile = profile_manager.has_profile(config.llm_api, config.llm)
-                    if has_profile:
-                        logging.info(f"Hot-swap: Applied profile for summaries (same model as main): {config.llm_api}/{config.llm}")
-                        logging.info(f"Hot-swap Summary Profile Parameters (same model): {summary_llm_params}")
-                    else:
-                        logging.info(f"Hot-swap: No profile found for summaries {config.llm_api}/{config.llm}, using manual parameters: {summary_llm_params}")
-                        
-                except Exception as e:
-                    logging.error(f"Error applying profile for summaries: {e}")
-                    summary_llm_params = config.llm_params
-                
-                summary_client = ClientBase(
-                    config.llm_api,
-                    config.llm,
-                    summary_llm_params,
-                    config.custom_token_count,
-                    summary_secret_key_files
-                )
-            else:
-                # Use the same client for summaries
-                summary_client = None
+            summary_client = GameStateManager.create_summary_client(config, secret_key_file, log_prefix="Hot-swap: ")
             
             # Create separate LLM client for multi-NPC conversations if different settings are configured
             if (config.multi_npc_llm_api != config.llm_api or 
@@ -749,6 +597,98 @@ class GameStateManager:
         logging.log(24, '\nWaiting for player to select an NPC...')
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
 
+    @staticmethod
+    def create_summary_client(config: ConfigLoader, api_file: str, log_prefix: str = "") -> "ClientBase | None":
+        """Build a summary LLM client from config, or None to reuse the main LLM client."""
+        from src.llm.client_base import ClientBase
+        from src.llm.key_file_resolver import key_file_resolver
+
+        if (config.summary_llm_api != config.llm_api or
+            config.summary_llm != config.llm or
+            config.summary_llm_params != config.llm_params or
+            config.summary_custom_token_count != config.custom_token_count):
+            summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.summary_llm_api, api_file)
+
+            summary_llm_params = config.summary_llm_params
+            if config.apply_profile_summaries:
+                try:
+                    from src.model_profile_manager import ModelProfileManager
+                    profile_manager = ModelProfileManager()
+                    summary_llm_params = profile_manager.apply_profile_to_params(
+                        service=config.summary_llm_api,
+                        model=config.summary_llm,
+                        fallback_params=config.summary_llm_params
+                    )
+
+                    has_profile = profile_manager.has_profile(config.summary_llm_api, config.summary_llm)
+                    if has_profile:
+                        logging.info(f"{log_prefix}Applied profile for summaries: {config.summary_llm_api}/{config.summary_llm}")
+                        logging.info(f"{log_prefix}Summary Profile Parameters: {summary_llm_params}")
+                    else:
+                        logging.info(f"{log_prefix}No profile found for summaries {config.summary_llm_api}/{config.summary_llm}, using manual parameters: {summary_llm_params}")
+
+                except Exception as e:
+                    logging.error(f"Error applying profile for summaries: {e}")
+                    summary_llm_params = config.summary_llm_params
+            else:
+                logging.info(f"{log_prefix}Summary Parameters (manual): {summary_llm_params}")
+
+            return ClientBase(
+                config.summary_llm_api,
+                config.summary_llm,
+                summary_llm_params,
+                config.summary_custom_token_count,
+                summary_secret_key_files
+            )
+
+        if config.apply_profile_summaries:
+            summary_secret_key_files = key_file_resolver.get_key_files_for_service(config.llm_api, api_file)
+
+            summary_llm_params = config.llm_params
+            try:
+                from src.model_profile_manager import ModelProfileManager
+                profile_manager = ModelProfileManager()
+                summary_llm_params = profile_manager.apply_profile_to_params(
+                    service=config.llm_api,
+                    model=config.llm,
+                    fallback_params=config.llm_params
+                )
+
+                has_profile = profile_manager.has_profile(config.llm_api, config.llm)
+                if has_profile:
+                    logging.info(f"{log_prefix}Applied profile for summaries (same model as main): {config.llm_api}/{config.llm}")
+                    logging.info(f"{log_prefix}Summary Profile Parameters (same model): {summary_llm_params}")
+                else:
+                    logging.info(f"{log_prefix}No profile found for summaries {config.llm_api}/{config.llm}, using manual parameters: {summary_llm_params}")
+
+            except Exception as e:
+                logging.error(f"Error applying profile for summaries: {e}")
+                summary_llm_params = config.llm_params
+
+            return ClientBase(
+                config.llm_api,
+                config.llm,
+                summary_llm_params,
+                config.custom_token_count,
+                summary_secret_key_files
+            )
+
+        return None
+
+    def refresh_summary_client_from_ui_config(self) -> None:
+        """Apply the latest summary LLM selection from the UI without clearing other pending config changes."""
+        self.__config.sync_summary_llm_settings_from_definitions()
+        summary_client = GameStateManager.create_summary_client(self.__config, self.__api_file)
+        logging.info(
+            f"Refreshing summary client for manual save: "
+            f"{self.__config.summary_llm_api}/{self.__config.summary_llm}"
+        )
+
+        if isinstance(self.__rememberer, Summaries):
+            self.__rememberer.update_summary_client(summary_client, self.__client)
+        if self.__talk:
+            self.__talk.update_summary_client(summary_client, self.__client)
+
     @utils.time_it
     def save_summary_only(self) -> bool:
         """Trigger summary/log saving without ending the active conversation.
@@ -758,6 +698,13 @@ class GameStateManager:
         """
         if not self.__talk:
             return False
+        # UI model changes update definitions immediately but do not hot-swap clients until
+        # the next game request. Refresh the summary client here so Save Summary Now respects
+        # the currently selected summary model without affecting other pending config changes.
+        try:
+            self.refresh_summary_client_from_ui_config()
+        except Exception as e:
+            logging.error(f"Failed to refresh summary client before manual save: {e}", exc_info=True)
         self.__talk.save_summary_only()
         return True
 

@@ -12,6 +12,9 @@ from src.conversation.action import Action
 from src.llm.sentence_queue import SentenceQueue
 from src.llm.sentence import Sentence
 from src.remember.remembering import Remembering
+from src.remember.summaries import Summaries
+from src.llm.client_base import ClientBase
+from src.llm.llm_client import LLMClient
 from src.output_manager import ChatManager
 from src.llm.messages import AssistantMessage, join_message, leave_message, SystemMessage, UserMessage
 from src.conversation.context import add_or_update_result, context as Context
@@ -61,6 +64,11 @@ class Conversation:
         self.last_sentence_audio_length = 0
         self.last_sentence_start_time = time.time()
         self.__end_conversation_keywords = utils.parse_keywords(context_for_conversation.config.end_conversation_keyword)
+
+    def update_summary_client(self, summary_client: ClientBase | None, fallback_client: LLMClient) -> None:
+        """Update the summary LLM client on the active rememberer, if it supports it."""
+        if isinstance(self.__rememberer, Summaries):
+            self.__rememberer.update_summary_client(summary_client, fallback_client)
 
     @property
     def has_already_ended(self) -> bool:
