@@ -604,6 +604,53 @@ class Conversation:
             return False
 
     @utils.time_it
+    def undo_last_round(self) -> bool:
+        """Removes the last real player turn and everything after it from the live conversation.
+
+        A round starts at the last UserMessage with is_system_generated_message == False
+        (system greetings / radiant prompts / goodbye flags are skipped). Stops any in-flight
+        generation and clears the sentence queue. Returns True if a round was removed.
+        """
+        with self.__generation_start_lock:
+            self.__stop_generation()
+            self.__sentences.clear()
+
+            persistent = self.__messages.get_persistent_messages()
+            cut_index = None
+            for i in range(len(persistent) - 1, -1, -1):
+                msg = persistent[i]
+                if isinstance(msg, UserMessage) and not msg.is_system_generated_message:
+                    cut_index = i
+                    break
+            if cut_index is None:
+                return False
+            self.__messages.replace_persistent_messages(persistent[:cut_index])
+            return True
+
+    @utils.time_it
+    def undo_last_npc_reply(self) -> bool:
+        """Removes everything after the last real player turn, keeping the user message.
+
+        Stops any in-flight generation and clears the sentence queue. Returns True if
+        anything after the last player UserMessage was removed.
+        """
+        with self.__generation_start_lock:
+            self.__stop_generation()
+            self.__sentences.clear()
+
+            persistent = self.__messages.get_persistent_messages()
+            cut_index = None
+            for i in range(len(persistent) - 1, -1, -1):
+                msg = persistent[i]
+                if isinstance(msg, UserMessage) and not msg.is_system_generated_message:
+                    cut_index = i
+                    break
+            if cut_index is None or cut_index >= len(persistent) - 1:
+                return False
+            self.__messages.replace_persistent_messages(persistent[: cut_index + 1])
+            return True
+
+    @utils.time_it
     def __save_conversation_log_for_characters(self, characters_to_save_for: list[Character] ):
         """Saves all messages of the conversation to a json file for each NPC in the conversation"""
         for npc in characters_to_save_for:

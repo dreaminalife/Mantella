@@ -719,6 +719,26 @@ class GameStateManager:
         if not self.__talk:
             return False
         return self.__talk.apply_conversation_from_json(json_str)
+
+    def undo_last_conversation_round(self) -> bool | None:
+        """Undo the last player talk round in the live conversation.
+
+        Returns None if there is no active conversation, True if a round was removed,
+        False if there was no real player turn to undo.
+        """
+        if not self.__talk:
+            return None
+        return self.__talk.undo_last_round()
+
+    def undo_last_npc_reply(self) -> bool | None:
+        """Undo the last NPC reply, keeping the last player message.
+
+        Returns None if there is no active conversation, True if a reply was removed,
+        False if there was nothing after the last player turn to remove.
+        """
+        if not self.__talk:
+            return None
+        return self.__talk.undo_last_npc_reply()
     
     def process_stt_setup(self, input_json: dict[str, Any]):
         '''Process the STT setup (mic / text / push-to-talk) based on the settings passed in the input JSON'''

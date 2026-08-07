@@ -956,12 +956,14 @@ class StartUI(routeable):
             # --- Live Conversation Editor ---
             with gr.Accordion(label="Live Conversation Editor", open=True):
                 gr.Markdown(
-                    "Edit the active conversation in real time. When the model returns gibberish, click **Reload** to fetch the current history, fix the bad text in the JSON, then click **Save** to apply. All information is preserved in the JSON format."
+                    "Edit the active conversation in real time. When the model returns gibberish, click **Reload** to fetch the current history, fix the bad text in the JSON, then click **Save** to apply. Use **Undo last round** to remove the last player turn and everything after it, or **Undo NPC reply** to keep the player line and drop only the reply. All information is preserved in the JSON format."
                 )
                 live_conversation_editor = gr.Text(value="", lines=20, label="Conversation (JSON)", placeholder="Click Reload to fetch current conversation. Edit the JSON and click Save to apply changes.")
                 with gr.Row():
                     live_reload_btn = gr.Button("Reload", variant="secondary")
                     live_save_btn = gr.Button("Save", variant="primary")
+                    live_undo_btn = gr.Button("Undo last round", variant="secondary")
+                    live_undo_npc_reply_btn = gr.Button("Undo NPC reply", variant="secondary")
                 live_conversation_info = gr.Markdown(value="", visible=True)
 
             # --- LLM Request section ---
@@ -1746,6 +1748,40 @@ class StartUI(routeable):
                     logging.error(f"Live conversation save failed: {e}", exc_info=True)
                     return f" Save failed: {e}"
 
+            def on_live_undo():
+                try:
+                    from src.ui import settings_ui_constructor as sui
+                    gm = getattr(sui, '_game_manager_ref', None)
+                    if not gm:
+                        return "", " No game manager. Start the game first."
+                    result = gm.undo_last_conversation_round()
+                    if result is None:
+                        return "", " No active conversation."
+                    json_str = gm.get_conversation_as_json() or ""
+                    if result:
+                        return json_str, " Undid last round of talk."
+                    return json_str, " No player turn to undo."
+                except Exception as e:
+                    logging.error(f"Live conversation undo failed: {e}", exc_info=True)
+                    return "", f" Undo failed: {e}"
+
+            def on_live_undo_npc_reply():
+                try:
+                    from src.ui import settings_ui_constructor as sui
+                    gm = getattr(sui, '_game_manager_ref', None)
+                    if not gm:
+                        return "", " No game manager. Start the game first."
+                    result = gm.undo_last_npc_reply()
+                    if result is None:
+                        return "", " No active conversation."
+                    json_str = gm.get_conversation_as_json() or ""
+                    if result:
+                        return json_str, " Undid last NPC reply."
+                    return json_str, " No NPC reply to undo."
+                except Exception as e:
+                    logging.error(f"Live conversation undo NPC reply failed: {e}", exc_info=True)
+                    return "", f" Undo NPC reply failed: {e}"
+
             live_reload_btn.click(
                 on_live_reload,
                 inputs=[],
@@ -1755,6 +1791,16 @@ class StartUI(routeable):
                 on_live_save,
                 inputs=[live_conversation_editor],
                 outputs=[live_conversation_info],
+            )
+            live_undo_btn.click(
+                on_live_undo,
+                inputs=[],
+                outputs=[live_conversation_editor, live_conversation_info],
+            )
+            live_undo_npc_reply_btn.click(
+                on_live_undo_npc_reply,
+                inputs=[],
+                outputs=[live_conversation_editor, live_conversation_info],
             )
 
             # LLM section wiring
