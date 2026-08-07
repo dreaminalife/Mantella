@@ -722,11 +722,24 @@ class Summaries(Remembering):
         if len(text_to_summarize) > 5:
             messages = message_thread(self.__config, prompt)
             messages.add_message(UserMessage(self.__config, text_to_summarize))
-            summary = self.__summary_client.request_call(messages)
             # Log the summary prompt being sent
             logging.log(23, f'Summary prompt sent to LLM: {prompt.strip()}')
+
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    summary = self.__summary_client.request_call(messages)
+                    if summary:
+                        break
+                    logging.info(f"Summarizing conversation failed (attempt {attempt}/{max_retries}).")
+                except Exception as e:
+                    logging.error(f"Summarizing conversation error (attempt {attempt}/{max_retries}): {e}")
+                    summary = ''
+                if attempt < max_retries:
+                    time.sleep(5)
+
             if not summary:
-                logging.info(f"Summarizing conversation failed.")
+                logging.info(f"Summarizing conversation failed after {max_retries} attempts.")
                 return ""
 
             npc_name = "Someone"
