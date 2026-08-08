@@ -204,6 +204,16 @@ Now let's talk about what a dynamic event does, and when you need it.
 
 Conversation summaries and dynamic events can both carry **Unix timestamps**. At runtime, when Mantella builds an NPC's memory for an active conversation, timestamped dynamic events are **mixed with timestamped summaries in time order**. Timestamps are stripped before the text is sent to the LLM — the model only sees the ordered story.
 
+#### Why does order matter?
+
+Sometimes *when* something became true matters as much as the fact itself.
+
+Suppose a snobbish Whiterun noble talked down to you for weeks. Those rude conversations are already in their summary. If you only put *"I am now the Thane of Whiterun"* into static tag text, that fact sits in the bio forever — but the old summaries still read as if they chose to insult you *while* you were Thane. The LLM often keeps treating you poorly, which is wrong.
+
+With a dynamic event, `"became Thane of Whiterun"` gets a timestamp **after** those earlier summaries. In the next conversation the memory timeline ends with the Thane appointment, so the noble can plausibly change tone — respect, flattery, sudden politeness — because the status change sits in the correct place in history.
+
+The same pattern works for quest endings, romance turning points, guild promotions, and anything else where past behavior should no longer apply after a dated beat.
+
 #### What about content that is *not* timestamped?
 
 | Item | Behavior |
@@ -214,15 +224,6 @@ Conversation summaries and dynamic events can both carry **Unix timestamps**. At
 
 So: undated memory stays at the front as a fixed block; everything with a timestamp is ordered by when it happened.
 
-#### Why does order matter?
-
-Sometimes *when* something became true matters as much as the fact itself.
-
-Suppose a snobbish Whiterun noble talked down to you for weeks. Those rude conversations are already in their summary. If you only put *"I am now the Thane of Whiterun"* into static tag text, that fact sits in the bio forever — but the old summaries still read as if they chose to insult you *while* you were Thane. The LLM often keeps treating you poorly, which is wrong.
-
-With a dynamic event, `"became Thane of Whiterun"` gets a timestamp **after** those earlier summaries. In the next conversation the memory timeline ends with the Thane appointment, so the noble can plausibly change tone — respect, flattery, sudden politeness — because the status change sits in the correct place in history.
-
-The same pattern works for quest endings, romance turning points, guild promotions, and anything else where past behavior should no longer apply after a dated beat.
 
 ---
 
