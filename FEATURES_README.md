@@ -760,7 +760,7 @@ Character CSV / bio template / lorebook file edits are different — those still
 
 ### What it does
 
-`{bios_and_summaries}` builds **one block per NPC**: that character's bio, then their conversation summary / memory, kept together, with delimiters so other speakers are told not to use private info.
+`{bios_and_summaries}` builds **one block per NPC**: that character's bio, then their conversation summary/memory, kept together, with delimiters so other speakers are told not to use private info.
 
 Instead of a pile of all bios followed by a pile of all summaries, each person gets their own paired section.
 
@@ -774,9 +774,13 @@ Here are their backgrounds:
 {conversation_summaries}
 ```
 
-That **splits** who someone is from what they remember into two distant prompt regions. With several NPCs, the model sees every bio first, then every memory afterward — easy to mix up which summary belongs to which person, or to treat “background” and “memory” as unrelated piles.
+That **splits** who someone is from what they remember into two distant prompt regions. With several NPCs, the model sees every bio first, then every memory afterward.
 
-`{bios_and_summaries}` keeps each NPC's identity and history **in one place**. That usually improves coherence (tone, relationships, and past events stay attached to the right speaker) and reduces the LLM confusing or cross-wiring characters.
+In practice, lots of coherence issues are noticed, including context leaking (NPC A talks about NPC B's past memories although NPC A should've never known anything about it), easily mixing up which summary belongs to which person, or treating “background” and “memory” as unrelated piles.
+
+`{bios_and_summaries}` keeps each NPC's identity and history **in one place**. 
+
+After repeated experiments, it greatly improves coherence (tone, relationships, and past events stay attached to the right speaker) and reduces the LLM confusing or cross-wiring characters.
 
 | Approach | Layout | Typical issue |
 |----------|--------|----------------|
