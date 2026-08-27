@@ -261,6 +261,14 @@ class MantellaConfigValueDefinitionsNew:
         prompts_category.add_config_value(PromptDefinitions.get_radiant_end_prompt_config_value())
         result.add_base_group(prompts_category)
 
+        prompt_profiles_category = ConfigValueGroup(
+            "Prompt Profiles",
+            "Prompt Profiles",
+            "Create named prompt profiles and activate them per prompt type. If nothing is activated for a type, Mantella uses the Prompts tab. The Prompts tab stays independently editable; an active profile is only used at runtime and is not changed by editing the Prompts tab.",
+            on_value_change_callback
+        )
+        result.add_base_group(prompt_profiles_category)
+
         startup_category = ConfigValueGroup("Startup", "Startup", "Startup settings.", on_value_change_callback)
         startup_category.add_config_value(StartupDefinitions.get_auto_launch_ui_config_value())
         startup_category.add_config_value(StartupDefinitions.get_play_startup_sound_config_value())

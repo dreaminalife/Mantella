@@ -12,18 +12,21 @@ from src.config.mantella_config_value_definitions_new import MantellaConfigValue
 from src.config.config_json_writer import ConfigJsonWriter
 from src.config.config_file_writer import ConfigFileWriter
 from src.config.types.config_value_string import ConfigValueString
+from src.prompt_profile_manager import PromptProfileManager
 import src.utils as utils
 from pathlib import Path
 import json
 
 class ConfigLoader:
-    def __init__(self, mygame_folder_path: str, file_name='config.ini', game_override: GameEnum | None = None):
+    def __init__(self, mygame_folder_path: str, file_name='config.ini', game_override: GameEnum | None = None, prompt_profiles_path: str | None = None):
         self.is_run_integrated = "--integrated" in sys.argv
         self.save_folder = mygame_folder_path
-        self.__has_any_value_changed: bool = False        
+        self.__has_any_value_changed: bool = False
+        self.__log_next_system_prompt: bool = False
         self.__is_initial_load: bool = True
         self.__file_name = os.path.join(mygame_folder_path, file_name)
         self.__game_override = game_override
+        self.__prompt_profile_manager = PromptProfileManager(prompt_profiles_path)
         path_to_actions = os.path.join(utils.resolve_path(),"data","actions")
         self.__actions = ConfigLoader.load_actions_from_json(path_to_actions)
         self.__definitions: ConfigValues = MantellaConfigValueDefinitionsNew.get_config_values(self.is_run_integrated, self.__actions, self.__on_config_value_change)
@@ -82,6 +85,23 @@ class ConfigLoader:
     @property
     def definitions(self) -> ConfigValues:
         return self.__definitions
+
+    @property
+    def prompt_profile_manager(self) -> PromptProfileManager:
+        return self.__prompt_profile_manager
+
+    def notify_prompt_profiles_changed(self) -> None:
+        """Reload prompt overlays and mark config changed so the next request hot-swaps."""
+        self.__prompt_profile_manager.reload()
+        self.__apply_prompt_values()
+        self.__has_any_value_changed = True
+        self.__log_next_system_prompt = True
+
+    def consume_log_next_system_prompt(self) -> bool:
+        """Return whether the next generated system prompt should be logged, then clear the flag."""
+        should_log = self.__log_next_system_prompt
+        self.__log_next_system_prompt = False
+        return should_log
     
     def update_config_loader_with_changed_config_values(self):
         self.__update_config_values_from_current_state()
@@ -391,24 +411,9 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
 
             self.save_audio_data_to_character_folder = self.__definitions.get_bool_value("save_audio_data_to_character_folder")
 
-            #new separate prompts for Fallout 4 have been added 
-            if self.game.base_game == GameEnum.FALLOUT4:
-                self.prompt = self.__definitions.get_string_value("fallout4_prompt")
-                self.multi_npc_prompt = self.__definitions.get_string_value("fallout4_multi_npc_prompt")
-                self.radiant_prompt = self.__definitions.get_string_value("fallout4_radiant_prompt")
-            else:
-                self.prompt = self.__definitions.get_string_value("skyrim_prompt")
-                self.multi_npc_prompt = self.__definitions.get_string_value("skyrim_multi_npc_prompt")
-                self.multi_npc_director_prompt = self.__definitions.get_string_value("skyrim_multi_npc_director_prompt")
-                self.radiant_prompt = self.__definitions.get_string_value("skyrim_radiant_prompt")
+            self.__apply_prompt_values()
 
             self.multi_conversation_director_mode = self.__definitions.get_bool_value("multi_conversation_director_mode")
-
-            self.radiant_start_prompt = self.__definitions.get_string_value("radiant_start_prompt")
-            self.radiant_end_prompt = self.__definitions.get_string_value("radiant_end_prompt")
-            self.memory_prompt = self.__definitions.get_string_value("memory_prompt")
-            self.resummarize_prompt = self.__definitions.get_string_value("resummarize_prompt")
-            self.vision_prompt = self.__definitions.get_string_value("vision_prompt")
 
             # Vision
             self.vision_enabled = self.__definitions.get_bool_value('vision_enabled')
@@ -437,6 +442,28 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
             utils.play_error_sound()
             logging.error('Parameter missing/invalid in config.ini file!')
             raise e
+
+    def __overlay_prompt(self, prompt_type: str, fallback: str) -> str:
+        overlay = self.__prompt_profile_manager.get_active_text(prompt_type)
+        return overlay if overlay is not None else fallback
+
+    def __apply_prompt_values(self) -> None:
+        self.__prompt_profile_manager.reload()
+        if self.game.base_game == GameEnum.FALLOUT4:
+            self.prompt = self.__definitions.get_string_value("fallout4_prompt")
+            self.multi_npc_prompt = self.__definitions.get_string_value("fallout4_multi_npc_prompt")
+            self.radiant_prompt = self.__definitions.get_string_value("fallout4_radiant_prompt")
+        else:
+            self.prompt = self.__overlay_prompt("skyrim_prompt", self.__definitions.get_string_value("skyrim_prompt"))
+            self.multi_npc_prompt = self.__overlay_prompt("skyrim_multi_npc_prompt", self.__definitions.get_string_value("skyrim_multi_npc_prompt"))
+            self.multi_npc_director_prompt = self.__overlay_prompt("skyrim_multi_npc_director_prompt", self.__definitions.get_string_value("skyrim_multi_npc_director_prompt"))
+            self.radiant_prompt = self.__overlay_prompt("skyrim_radiant_prompt", self.__definitions.get_string_value("skyrim_radiant_prompt"))
+
+        self.radiant_start_prompt = self.__overlay_prompt("radiant_start_prompt", self.__definitions.get_string_value("radiant_start_prompt"))
+        self.radiant_end_prompt = self.__overlay_prompt("radiant_end_prompt", self.__definitions.get_string_value("radiant_end_prompt"))
+        self.memory_prompt = self.__overlay_prompt("memory_prompt", self.__definitions.get_string_value("memory_prompt"))
+        self.resummarize_prompt = self.__overlay_prompt("resummarize_prompt", self.__definitions.get_string_value("resummarize_prompt"))
+        self.vision_prompt = self.__overlay_prompt("vision_prompt", self.__definitions.get_string_value("vision_prompt"))
     
     @staticmethod
     def load_actions_from_json(actions_folder: str) -> list[Action]:

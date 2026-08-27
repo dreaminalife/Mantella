@@ -5,6 +5,8 @@ import logging
 
 from src.llm.client_base import ClientBase
 from src.model_profile_manager import ModelProfileManager
+from src.prompt_profile_manager import PromptProfileManager
+from src.config.config_loader import ConfigLoader
 from src.config.types.config_value_path import ConfigValuePath
 from src.config.types.config_value_bool import ConfigValueBool
 from src.config.types.config_value_float import ConfigValueFloat
@@ -42,7 +44,7 @@ class ModelConfig(TypedDict):
     model_list_getter: Callable[[str, str, str, bool], Any]  # Function to get model list based on service, secret_key_file, default_model, is_vision
 
 class SettingsUIConstructor(ConfigValueVisitor):
-    def __init__(self) -> None:
+    def __init__(self, config_loader: ConfigLoader | None = None) -> None:
         super().__init__()
         self.__identifier_to_config_value: dict[str, ConfigValue] = {}
         self.__config_value_to_ui_element: dict[ConfigValue, Any] = {}
@@ -51,6 +53,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__last_row_group: str | None = None  # Track the last row group being built
         self.__model_dependencies: list[tuple[str, str]] = []  # (model_id, service_id) pairs
         self.__profile_manager: ModelProfileManager | None = None
+        self.__config_loader = config_loader
+        self.__prompt_profile_manager: PromptProfileManager | None = None
     
     @property
     def config_value_to_ui_element(self) -> dict[ConfigValue, gr.Column]:
@@ -61,6 +65,13 @@ class SettingsUIConstructor(ConfigValueVisitor):
         if self.__profile_manager is None:
             self.__profile_manager = ModelProfileManager()
         return self.__profile_manager
+
+    def get_prompt_profile_manager(self) -> PromptProfileManager:
+        if self.__config_loader is not None:
+            return self.__config_loader.prompt_profile_manager
+        if self.__prompt_profile_manager is None:
+            self.__prompt_profile_manager = PromptProfileManager()
+        return self.__prompt_profile_manager
     
 
     
@@ -581,8 +592,218 @@ class SettingsUIConstructor(ConfigValueVisitor):
             outputs=status_ui
         )
 
+    def render_prompt_profile_editor(self, config_value: ConfigValueGroup) -> None:
+        """Render named prompt profiles with separate edit and activate dropdowns."""
+        manager = self.get_prompt_profile_manager()
+        none_label = PromptProfileManager.NONE_ACTIVE_LABEL
+        type_choices = PromptProfileManager.display_names()
+        initial_type_display = type_choices[0]
+        initial_type = PromptProfileManager.identifier_for_display(initial_type_display) or "skyrim_prompt"
+        initial_names = manager.get_profile_names(initial_type)
+        initial_edit = initial_names[0] if initial_names else None
+        initial_text = manager.get_profile_text(initial_type, initial_edit) if initial_edit else ""
+        initial_active = manager.get_active_name(initial_type) or none_label
+
+        def type_id(type_display: str) -> str:
+            return PromptProfileManager.identifier_for_display(type_display) or "skyrim_prompt"
+
+        def edit_dropdown(prompt_type: str, selected: str | None) -> gr.Dropdown:
+            names = manager.get_profile_names(prompt_type)
+            value = selected if selected in names else None
+            return gr.Dropdown(choices=names, value=value, label="Edit profile", allow_custom_value=False)
+
+        def active_dropdown(prompt_type: str) -> gr.Dropdown:
+            names = manager.get_profile_names(prompt_type)
+            active = manager.get_active_name(prompt_type) or none_label
+            return gr.Dropdown(
+                choices=[none_label] + names,
+                value=active,
+                label="Active profile",
+                allow_custom_value=False
+            )
+
+        def error_panel(message: str, visible: bool) -> gr.Markdown:
+            return self.__construct_error_message_panel(message, is_visible=visible)
+
+        def validation_panel(prompt_type: str, text: str) -> gr.Markdown:
+            result = manager.validate_text(prompt_type, text or "")
+            if result.is_success:
+                return error_panel("", False)
+            return error_panel(result.error_message, True)
+
+        def notify_if_needed(changed: bool) -> None:
+            if changed and self.__config_loader is not None:
+                self.__config_loader.notify_prompt_profiles_changed()
+
+        if config_value.description:
+            gr.Markdown(config_value.description)
+
+        type_ui = gr.Dropdown(
+            choices=type_choices,
+            value=initial_type_display,
+            label="Prompt type",
+            allow_custom_value=False
+        )
+        variables_ui = gr.Markdown(manager.supported_variables_markdown(initial_type))
+        with gr.Row():
+            edit_ui = gr.Dropdown(
+                choices=initial_names,
+                value=initial_edit,
+                label="Edit profile",
+                allow_custom_value=False
+            )
+            save_btn = gr.Button("Save", variant="primary", size="sm")
+            rename_btn = gr.Button("Rename", size="sm")
+            delete_btn = gr.Button("Delete", variant="secondary", size="sm")
+        name_ui = gr.Text(value=initial_edit or "", label="Name", max_lines=1)
+        text_ui = gr.Textbox(
+            value=initial_text or "",
+            label="Prompt text",
+            lines=16,
+            max_lines=30,
+            elem_classes="multiline-textbox"
+        )
+        error_ui = validation_panel(initial_type, initial_text or "")
+        active_ui = gr.Dropdown(
+            choices=[none_label] + initial_names,
+            value=initial_active,
+            label="Active profile",
+            allow_custom_value=False
+        )
+        status_ui = gr.Markdown("")
+
+        def on_type_change(type_display: str):
+            prompt_type = type_id(type_display)
+            names = manager.get_profile_names(prompt_type)
+            selected = names[0] if names else None
+            text = manager.get_profile_text(prompt_type, selected) if selected else ""
+            return (
+                manager.supported_variables_markdown(prompt_type),
+                edit_dropdown(prompt_type, selected),
+                selected or "",
+                text or "",
+                validation_panel(prompt_type, text or ""),
+                active_dropdown(prompt_type),
+                ""
+            )
+
+        def on_edit_change(type_display: str, selected: str):
+            prompt_type = type_id(type_display)
+            if not selected:
+                return "", "", error_panel("", False)
+            text = manager.get_profile_text(prompt_type, selected) or ""
+            return selected, text, validation_panel(prompt_type, text)
+
+        def on_text_change(type_display: str, text: str):
+            return validation_panel(type_id(type_display), text or "")
+
+        def on_save(type_display: str, selected: str, name: str, text: str):
+            prompt_type = type_id(type_display)
+            ok, msg, created = manager.save_from_editor(prompt_type, selected, name, text)
+            if not ok:
+                return msg, error_panel(msg, True), gr.update(), name or "", gr.update()
+            saved_name = name.strip()
+            if created:
+                return (
+                    msg,
+                    error_panel("", False),
+                    edit_dropdown(prompt_type, saved_name),
+                    saved_name,
+                    active_dropdown(prompt_type)
+                )
+            if manager.get_active_name(prompt_type) == saved_name:
+                notify_if_needed(True)
+            return msg, error_panel("", False), gr.update(), saved_name, gr.update()
+
+        def on_rename(type_display: str, selected: str, name: str):
+            prompt_type = type_id(type_display)
+            was_active = manager.get_active_name(prompt_type) == selected
+            ok, msg = manager.rename_profile(prompt_type, selected, name)
+            if not ok:
+                return msg, error_panel(msg, True), gr.update(), name or "", gr.update()
+            new_selected = name.strip()
+            if was_active:
+                notify_if_needed(True)
+            return (
+                msg,
+                error_panel("", False),
+                edit_dropdown(prompt_type, new_selected),
+                new_selected,
+                active_dropdown(prompt_type)
+            )
+
+        def on_delete(type_display: str, selected: str):
+            prompt_type = type_id(type_display)
+            was_active = manager.get_active_name(prompt_type) == selected
+            ok, msg = manager.delete_profile(prompt_type, selected)
+            if not ok:
+                return msg, error_panel(msg, True), gr.update(), selected or "", gr.update(), gr.update()
+            if was_active:
+                notify_if_needed(True)
+            names = manager.get_profile_names(prompt_type)
+            next_selected = names[0] if names else None
+            next_text = manager.get_profile_text(prompt_type, next_selected) if next_selected else ""
+            return (
+                msg,
+                error_panel("", False),
+                edit_dropdown(prompt_type, next_selected),
+                next_selected or "",
+                next_text or "",
+                active_dropdown(prompt_type)
+            )
+
+        def on_active_change(type_display: str, active_value: str):
+            prompt_type = type_id(type_display)
+            names = manager.get_profile_names(prompt_type)
+            if active_value and active_value != none_label and active_value not in names:
+                return "Ignored invalid active selection."
+            target = None if (not active_value or active_value == none_label) else active_value
+            ok, msg, changed = manager.set_active(prompt_type, target)
+            if ok:
+                notify_if_needed(changed)
+            return msg
+
+        type_ui.change(
+            on_type_change,
+            inputs=[type_ui],
+            outputs=[variables_ui, edit_ui, name_ui, text_ui, error_ui, active_ui, status_ui]
+        )
+        edit_ui.change(
+            on_edit_change,
+            inputs=[type_ui, edit_ui],
+            outputs=[name_ui, text_ui, error_ui]
+        )
+        text_ui.change(
+            on_text_change,
+            inputs=[type_ui, text_ui],
+            outputs=[error_ui]
+        )
+        save_btn.click(
+            on_save,
+            inputs=[type_ui, edit_ui, name_ui, text_ui],
+            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui]
+        )
+        rename_btn.click(
+            on_rename,
+            inputs=[type_ui, edit_ui, name_ui],
+            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui]
+        )
+        delete_btn.click(
+            on_delete,
+            inputs=[type_ui, edit_ui],
+            outputs=[status_ui, error_ui, edit_ui, name_ui, text_ui, active_ui]
+        )
+        active_ui.change(
+            on_active_change,
+            inputs=[type_ui, active_ui],
+            outputs=[status_ui]
+        )
+
     def visit_ConfigValueGroup(self, config_value: ConfigValueGroup):
         if not config_value.is_hidden:
+            if config_value.name == "Prompt Profiles":
+                self.render_prompt_profile_editor(config_value)
+                return
             if config_value.name == "Model Profiles":
                 if config_value.description:
                     gr.Markdown(config_value.description)

@@ -343,3 +343,29 @@ Content Guidelines:
                                             This prompt is used to guide the LLM to end the conversation naturally.""" 
         radiant_end_prompt = """Please wrap up the current topic between the NPCs in a natural way. Nobody is leaving, so there is no need for formal goodbyes."""
         return ConfigValueString("radiant_end_prompt","Radiant End Prompt",radiant_end_prompt_description,radiant_end_prompt,[PromptDefinitions.PromptChecker([])])
+
+    @staticmethod
+    def get_prompt_profile_types() -> list[tuple[str, str, list[str] | None]]:
+        """Prompt types that can be stored as named profiles.
+
+        Each entry is (identifier, display_name, allowed_variables).
+        allowed_variables is None when the Prompts tab does not validate that type.
+        """
+        return [
+            ("skyrim_prompt", "Skyrim Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
+            ("skyrim_multi_npc_prompt", "Skyrim Multi-NPC Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
+            ("skyrim_multi_npc_director_prompt", "Skyrim Multi-NPC Director Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
+            ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
+            ("memory_prompt", "Memory Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MEMORY),
+            ("resummarize_prompt", "Resummarize Prompt", ["name", "language", "game", "player_name", "lorebook"]),
+            ("vision_prompt", "Vision Prompt", ["game"]),
+            ("radiant_start_prompt", "Radiant Start Prompt", []),
+            ("radiant_end_prompt", "Radiant End Prompt", []),
+        ]
+
+    @staticmethod
+    def get_allowed_variables_for_prompt_type(prompt_type: str) -> list[str] | None:
+        for identifier, _display_name, allowed in PromptDefinitions.get_prompt_profile_types():
+            if identifier == prompt_type:
+                return allowed
+        return None

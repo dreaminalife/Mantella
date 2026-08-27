@@ -19,7 +19,7 @@ class conversation_type(ABC):
 
         Args:
             context_for_conversation (context): The context for the conversations. Provides tools to construct the prompt
-            should_log (bool): Whether to log the generated prompt. Only True when conversation first starts.
+            should_log (bool): Whether to log the generated prompt.
 
         Returns:
             str: the prompt as a text

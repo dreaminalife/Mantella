@@ -194,3 +194,17 @@
 .custom-footer a:hover {
     text-decoration: underline;
 }
+
+/* Keep all tabs (including Documentation) on a single row */
+.tab-nav {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+}
+
+.tab-nav button {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+}

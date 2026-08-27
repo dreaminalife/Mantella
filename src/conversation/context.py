@@ -704,6 +704,7 @@ class context:
             prompt (str): The conversation specific system prompt to fill
             actions_for_prompt (list[Action]): The list of actions to include in the prompt
             should_log (bool): Whether to log the generated prompt. Defaults to False.
+                The filled-in prompt is also logged after the active prompt profile changes.
 
         Returns:
             str: the filled prompt
@@ -805,7 +806,8 @@ class context:
             else:
                 break
         
-        if should_log:
+        should_log_prompt = should_log or self.__config.consume_log_next_system_prompt()
+        if should_log_prompt:
             logging.log(23, f'Prompt sent to LLM ({self.__client.get_count_tokens(result)} tokens): {result.strip()}')
         if have_summaries_been_dropped and have_bios_been_dropped:
             logging.log(logging.WARNING, f'Both the bios and summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations and will have limited knowledge of who they are.')

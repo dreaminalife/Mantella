@@ -20,7 +20,7 @@ class StartUI(routeable):
     BANNER = "docs/_static/img/mantella_banner.png"
     def __init__(self, config: ConfigLoader) -> None:
         super().__init__(config, False)
-        self.__constructor = SettingsUIConstructor()
+        self.__constructor = SettingsUIConstructor(config)
 
     def create_main_block(self) -> gr.Blocks:
         with gr.Blocks(title="Mantella", fill_height=True, analytics_enabled=False, theme= self.__get_theme(), css=self.__load_css()) as main_block:
@@ -32,6 +32,8 @@ class StartUI(routeable):
             #     self.__generate_character_editor_page()
             with gr.Tab("Bio Editor"):
                 self.__generate_bio_editor_page()
+            with gr.Tab("Documentation"):
+                self.__generate_documentation_page()
 
             with gr.Row(elem_classes="custom-footer"):
                 gr.HTML("""
@@ -57,7 +59,17 @@ class StartUI(routeable):
         return gr.Column()
     
     def __generate_character_editor_page(self):
-        return gr.Column() 
+        return gr.Column()
+
+    def __generate_documentation_page(self):
+        docs_url = "https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md"
+        gr.Markdown(
+            "# Documentation\n\n"
+            "Trying my best to explain why I added these features and how to make the most of them. "
+            "Currently it only works with Mantella below v 0.14.\n\n"
+            f"See the full feature docs here:\n\n"
+            f"**[{docs_url}]({docs_url})**"
+        )
 
     def __generate_bio_editor_page(self):
         config = self._config
