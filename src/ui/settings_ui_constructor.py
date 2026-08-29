@@ -464,7 +464,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
         selected_service = values_by_id["profile_selected_service"].value
         selected_model = values_by_id["profile_selected_model"].value
 
-        def get_model_dropdown(service: str, preferred_model: str | None = None) -> gr.Dropdown:
+        def get_models_for_service(service: str, preferred_model: str | None = None) -> tuple[str, Any]:
             key_files = key_file_resolver.get_key_files_for_service(service, "GPT_SECRET_KEY.txt")
             secret_key_file = key_files[0] if key_files else "GPT_SECRET_KEY.txt"
             model_list = ClientBase.get_model_list(
@@ -474,6 +474,9 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 False
             )
             model = preferred_model if preferred_model and model_list.is_model_in_list(preferred_model) else model_list.default_model
+            return model, model_list
+
+        def make_model_dropdown(model: str, model_list: Any) -> gr.Dropdown:
             return gr.Dropdown(
                 value=model,
                 choices=model_list.available_models,
@@ -491,6 +494,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 result.append(json.dumps(profile.parameters, indent=4) if profile else "")
             return result
 
+        selected_model, initial_model_list = get_models_for_service(selected_service, selected_model)
         with gr.Row():
             service_ui = gr.Dropdown(
                 value=selected_service,
@@ -498,10 +502,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 allow_custom_value=False,
                 label="Service"
             )
-            model_ui = get_model_dropdown(selected_service, selected_model)
+            model_ui = make_model_dropdown(selected_model, initial_model_list)
 
         slot_inputs: list[Any] = []
-        initial_slots = self.get_profile_manager().get_profile_slots(selected_service, model_ui.value)
+        initial_slots = self.get_profile_manager().get_profile_slots(selected_service, selected_model)
         for index in range(10):
             profile = initial_slots[index]
             with gr.Accordion(label=f"Profile {index + 1}", open=index == 0):
@@ -528,10 +532,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
         status_ui = gr.Markdown()
 
         def load_service(service: str):
-            dropdown = get_model_dropdown(service)
+            model, model_list = get_models_for_service(service)
             values_by_id["profile_selected_service"].value = service
-            values_by_id["profile_selected_model"].value = dropdown.value
-            return [dropdown] + get_slot_values(service, dropdown.value)
+            values_by_id["profile_selected_model"].value = model
+            return [make_model_dropdown(model, model_list)] + get_slot_values(service, model)
 
         def load_model(service: str, model: str):
             values_by_id["profile_selected_service"].value = service
