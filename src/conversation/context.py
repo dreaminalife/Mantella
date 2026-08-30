@@ -724,8 +724,7 @@ class context:
         names = self.get_character_names_as_text(False)
         names_w_player = self.get_character_names_as_text(True)
         bios = self.__get_bios_text()
-        is_multi_npc_context = self.npcs_in_conversation.contains_multiple_npcs()
-        include_memories = not (is_multi_npc_context and self.__config.multi_npc_bios_only)
+        include_memories = not self.__config.multi_npc_bios_only
         bios_and_summaries = self.__get_bios_and_summaries_text(include_memories=include_memories)
         trusts = self.__get_trusts()
         equipment = self.__get_npc_equipment_text()
