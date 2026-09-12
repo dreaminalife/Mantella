@@ -76,6 +76,13 @@ class MantellaConfigValueDefinitionsNew:
             False,
             []
         ))
+        hidden_category.add_config_value(ConfigValueBool(
+            "bio_llm_omit_stop",
+            "Omit Bio LLM Stop Sequences",
+            "If enabled, the stop field is removed from Bio Editor LLM requests (including those injected by a model profile).",
+            True,
+            []
+        ))
         hidden_category.add_config_value(ConfigValueFloat(
             "bio_llm_temperature_override",
             "Bio LLM Temperature Override",
@@ -119,6 +126,7 @@ class MantellaConfigValueDefinitionsNew:
         llm_category.add_config_value(LLMDefinitions.get_summary_model_config_value())
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_single_config_value())
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_multi_config_value())
+        llm_category.add_config_value(LLMDefinitions.get_drop_last_sentences_single_config_value())
         llm_category.add_config_value(LLMDefinitions.get_llm_params_config_value())
         llm_category.add_config_value(LLMDefinitions.get_multi_npc_llm_params_config_value())
         llm_category.add_config_value(LLMDefinitions.get_summary_llm_params_config_value())

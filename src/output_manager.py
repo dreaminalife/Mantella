@@ -12,6 +12,7 @@ from openai import APIConnectionError
 from src.llm.output.sentence_accumulator import sentence_accumulator
 from src.config.definitions.llm_definitions import NarrationHandlingEnum
 from src.llm.output.max_count_sentences_parser import max_count_sentences_parser
+from src.llm.output.drop_last_sentences import drop_last_sentences_buffer
 from src.llm.output.sentence_length_parser import sentence_length_parser
 from src.llm.output.actions_parser import actions_parser
 from src.llm.output.change_character_parser import change_character_parser
@@ -416,6 +417,8 @@ class ChatManager:
         self.__is_first_sentence = True
         is_multi_npc = characters.contains_multiple_npcs()
         max_response_sentences = self.__config.max_response_sentences_single if not is_multi_npc else self.__config.max_response_sentences_multi
+        drop_last_count = 0 if is_multi_npc else self.__config.drop_last_sentences_single
+        drop_buffer = drop_last_sentences_buffer(drop_last_count)
         max_retries = 5
         retries = 0
 
@@ -593,11 +596,9 @@ class ChatManager:
                             # Process sentences from the parser chain
                             if parsed_sentence:
                                 if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or parsed_sentence.sentence_type != SentenceTypeEnum.NARRATION:
-                                    new_sentence = self.generate_sentence(parsed_sentence)
-                                    # if new_sentence.text.strip() and not llm_logged:
-                                    #     logging.info(f"[LLM: {current_client.model_name}]")
-                                    #     llm_logged = True
-                                    blocking_queue.put(new_sentence)
+                                    ready_sentence = drop_buffer.push(parsed_sentence)
+                                    if ready_sentence:
+                                        blocking_queue.put(self.generate_sentence(ready_sentence))
                                     parsed_sentence = None
                         if settings.stop_generation:
                                 break
@@ -636,11 +637,9 @@ class ChatManager:
             # Handle any remaining content
             if parsed_sentence:
                 if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or parsed_sentence.sentence_type != SentenceTypeEnum.NARRATION:
-                    new_sentence = self.generate_sentence(parsed_sentence)
-                    # if new_sentence.text.strip() and not llm_logged:
-                    #     logging.info(f"[LLM: {current_client.model_name}]")
-                    #     llm_logged = True
-                    blocking_queue.put(new_sentence)
+                    ready_sentence = drop_buffer.push(parsed_sentence)
+                    if ready_sentence:
+                        blocking_queue.put(self.generate_sentence(ready_sentence))
 
             # Flush any trailing text in the accumulator that never reached a
             # sentence-ending character, so the final partial sentence is not
@@ -657,7 +656,9 @@ class ChatManager:
                         # pending_sentence is older than leftover, so emit it first
                         # when they cannot be merged (different speakers).
                         if pending_sentence:
-                            blocking_queue.put(self.generate_sentence(pending_sentence))
+                            ready_sentence = drop_buffer.push(pending_sentence)
+                            if ready_sentence:
+                                blocking_queue.put(self.generate_sentence(ready_sentence))
                             pending_sentence = None
                         final_sentence = SentenceContent(
                             settings.current_speaker,
@@ -665,15 +666,17 @@ class ChatManager:
                             settings.sentence_type,
                             False,
                         )
-                        blocking_queue.put(self.generate_sentence(final_sentence))
+                        ready_sentence = drop_buffer.push(final_sentence)
+                        if ready_sentence:
+                            blocking_queue.put(self.generate_sentence(ready_sentence))
 
             if pending_sentence:
                 if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or pending_sentence.sentence_type != SentenceTypeEnum.NARRATION:
-                    new_sentence = self.generate_sentence(pending_sentence)
-                    # if new_sentence.text.strip() and not llm_logged:
-                    #     logging.info(f"[LLM: {current_client.model_name}]")
-                    #     llm_logged = True
-                    blocking_queue.put(new_sentence)
+                    ready_sentence = drop_buffer.push(pending_sentence)
+                    if ready_sentence:
+                        blocking_queue.put(self.generate_sentence(ready_sentence))
+            for remaining_sentence in drop_buffer.flush():
+                blocking_queue.put(self.generate_sentence(remaining_sentence))
             try:
                 token_counter_client = last_used_client if 'last_used_client' in locals() and last_used_client else self.__client
                 logging.log(23, f"Full raw response ({token_counter_client.get_count_tokens(raw_response)} tokens): {raw_response.strip()}")

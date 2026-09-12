@@ -76,6 +76,16 @@ class LLMDefinitions:
     def get_max_response_sentences_multi_config_value() -> ConfigValue:
         description = "The maximum number of sentences returned by the LLM on each response in a player<->multi-NPC conversation. Lower this value to reduce waffling.\nNote: The setting 'Number Words TTS' in the Text-to-Speech tab takes precedence over this setting."
         return ConfigValueInt("max_response_sentences_multi","Max Sentences per Response (Multi NPC)", description, 12, 1, 999, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_drop_last_sentences_single_config_value() -> ConfigValue:
+        description = """Number of sentences to drop from the end of each NPC response in a player<->NPC conversation.
+                    Dropped sentences are not spoken and are not added to conversation history.
+                    This is useful for removing trailing questions or filler that often appear at the end of LLM replies.
+                    The response will always keep at least one sentence. Set to 0 to disable.
+                    Only applies to single-NPC conversations.
+                    Warning: This can increase waiting time before the NPC starts speaking, because Mantella must generate extra N sentences before it knows which ones to drop. The higher the value, the greater the delay."""
+        return ConfigValueInt("drop_last_sentences_single", "Drop Last Sentences (Single NPC)", description, 0, 0, 999, tags=[ConfigValueTag.basic])
     
     @staticmethod
     def get_custom_token_count_config_value() -> ConfigValue:
@@ -302,9 +312,9 @@ class LLMDefinitions:
 
     @staticmethod
     def get_multi_npc_bios_only_config_value() -> ConfigValue:
-        description = """Send only character bios to the LLM in multi-NPC conversations.
-                        When enabled, conversation summaries are omitted from prompts for multi-NPC chats. Other behaviors remain unchanged."""
-        return ConfigValueBool("multi_npc_bios_only", "Send Only Bios (Multi-NPC)", description, False, tags=[ConfigValueTag.share_row, ConfigValueTag.advanced])
+        description = """Send only character bios to the LLM in single-NPC and multi-NPC conversations.
+                        When enabled, conversation summaries are omitted from prompts. Other behaviors remain unchanged."""
+        return ConfigValueBool("multi_npc_bios_only", "Send Only Bios (Single + Multi)", description, False, tags=[ConfigValueTag.share_row, ConfigValueTag.advanced])
 
     @staticmethod
     def get_enable_bio_section_filter_config_value() -> ConfigValue:
