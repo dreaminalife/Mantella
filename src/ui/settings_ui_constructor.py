@@ -604,7 +604,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
         initial_type_display = type_choices[0]
         initial_type = PromptProfileManager.identifier_for_display(initial_type_display) or "skyrim_prompt"
         initial_names = manager.get_profile_names(initial_type)
-        initial_edit = initial_names[0] if initial_names else None
+        initial_edit = manager.get_default_edit_name(initial_type)
         initial_text = manager.get_profile_text(initial_type, initial_edit) if initial_edit else ""
         initial_active = manager.get_active_name(initial_type) or none_label
 
@@ -678,8 +678,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
 
         def on_type_change(type_display: str):
             prompt_type = type_id(type_display)
-            names = manager.get_profile_names(prompt_type)
-            selected = names[0] if names else None
+            selected = manager.get_default_edit_name(prompt_type)
             text = manager.get_profile_text(prompt_type, selected) if selected else ""
             return (
                 manager.supported_variables_markdown(prompt_type),
@@ -744,8 +743,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 return msg, error_panel(msg, True), gr.update(), selected or "", gr.update(), gr.update()
             if was_active:
                 notify_if_needed(True)
-            names = manager.get_profile_names(prompt_type)
-            next_selected = names[0] if names else None
+            next_selected = manager.get_default_edit_name(prompt_type)
             next_text = manager.get_profile_text(prompt_type, next_selected) if next_selected else ""
             return (
                 msg,

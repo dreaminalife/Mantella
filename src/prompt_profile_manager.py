@@ -142,6 +142,14 @@ class PromptProfileManager:
             return name
         return None
 
+    def get_default_edit_name(self, prompt_type: str) -> Optional[str]:
+        """Profile to show in the editor: the active one, or the first name if none is active."""
+        names = self.get_profile_names(prompt_type)
+        active = self.get_active_name(prompt_type)
+        if active in names:
+            return active
+        return names[0] if names else None
+
     def get_active_text(self, prompt_type: str) -> Optional[str]:
         name = self.get_active_name(prompt_type)
         if not name:
