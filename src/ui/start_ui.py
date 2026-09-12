@@ -49,6 +49,9 @@ class StartUI(routeable):
             if not cf.is_hidden:
                 with gr.Tab(cf.name):
                     cf.accept_visitor(self.__constructor)
+                if cf.name == "Prompt Profiles":
+                    with gr.Tab("Live Conversation"):
+                        self.__generate_live_conversation_page()
         
         # Set up model dependencies after all UI elements are created
         self.__constructor.setup_model_dependencies()
@@ -69,6 +72,126 @@ class StartUI(routeable):
             "Currently it only works with Mantella below v 0.14.\n\n"
             f"See the full feature docs here:\n\n"
             f"**[{docs_url}]({docs_url})**"
+        )
+
+    def __generate_live_conversation_page(self):
+        gr.Markdown(
+            "Edit the active conversation in real time. When the model returns gibberish, click **Reload** to fetch the current history, fix the bad text in the JSON, then click **Save** to apply. Use **Undo last round** to remove the last player turn and everything after it, **Undo NPC reply** to keep the player line and drop only the reply, or **Remove last user message** to drop the last player line when it is the most recent message. All information is preserved in the JSON format."
+        )
+        live_conversation_editor = gr.Text(value="", lines=20, label="Conversation (JSON)", placeholder="Click Reload to fetch current conversation. Edit the JSON and click Save to apply changes.")
+        with gr.Row():
+            live_reload_btn = gr.Button("Reload", variant="secondary")
+            live_save_btn = gr.Button("Save", variant="primary")
+            live_undo_btn = gr.Button("Undo last round", variant="secondary")
+            live_undo_npc_reply_btn = gr.Button("Undo NPC reply", variant="secondary")
+            live_remove_last_user_btn = gr.Button("Remove last user message", variant="secondary")
+        live_conversation_info = gr.Markdown(value="", visible=True)
+
+        def on_live_reload():
+            try:
+                from src.ui import settings_ui_constructor as sui
+                gm = getattr(sui, '_game_manager_ref', None)
+                if not gm:
+                    return "", " No game manager. Start the game first."
+                json_str = gm.get_conversation_as_json()
+                if json_str is None:
+                    return "", " No active conversation, or conversation has no messages yet."
+                return json_str, " Reloaded current conversation."
+            except Exception as e:
+                logging.error(f"Live conversation reload failed: {e}", exc_info=True)
+                return "", f" Reload failed: {e}"
+
+        def on_live_save(json_str: str):
+            if not json_str or not json_str.strip():
+                return " Enter or load conversation JSON first."
+            try:
+                from src.ui import settings_ui_constructor as sui
+                gm = getattr(sui, '_game_manager_ref', None)
+                if not gm:
+                    return " No game manager. Start the game first."
+                ok = gm.apply_conversation_from_json(json_str.strip())
+                if ok:
+                    return " Conversation updated successfully."
+                return " Apply failed. Check logs."
+            except Exception as e:
+                logging.error(f"Live conversation save failed: {e}", exc_info=True)
+                return f" Save failed: {e}"
+
+        def on_live_undo():
+            try:
+                from src.ui import settings_ui_constructor as sui
+                gm = getattr(sui, '_game_manager_ref', None)
+                if not gm:
+                    return "", " No game manager. Start the game first."
+                result = gm.undo_last_conversation_round()
+                if result is None:
+                    return "", " No active conversation."
+                json_str = gm.get_conversation_as_json() or ""
+                if result:
+                    return json_str, " Undid last round of talk."
+                return json_str, " No player turn to undo."
+            except Exception as e:
+                logging.error(f"Live conversation undo failed: {e}", exc_info=True)
+                return "", f" Undo failed: {e}"
+
+        def on_live_undo_npc_reply():
+            try:
+                from src.ui import settings_ui_constructor as sui
+                gm = getattr(sui, '_game_manager_ref', None)
+                if not gm:
+                    return "", " No game manager. Start the game first."
+                result = gm.undo_last_npc_reply()
+                if result is None:
+                    return "", " No active conversation."
+                json_str = gm.get_conversation_as_json() or ""
+                if result:
+                    return json_str, " Undid last NPC reply."
+                return json_str, " No NPC reply to undo."
+            except Exception as e:
+                logging.error(f"Live conversation undo NPC reply failed: {e}", exc_info=True)
+                return "", f" Undo NPC reply failed: {e}"
+
+        def on_live_remove_last_user_message():
+            try:
+                from src.ui import settings_ui_constructor as sui
+                gm = getattr(sui, '_game_manager_ref', None)
+                if not gm:
+                    return "", " No game manager. Start the game first."
+                result = gm.undo_last_user_message()
+                if result is None:
+                    return "", " No active conversation."
+                json_str = gm.get_conversation_as_json() or ""
+                if result:
+                    return json_str, " Removed last user message."
+                return json_str, " Last message is not from the user."
+            except Exception as e:
+                logging.error(f"Live conversation remove last user message failed: {e}", exc_info=True)
+                return "", f" Remove last user message failed: {e}"
+
+        live_reload_btn.click(
+            on_live_reload,
+            inputs=[],
+            outputs=[live_conversation_editor, live_conversation_info],
+        )
+        live_save_btn.click(
+            on_live_save,
+            inputs=[live_conversation_editor],
+            outputs=[live_conversation_info],
+        )
+        live_undo_btn.click(
+            on_live_undo,
+            inputs=[],
+            outputs=[live_conversation_editor, live_conversation_info],
+        )
+        live_undo_npc_reply_btn.click(
+            on_live_undo_npc_reply,
+            inputs=[],
+            outputs=[live_conversation_editor, live_conversation_info],
+        )
+        live_remove_last_user_btn.click(
+            on_live_remove_last_user_message,
+            inputs=[],
+            outputs=[live_conversation_editor, live_conversation_info],
         )
 
     def __generate_bio_editor_page(self):
@@ -965,19 +1088,6 @@ class StartUI(routeable):
                     save_summary_btn = gr.Button("Save Summary", variant="primary", interactive=False)
                     refresh_summaries_btn = gr.Button("Refresh summaries", variant="secondary")
 
-            # --- Live Conversation Editor ---
-            with gr.Accordion(label="Live Conversation Editor", open=True):
-                gr.Markdown(
-                    "Edit the active conversation in real time. When the model returns gibberish, click **Reload** to fetch the current history, fix the bad text in the JSON, then click **Save** to apply. Use **Undo last round** to remove the last player turn and everything after it, or **Undo NPC reply** to keep the player line and drop only the reply. All information is preserved in the JSON format."
-                )
-                live_conversation_editor = gr.Text(value="", lines=20, label="Conversation (JSON)", placeholder="Click Reload to fetch current conversation. Edit the JSON and click Save to apply changes.")
-                with gr.Row():
-                    live_reload_btn = gr.Button("Reload", variant="secondary")
-                    live_save_btn = gr.Button("Save", variant="primary")
-                    live_undo_btn = gr.Button("Undo last round", variant="secondary")
-                    live_undo_npc_reply_btn = gr.Button("Undo NPC reply", variant="secondary")
-                live_conversation_info = gr.Markdown(value="", visible=True)
-
             # --- LLM Request section ---
             with gr.Accordion(label="Bio Editor – LLM Request", open=True):
                 gr.Markdown("Use AI to generate or enhance character bios. Configure prompts, select an LLM service and model, then send requests to generate new bio content based on existing character information.")
@@ -1028,6 +1138,7 @@ class StartUI(routeable):
                     update_models_btn = gr.Button("Update models", variant="secondary")
                 with gr.Row():
                     apply_profile_checkbox = gr.Checkbox(value=config.definitions.get_bool_value("bio_llm_apply_profile"), label="Apply model profile for this request")
+                    omit_stop_checkbox = gr.Checkbox(value=config.definitions.get_bool_value("bio_llm_omit_stop"), label="Remove stop sequences from this request")
                     temp_override = gr.Number(value=config.definitions.get_float_value("bio_llm_temperature_override"), label="Temperature override (-1 to ignore)", precision=2)
                     max_tokens_override = gr.Number(value=config.definitions.get_int_value("bio_llm_max_tokens_override"), label="Max tokens override (-1 to ignore)", precision=0)
                 send_request_btn = gr.Button("Send Request", variant="primary")
@@ -1303,7 +1414,7 @@ class StartUI(routeable):
                     ml = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'google/gemma-2-9b-it:free', False)
                     return gr.Dropdown(value=ml.default_model, choices=ml.available_models, multiselect=False, allow_custom_value=ml.allows_manual_model_input, label="Model")
 
-            def on_send_llm_request(label: str, df: pd.DataFrame, l2k: dict[str, str], world_id: str, raw_prompt: str, bio_text_ui: str, summary_text_ui: str, params_text: str, apply_profile: bool, temp_ovr: float, max_tokens_ovr: int, srv: str, mdl: str):
+            def on_send_llm_request(label: str, df: pd.DataFrame, l2k: dict[str, str], world_id: str, raw_prompt: str, bio_text_ui: str, summary_text_ui: str, params_text: str, apply_profile: bool, omit_stop: bool, temp_ovr: float, max_tokens_ovr: int, srv: str, mdl: str):
                 # Resolve variables from current selection
                 try:
                     # Always reload latest bio from df for the selected label
@@ -1362,6 +1473,8 @@ class StartUI(routeable):
                             params_override["max_tokens"] = int(max_tokens_ovr)
                     except Exception:
                         pass
+                    if omit_stop:
+                        params_override.pop("stop", None)
                     requester = BioLLMRequester(config)
                     reply = requester.send(srv, mdl, final_prompt, params_override=params_override)
                     if reply:
@@ -1723,97 +1836,24 @@ class StartUI(routeable):
                 except Exception:
                     pass
 
+            def on_omit_stop_change_persist(new_val: bool):
+                try:
+                    cv = config.definitions.get_config_value_definition("bio_llm_omit_stop")
+                    cv.value = bool(new_val)
+                    try:
+                        config._ConfigLoader__write_config_state(config.definitions)
+                    except Exception:
+                        pass
+                    config.update_config_loader_with_changed_config_values()
+                except Exception:
+                    pass
+
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[])
             npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn])
             save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
             refresh_summaries_btn.click(on_refresh_summaries, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, summary_editor, save_summary_btn])
             save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
-
-            def on_live_reload():
-                try:
-                    from src.ui import settings_ui_constructor as sui
-                    gm = getattr(sui, '_game_manager_ref', None)
-                    if not gm:
-                        return "", " No game manager. Start the game first."
-                    json_str = gm.get_conversation_as_json()
-                    if json_str is None:
-                        return "", " No active conversation, or conversation has no messages yet."
-                    return json_str, " Reloaded current conversation."
-                except Exception as e:
-                    logging.error(f"Live conversation reload failed: {e}", exc_info=True)
-                    return "", f" Reload failed: {e}"
-
-            def on_live_save(json_str: str):
-                if not json_str or not json_str.strip():
-                    return " Enter or load conversation JSON first."
-                try:
-                    from src.ui import settings_ui_constructor as sui
-                    gm = getattr(sui, '_game_manager_ref', None)
-                    if not gm:
-                        return " No game manager. Start the game first."
-                    ok = gm.apply_conversation_from_json(json_str.strip())
-                    if ok:
-                        return " Conversation updated successfully."
-                    return " Apply failed. Check logs."
-                except Exception as e:
-                    logging.error(f"Live conversation save failed: {e}", exc_info=True)
-                    return f" Save failed: {e}"
-
-            def on_live_undo():
-                try:
-                    from src.ui import settings_ui_constructor as sui
-                    gm = getattr(sui, '_game_manager_ref', None)
-                    if not gm:
-                        return "", " No game manager. Start the game first."
-                    result = gm.undo_last_conversation_round()
-                    if result is None:
-                        return "", " No active conversation."
-                    json_str = gm.get_conversation_as_json() or ""
-                    if result:
-                        return json_str, " Undid last round of talk."
-                    return json_str, " No player turn to undo."
-                except Exception as e:
-                    logging.error(f"Live conversation undo failed: {e}", exc_info=True)
-                    return "", f" Undo failed: {e}"
-
-            def on_live_undo_npc_reply():
-                try:
-                    from src.ui import settings_ui_constructor as sui
-                    gm = getattr(sui, '_game_manager_ref', None)
-                    if not gm:
-                        return "", " No game manager. Start the game first."
-                    result = gm.undo_last_npc_reply()
-                    if result is None:
-                        return "", " No active conversation."
-                    json_str = gm.get_conversation_as_json() or ""
-                    if result:
-                        return json_str, " Undid last NPC reply."
-                    return json_str, " No NPC reply to undo."
-                except Exception as e:
-                    logging.error(f"Live conversation undo NPC reply failed: {e}", exc_info=True)
-                    return "", f" Undo NPC reply failed: {e}"
-
-            live_reload_btn.click(
-                on_live_reload,
-                inputs=[],
-                outputs=[live_conversation_editor, live_conversation_info],
-            )
-            live_save_btn.click(
-                on_live_save,
-                inputs=[live_conversation_editor],
-                outputs=[live_conversation_info],
-            )
-            live_undo_btn.click(
-                on_live_undo,
-                inputs=[],
-                outputs=[live_conversation_editor, live_conversation_info],
-            )
-            live_undo_npc_reply_btn.click(
-                on_live_undo_npc_reply,
-                inputs=[],
-                outputs=[live_conversation_editor, live_conversation_info],
-            )
 
             # LLM section wiring
             # Prompt profile wiring
@@ -1825,9 +1865,10 @@ class StartUI(routeable):
             update_models_btn.click(on_service_change_persist, inputs=[service_dropdown], outputs=[model_dropdown])
             model_dropdown.change(on_model_change_persist, inputs=[model_dropdown], outputs=[model_dropdown])
             apply_profile_checkbox.change(on_apply_profile_change_persist, inputs=[apply_profile_checkbox], outputs=[])
+            omit_stop_checkbox.change(on_omit_stop_change_persist, inputs=[omit_stop_checkbox], outputs=[])
             temp_override.change(on_temp_override_persist, inputs=[temp_override], outputs=[])
             max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[])
-            send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
+            send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, omit_stop_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
             save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
 
