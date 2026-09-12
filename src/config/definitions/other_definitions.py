@@ -3,6 +3,7 @@ from src.config.types.config_value import ConfigValue, ConfigValueTag
 from src.config.types.config_value_bool import ConfigValueBool
 from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_string import ConfigValueString
+from src.config.types.config_value_selection import ConfigValueSelection
 from src.config.types.config_value_multi_selection import ConfigValueMultiSelection
 
 
@@ -132,6 +133,30 @@ class OtherDefinitions:
         return ConfigValueBool("conversation_summary_enabled", "Enable Conversation Summaries", description, True, tags=[ ConfigValueTag.share_row])
 
     @staticmethod
+    def get_inner_monologue_enabled_config_value() -> ConfigValue:
+        description = """Whether to generate and save a private inner monologue when a conversation summary is saved.
+                        Requires Enable Conversation Summaries to be on. If summaries are off, thoughts are not saved even if this is on.
+                        If enabled: after a summary is written, the NPC also records a first-person private thought.
+                        If disabled: summaries still save (when enabled), but no new private thoughts are written.
+                        Whether saved thoughts appear in the next conversation prompt is controlled separately by Private Thoughts in Prompt."""
+        return ConfigValueBool("inner_monologue_enabled", "Enable Private Thoughts", description, False, tags=[ ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_inner_monologue_load_mode_config_value() -> ConfigValue:
+        description = """Which private thoughts to include in the next conversation prompt.
+                        This does not change whether new thoughts are saved — that is controlled by Enable Private Thoughts.
+                        - Latest: include only the most recent private thought (default).
+                        - None: do not include private thoughts in the prompt, even if thought files already exist."""
+        return ConfigValueSelection(
+            "inner_monologue_load_mode",
+            "Private Thoughts in Prompt",
+            description,
+            "Latest",
+            ["Latest", "None"],
+            tags=[ConfigValueTag.advanced],
+        )
+
+    @staticmethod
     def get_random_llm_one_on_one_enabled_config_value() -> ConfigValue:
         return ConfigValueBool(
             identifier="random_llm_one_on_one_enabled",
@@ -161,7 +186,8 @@ class OtherDefinitions:
                 "from the one-on-one pool. This overrides per-character LLM overrides for that request."
             ),
             default_value=False,
-            tags=["random_llm", "conversation", ConfigValueTag.share_row]
+            tags=["random_llm", "conversation", ConfigValueTag.share_row],
+            row_group="random_llm_per_request_row",
         )
 
     @staticmethod
@@ -174,7 +200,8 @@ class OtherDefinitions:
                 "from the multi-NPC pool. This overrides the per-conversation multi-NPC model selection."
             ),
             default_value=False,
-            tags=["random_llm", "conversation", ConfigValueTag.share_row]
+            tags=["random_llm", "conversation", ConfigValueTag.share_row],
+            row_group="random_llm_per_request_row",
         )
 
     @staticmethod
@@ -184,7 +211,8 @@ class OtherDefinitions:
             name="LLM Pool (One-on-One)",
             description="JSON array of LLM models for random selection in one-on-one conversations. Edit this JSON directly to manage your pool.\n\nExample format:\n[\n  {\"service\": \"OpenRouter\", \"model\": \"deepseek/deepseek-chat\"},\n  {\"service\": \"OpenRouter\", \"model\": \"anthropic/claude-3-haiku\"},\n  {\"service\": \"OpenAI\", \"model\": \"gpt-4o-mini\"},\n  {\"service\": \"NanoGPT\", \"model\": \"gpt-4\"}\n]",
             default_value="[]",
-            tags=["random_llm", "conversation", "pool", ConfigValueTag.share_row]
+            tags=["random_llm", "conversation", "pool", ConfigValueTag.share_row],
+            row_group="llm_pool_row",
         )
 
     @staticmethod
@@ -194,7 +222,8 @@ class OtherDefinitions:
             name="LLM Pool (Multi-NPC)",
             description="JSON array of LLM models for random selection in multi-NPC conversations. Edit this JSON directly to manage your pool.\n\nExample format:\n[\n  {\"service\": \"OpenRouter\", \"model\": \"meta-llama/llama-3.1-8b-instruct\"},\n  {\"service\": \"OpenRouter\", \"model\": \"anthropic/claude-3-sonnet\"},\n  {\"service\": \"NanoGPT\", \"model\": \"gpt-4o\"}\n]",
             default_value="[]",
-            tags=["random_llm", "conversation", "pool", ConfigValueTag.share_row]
+            tags=["random_llm", "conversation", "pool", ConfigValueTag.share_row],
+            row_group="llm_pool_row",
         )
 
     @staticmethod
@@ -210,6 +239,13 @@ class OtherDefinitions:
                         Useful if the game crashes and Mantella doesn't receive the normal end-conversation event.
                         Note: When the conversation later ends normally, another summary may be generated again."""
         return ConfigValueString("save_summary_now", "Save Summary Now", description, "")
+
+    @staticmethod
+    def get_save_inner_thoughts_now_config_value() -> ConfigValue:
+        description = """Trigger saving private inner thoughts without ending the active conversation, and without writing a new summary.
+                        Useful if you want to capture the NPC's current unspoken take on the talk so far.
+                        Note: When the conversation later ends normally, another thought may be generated again."""
+        return ConfigValueString("save_inner_thoughts_now", "Save Inner Thoughts Now", description, "")
 
     @staticmethod
     def get_real_world_timestamp_config_value() -> ConfigValue:

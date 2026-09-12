@@ -136,6 +136,8 @@ class MantellaConfigValueDefinitionsNew:
  
         # llm_category.add_config_value(LLMDefinitions.get_try_filter_narration())
         llm_category.add_config_value(OtherDefinitions.get_conversation_summary_enabled_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_inner_monologue_enabled_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_inner_monologue_load_mode_config_value())
         
         llm_category.add_config_value(LLMDefinitions.get_multi_conversation_director_mode_config_value())
         
@@ -264,6 +266,7 @@ class MantellaConfigValueDefinitionsNew:
         prompts_category.add_config_value(PromptDefinitions.get_fallout4_radiant_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_memory_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_resummarize_prompt_config_value())
+        prompts_category.add_config_value(PromptDefinitions.get_inner_monologue_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_vision_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_start_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_end_prompt_config_value())
@@ -288,6 +291,7 @@ class MantellaConfigValueDefinitionsNew:
         other_category.add_config_value(OtherDefinitions.get_active_actions(actions))
         other_category.add_config_value(OtherDefinitions.get_reload_character_data_config_value())
         other_category.add_config_value(OtherDefinitions.get_save_summary_now_config_value())
+        other_category.add_config_value(OtherDefinitions.get_save_inner_thoughts_now_config_value())
         other_category.add_config_value(OtherDefinitions.get_real_world_timestamp_config_value())
         other_category.add_config_value(OtherDefinitions.get_max_count_events_config_value())
         other_category.add_config_value(OtherDefinitions.get_events_refresh_time_config_value())

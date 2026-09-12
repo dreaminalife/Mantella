@@ -14,6 +14,13 @@ import src.utils as utils
 import json
 import re
 from src.ui.bio_llm_requester import BioLLMRequester
+from src.ui.bio_editor_memory_files import (
+    conversations_base_dir,
+    load_latest_text,
+    pick_world_id,
+    save_latest_text,
+    thoughts_base_dir,
+)
 from src.llm.client_base import ClientBase
 
 class StartUI(routeable):
@@ -698,114 +705,58 @@ class StartUI(routeable):
         def _key_from_label(label: str, label_to_key: dict[str, str]) -> str:
             return label_to_key.get(label, "")
 
-        # --- Summaries helpers (no heavy reloads) ---
+        # --- Summary / private-thought file helpers (no heavy reloads) ---
         def _get_conversations_base_dir() -> str:
-            # Same structure as Gameable.conversation_folder_path
-            return os.path.join(config.save_folder, 'data', _get_game_folder_name(), 'conversations')
+            return conversations_base_dir(config.save_folder, _get_game_folder_name())
 
-        def _pick_world_id(base_dir: str) -> str:
-            try:
-                if not os.path.isdir(base_dir):
-                    return 'default'
-                world_ids = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
-                if not world_ids:
-                    return 'default'
-                if 'default' in world_ids:
-                    return 'default'
-                # choose most recently modified world folder
-                world_ids_sorted = sorted(world_ids, key=lambda d: os.path.getmtime(os.path.join(base_dir, d)), reverse=True)
-                return world_ids_sorted[0]
-            except Exception:
-                return 'default'
+        def _get_thoughts_base_dir() -> str:
+            return thoughts_base_dir(config.save_folder, _get_game_folder_name())
 
-        def _find_summary_folder_for_name(base_dir: str, world_id: str, base_name: str) -> str | None:
-            try:
-                world_path = os.path.join(base_dir, world_id)
-                if not os.path.isdir(world_path):
-                    return None
-                # Prefer name-ref folders if present
-                candidates: list[tuple[float, str]] = []
-                for d in os.listdir(world_path):
-                    dpath = os.path.join(world_path, d)
-                    if not os.path.isdir(dpath):
-                        continue
-                    if d == base_name or d.startswith(f"{base_name} - "):
-                        try:
-                            candidates.append((os.path.getmtime(dpath), dpath))
-                        except Exception:
-                            continue
-                if not candidates:
-                    return None
-                candidates.sort(key=lambda x: x[0], reverse=True)
-                return candidates[0][1]
-            except Exception:
-                return None
-
-        def _latest_summary_file_path(folder_path: str, base_name: str) -> tuple[str | None, int]:
-            try:
-                if not folder_path or not os.path.isdir(folder_path):
-                    return None, 1
-                prefix = f"{base_name}_summary_"
-                max_n = 0
-                for f in os.listdir(folder_path):
-                    if not f.endswith('.txt') or not f.startswith(prefix):
-                        continue
-                    try:
-                        n = int(os.path.splitext(f)[0].split('_')[-1])
-                        if n > max_n:
-                            max_n = n
-                    except Exception:
-                        continue
-                if max_n == 0:
-                    return None, 1
-                return os.path.join(folder_path, f"{base_name}_summary_{max_n}.txt"), max_n
-            except Exception:
-                return None, 1
+        def _base_name_from_label(label: str, l2k: dict[str, str]) -> str:
+            key = _key_from_label(label, l2k)
+            if key == "":
+                return ""
+            name, _, _ = _split_key(key)
+            return utils.remove_trailing_number(name)
 
         def _load_summary_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
             try:
-                key = _key_from_label(label, l2k)
-                if key == "":
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
                     return ""
-                name, _, _ = _split_key(key)
-                base_name = utils.remove_trailing_number(name)
-                base_dir = _get_conversations_base_dir()
-                folder = _find_summary_folder_for_name(base_dir, world_id, base_name)
-                if not folder:
-                    return ""
-                latest_path, _ = _latest_summary_file_path(folder, base_name)
-                if latest_path and os.path.exists(latest_path):
-                    with open(latest_path, 'r', encoding='utf-8') as f:
-                        return f.read().strip()
-                return ""
+                return load_latest_text(_get_conversations_base_dir(), world_id, base_name, "summary")
             except Exception as e:
                 logging.debug(f"Bio Editor: failed to load summary: {e}")
                 return ""
 
         def _save_summary_for_label(label: str, summary_text: str, l2k: dict[str, str], world_id: str) -> str:
             try:
-                key = _key_from_label(label, l2k)
-                if key == "":
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
                     return ""
-                name, _, _ = _split_key(key)
-                base_name = utils.remove_trailing_number(name)
-                base_dir = _get_conversations_base_dir()
-                world_path = os.path.join(base_dir, world_id)
-                os.makedirs(world_path, exist_ok=True)
-                folder = _find_summary_folder_for_name(base_dir, world_id, base_name)
-                if not folder:
-                    # default to name-only folder
-                    folder = os.path.join(world_path, base_name)
-                os.makedirs(folder, exist_ok=True)
-                latest_path, n = _latest_summary_file_path(folder, base_name)
-                target_path = latest_path or os.path.join(folder, f"{base_name}_summary_{n}.txt")
-                # Normalize text endings
-                content = (summary_text or "").rstrip() + "\n"
-                with open(target_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                return target_path.replace('\\', '/')
+                return save_latest_text(_get_conversations_base_dir(), world_id, base_name, "summary", summary_text)
             except Exception as e:
                 logging.error(f"Bio Editor: failed to save summary: {e}")
+                return ""
+
+        def _load_thoughts_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
+            try:
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
+                    return ""
+                return load_latest_text(_get_thoughts_base_dir(), world_id, base_name, "thoughts")
+            except Exception as e:
+                logging.debug(f"Bio Editor: failed to load private thoughts: {e}")
+                return ""
+
+        def _save_thoughts_for_label(label: str, thoughts_text: str, l2k: dict[str, str], world_id: str) -> str:
+            try:
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
+                    return ""
+                return save_latest_text(_get_thoughts_base_dir(), world_id, base_name, "thoughts", thoughts_text)
+            except Exception as e:
+                logging.error(f"Bio Editor: failed to save private thoughts: {e}")
                 return ""
 
         def _load_override_tags_for_label(label: str, label_to_key: dict[str, str], user_csv_path: str | None) -> str:
@@ -1036,7 +987,7 @@ class StartUI(routeable):
             state_label_to_key = gr.State(value=label_to_key)
             state_key_to_label = gr.State(value=key_to_label)
             # Remember chosen world id for summaries
-            initial_world_id = _pick_world_id(_get_conversations_base_dir())
+            initial_world_id = pick_world_id(_get_conversations_base_dir())
             state_world_id = gr.State(value=initial_world_id)
             _default_override_target = os.path.join(_get_personal_override_dir(), 'character_overrides.csv').replace('\\','/')
             override_csv_path = gr.Text(
@@ -1071,7 +1022,7 @@ class StartUI(routeable):
                 )
 
             with gr.Accordion(label="Bio Editor", open=True):
-                gr.Markdown("Manually edit character bios and conversation summaries. Select an NPC from the dropdown, modify their bio or summary, and save your changes.")
+                gr.Markdown("Manually edit character bios, conversation summaries, and private thoughts. Select an NPC from the dropdown, modify their bio, summary, or thoughts, and save your changes.")
                 npc_dropdown = gr.Dropdown(choices=labels, label="NPC", multiselect=False, allow_custom_value=False)
                 bio_editor = gr.Text(value="", lines=12, label="Bio")
                 tags_editor = gr.Text(value="", lines=2, label='Tags ("tags" column in override csv file only)', placeholder="Comma-separated tags from your personal override file")
@@ -1087,6 +1038,11 @@ class StartUI(routeable):
                 with gr.Row():
                     save_summary_btn = gr.Button("Save Summary", variant="primary", interactive=False)
                     refresh_summaries_btn = gr.Button("Refresh summaries", variant="secondary")
+
+                thoughts_editor = gr.Text(value="", lines=12, label="Private thoughts")
+                with gr.Row():
+                    save_thoughts_btn = gr.Button("Save Thoughts", variant="primary", interactive=False)
+                    refresh_thoughts_btn = gr.Button("Refresh thoughts", variant="secondary")
 
             # --- LLM Request section ---
             with gr.Accordion(label="Bio Editor – LLM Request", open=True):
@@ -1152,9 +1108,11 @@ class StartUI(routeable):
                 # Clear info and load bio + override tags; enable save when selection exists
                 bio = _load_bio_for_label(label, df, l2k)
                 summary = _load_summary_for_label(label, l2k, world_id)
+                thoughts = _load_thoughts_for_label(label, l2k, world_id)
                 override_tags = _load_override_tags_for_label(label, l2k, user_csv)
                 runtime_tags = _compute_runtime_tags_for_label(label, l2k)
-                return bio, summary, override_tags, runtime_tags, "", gr.Button(interactive=bool(label)), gr.Button(interactive=bool(label))
+                can_save = bool(label)
+                return bio, summary, thoughts, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save)
 
             def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str):
                 # Try to infer optional column values from current df row, if present
@@ -1295,6 +1253,10 @@ class StartUI(routeable):
             def on_refresh_summaries(label: str, l2k: dict[str, str], world_id: str):
                 summary = _load_summary_for_label(label, l2k, world_id)
                 return "Summaries refreshed.", summary, gr.Button(interactive=bool(label))
+
+            def on_refresh_thoughts(label: str, l2k: dict[str, str], world_id: str):
+                thoughts = _load_thoughts_for_label(label, l2k, world_id)
+                return "Thoughts refreshed.", thoughts, gr.Button(interactive=bool(label))
             # Prompt profiles handlers
             def _get_profiles_state():
                 try:
@@ -1374,6 +1336,11 @@ class StartUI(routeable):
             def on_save_summary(label: str, summary_text: str, l2k: dict[str, str], world_id: str):
                 path = _save_summary_for_label(label, summary_text, l2k, world_id)
                 info = f"Summary saved to: {path}" if path else "Summary save failed. Check logs."
+                return info
+
+            def on_save_thoughts(label: str, thoughts_text: str, l2k: dict[str, str], world_id: str):
+                path = _save_thoughts_for_label(label, thoughts_text, l2k, world_id)
+                info = f"Thoughts saved to: {path}" if path else "Thoughts save failed. Check logs."
                 return info
 
             # --- LLM helper handlers ---
@@ -1849,11 +1816,13 @@ class StartUI(routeable):
                     pass
 
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[])
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn])
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn])
             save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
             refresh_summaries_btn.click(on_refresh_summaries, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, summary_editor, save_summary_btn])
             save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
+            refresh_thoughts_btn.click(on_refresh_thoughts, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, thoughts_editor, save_thoughts_btn])
+            save_thoughts_btn.click(on_save_thoughts, inputs=[npc_dropdown, thoughts_editor, state_label_to_key, state_world_id], outputs=[info_line])
 
             # LLM section wiring
             # Prompt profile wiring

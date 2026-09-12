@@ -32,11 +32,26 @@ class Remembering(ABC):
         pass
 
     @abstractmethod
-    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False):
+    def get_private_thoughts_text(self, npcs_in_conversation: Characters, world_id: str) -> str:
+        """Single-NPC {private_thoughts} fill. Empty for multi-NPC / radiant."""
+        pass
+
+    @abstractmethod
+    def get_character_private_thought(self, character: Character, world_id: str) -> str:
+        """Latest private thought for one character, or empty string."""
+        pass
+
+    @abstractmethod
+    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False, save_timestamp: int | None = None):
         """Saves the current state of the conversation.
 
         Args:
             messages (message_thread): The messages in the conversation
             npcs_in_conversation (Characters): the NPCs to save for
         """
+        pass
+
+    @abstractmethod
+    def save_thoughts_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None):
+        """Generate and save private thoughts without writing a new conversation summary."""
         pass

@@ -56,6 +56,8 @@ class MantellaConfigValueDefinitionsClassic:
         conversation_category = ConfigValueGroup("Conversation", "Conversation", "Settings about the flow of a conversation", on_value_change_callback)
         conversation_category.add_config_value(OtherDefinitions.get_automatic_greeting_folder_config_value())
         conversation_category.add_config_value(OtherDefinitions.get_conversation_summary_enabled_config_value())
+        conversation_category.add_config_value(OtherDefinitions.get_inner_monologue_enabled_config_value())
+        conversation_category.add_config_value(OtherDefinitions.get_inner_monologue_load_mode_config_value())
         result.append(conversation_category)
         
         cleanup_category = ConfigValueGroup("Cleanup", "Cleanup", "", on_value_change_callback)
@@ -71,6 +73,7 @@ class MantellaConfigValueDefinitionsClassic:
         prompt_category.add_config_value(PromptDefinitions.get_radiant_end_prompt_config_value())
         prompt_category.add_config_value(PromptDefinitions.get_memory_prompt_config_value())
         prompt_category.add_config_value(PromptDefinitions.get_resummarize_prompt_config_value())
+        prompt_category.add_config_value(PromptDefinitions.get_inner_monologue_prompt_config_value())
         result.append(prompt_category)
         
         language_advanced_category = ConfigValueGroup("Language.Advanced", "Language advanced", "More advanced language settings.\nIf you are changing the base language to something else than 'en' you will most likely also want to adjust some of these ", on_value_change_callback)

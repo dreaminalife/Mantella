@@ -575,6 +575,29 @@ class Conversation:
             logging.error(f"save_summary_only failed: {e}", exc_info=True)
 
     @utils.time_it
+    def save_inner_thoughts_only(self) -> None:
+        """Triggers a private-thoughts save WITHOUT ending the conversation or writing a new summary.
+
+        Snapshots persistent messages so the rememberer can safely mutate the copy.
+        """
+        try:
+            messages_snapshot = message_thread(self.__context.config, None)
+            messages_snapshot.add_non_system_messages(self.__messages.get_persistent_messages())
+            characters_object = Characters()
+            for npc in self.__context.npcs_in_conversation.get_all_characters():
+                if not npc.is_player_character:
+                    characters_object.add_or_update_character(npc)
+            save_timestamp = int(time.time())
+            self.__rememberer.save_thoughts_only(
+                messages_snapshot,
+                characters_object,
+                self.__context.world_id,
+                save_timestamp,
+            )
+        except Exception as e:
+            logging.error(f"save_inner_thoughts_only failed: {e}", exc_info=True)
+
+    @utils.time_it
     def get_conversation_as_json(self) -> str | None:
         """Returns the current persistent messages as a lossless JSON string for the live editor.
         Returns None if there are no persistent messages.
@@ -697,7 +720,14 @@ class Conversation:
         # unless explicitly forced (e.g., manual button).
         if force or self.__context.config.conversation_summary_enabled:
             # Save the summary
-            self.__rememberer.save_conversation_state(messages_to_summarize, characters_object, self.__context.world_id, is_reload)
+            save_timestamp = int(time.time())
+            self.__rememberer.save_conversation_state(
+                messages_to_summarize,
+                characters_object,
+                self.__context.world_id,
+                is_reload,
+                save_timestamp=save_timestamp,
+            )
             # Save the log
             self.__save_conversation_log_for_characters(characters_to_save_for)
 

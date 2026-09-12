@@ -568,6 +568,10 @@ class context:
         """
         character_sections = []
         non_player_characters = self.get_characters_excluding_player().get_all_characters()
+        wrap_thought = None
+        if include_memories and len(non_player_characters) > 1:
+            from src.remember.inner_monologue import wrap_private_thought
+            wrap_thought = wrap_private_thought
         
         for character in non_player_characters:
             # Get the bio
@@ -581,14 +585,17 @@ class context:
                 if summary:
                     summary = self._resolve_bio_player_name(summary)
             
-            # Combine bio and summary for this character
+            # Single NPC: private thoughts use {private_thoughts}. Multi-NPC: append to this memory.
             if len(non_player_characters) == 1:
-                # Single character - no delimiters needed
                 section = bio
                 if summary:
                     section += f"\n\nBelow is a summary of past events:\n{summary}"
             else:
-                # Multiple characters - wrap everything with character information delimiters
+                if include_memories and wrap_thought:
+                    thought = wrap_thought(self.__rememberer.get_character_private_thought(character, self.__world_id))
+                    if thought:
+                        thought = self._resolve_bio_player_name(thought)
+                        summary = f"{summary}\n\n{thought}" if summary else thought
                 section = f"[This is the beginning of {character.name}'s information, other people in the conversation should not be aware of these info, don't have access to these, and should not mention or comment on these info.]\n"
                 section += f"[This is the beginning of {character.name}'s bio, other people in the conversation should not be aware of these info, don't have access to these, and should not mention or comment on these info.]\n{bio}\n[This is the end of {character.name}'s bio, other people in the conversation should not be aware of these info, don't have access to these, and should not mention or comment on these info.]"
                 if summary:
@@ -664,6 +671,8 @@ class context:
             "conversation_summary",
             "conversation_summaries",
             "bios_and_summaries",
+            "private_thoughts",
+            "private_thought",
             "lorebook",
         }
 
@@ -738,10 +747,16 @@ class context:
         else:
             self.__prev_game_time = None, time_group
         conversation_summaries = ""
+        private_thoughts = ""
+        is_single_npc = len(self.get_characters_excluding_player()) == 1
         if include_memories:
             conversation_summaries = self.__rememberer.get_prompt_text(self.get_characters_excluding_player(), self.__world_id)
             if conversation_summaries:
                 conversation_summaries = self._resolve_bio_player_name(conversation_summaries)
+            if is_single_npc:
+                private_thoughts = self.__rememberer.get_private_thoughts_text(self.get_characters_excluding_player(), self.__world_id)
+                if private_thoughts:
+                    private_thoughts = self._resolve_bio_player_name(private_thoughts)
         actions = self.__get_action_texts(actions_for_prompt)
         variable_values = {
             "player_name": player_name,
@@ -762,14 +777,17 @@ class context:
             "conversation_summary": conversation_summaries,
             "conversation_summaries": conversation_summaries,
             "bios_and_summaries": bios_and_summaries,
+            "private_thoughts": private_thoughts,
+            "private_thought": private_thoughts,
             "actions": actions,
         }
         lorebook_text = self.__build_lorebook_text(prompt, variable_values, messages_for_lorebook)
 
-        removal_content: list[tuple[str, str, str]] = [
-            (bios, conversation_summaries, bios_and_summaries),
-            (bios, "", ""),
-            ("", "", ""),
+        removal_content: list[tuple[str, str, str, str]] = [
+            (bios, conversation_summaries, bios_and_summaries, private_thoughts),
+            (bios, conversation_summaries, bios_and_summaries, ""),
+            (bios, "", "", ""),
+            ("", "", "", ""),
         ]
         have_bios_been_dropped = False
         have_summaries_been_dropped = False
@@ -794,6 +812,8 @@ class context:
                 conversation_summary=content[1],
                 conversation_summaries=content[1],
                 bios_and_summaries=content[2],
+                private_thoughts=content[3],
+                private_thought=content[3],
                 actions = actions,
                 lorebook=lorebook_text,
                 )

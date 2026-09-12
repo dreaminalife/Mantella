@@ -1025,6 +1025,26 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Save Summary", on_save_summary_click))
+
+        elif config_value.identifier == "save_inner_thoughts_now":
+            def on_save_inner_thoughts_click() -> str:
+                """Trigger private-thought saving without ending the current conversation."""
+                global _game_manager_ref
+                try:
+                    if _game_manager_ref:
+                        logging.info("Manual inner-thoughts trigger via UI button...")
+                        ok = _game_manager_ref.save_inner_thoughts_only()
+                        if ok:
+                            return " Inner thoughts save triggered (conversation continues)."
+                        return " No active conversation to save thoughts for."
+                    else:
+                        logging.warning("Manual inner thoughts clicked, but game manager reference is not set. The game might not have been started.")
+                        return " Game not started. Please start the game first."
+                except Exception as e:
+                    logging.error(f"Error triggering inner-thoughts save via UI: {e}", exc_info=True)
+                    return f" An error occurred: {str(e)}"
+
+            additional_buttons.append(("Save Inner Thoughts", on_save_inner_thoughts_click))
         
         elif config_value.identifier == "real_world_timestamp":
             def on_get_timestamp_click() -> str:

@@ -25,6 +25,8 @@ class PromptDefinitions:
                                 "conversation_summary",
                                 "conversation_summaries",
                                 "bios_and_summaries",
+                                "private_thoughts",
+                                "private_thought",
                                 "actions",
                                 "lorebook"]
     
@@ -43,6 +45,8 @@ class PromptDefinitions:
                                 "conversation_summary",
                                 "conversation_summaries",
                                 "bios_and_summaries",
+                                "private_thoughts",
+                                "private_thought",
                                 "actions",
                                 "lorebook"]
     
@@ -55,6 +59,18 @@ class PromptDefinitions:
         "game",
         "player_name",
         "lorebook"
+        ]
+
+    ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE = [
+        "bios",
+        "names",
+        "name",
+        "language",
+        "game",
+        "player_name",
+        "lorebook",
+        "previous_thoughts",
+        "conversation_summary",
         ]
     
     BASE_PROMPT_DESCRIPTION = """The starting prompt sent to the LLM when an NPC is selected.
@@ -71,6 +87,7 @@ class PromptDefinitions:
                                 time_group = the time of day in words (eg "in the morning", "at night")
                                 language = the selected language
                                 conversation_summary = reads the latest conversation summaries for the NPC stored in data/conversations/NPC_Name/NPC_Name_summary_X.txt
+                                private_thoughts = the NPC's latest private inner monologue as its own block (single-NPC only; not used in multi-NPC / radiant)
                                 player_name = the name of the player character
                                 player_description = a description of the player character (needs to be added in game or using the config value)
                                 player_equipment = a basic description of the equipment the player character carries
@@ -91,7 +108,7 @@ class PromptDefinitions:
                                 time = the time of day as a number (eg 1, 22)
                                 time_group = the time of day in words (eg "in the morning", "at night")
                                 language = the selected language
-                                conversation_summary = reads the latest conversation summaries for the NPCs stored in data/conversations/NPC_Name/NPC_Name_summary_X.txt
+                                conversation_summary = reads the latest conversation summaries for the NPCs stored in data/conversations/NPC_Name/NPC_Name_summary_X.txt. Each NPC's latest private thought is appended at the end of that NPC's memory.
                                 equipment = a basic description of the equipment the NPCs carry
                                 actions = instructions for the LLM to trigger actions"""
         
@@ -124,7 +141,8 @@ class PromptDefinitions:
                                 Remember to stay in character.
                                 {actions}
                                 The conversation takes place in {language}.
-                                {conversation_summary}"""
+                                {conversation_summary}
+                                {private_thoughts}"""
         return ConfigValueString("skyrim_prompt","Skyrim Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION,skyrim_prompt_value,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
 
     @staticmethod
@@ -262,14 +280,15 @@ Content Guidelines:
                             {actions}
                             The time is {time} {time_group}.
                             The conversation takes place in {language}.
-                            {conversation_summary}"""
+                            {conversation_summary}
+                            {private_thoughts}"""
         return ConfigValueString("fallout4_prompt","Fallout 4 Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION,fallout4_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
 
     @staticmethod
     def get_fallout4_multi_npc_prompt_config_value() -> ConfigValue:
         fallout4_multi_npc_prompt = """The following is a conversation in {location} in the post-apocalyptic Commonwealth of Fallout between {names_w_player}. Here are their backgrounds: 
                             {bios} 
-                            And here are their conversation histories: {conversation_summaries} 
+                            And here are their conversation histories: {conversation_summaries}
                             The time is {time} {time_group}.
                             You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'. 
                             Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable). 
@@ -281,7 +300,7 @@ Content Guidelines:
     @staticmethod
     def get_fallout4_radiant_prompt_config_value() -> ConfigValue:
         fallout4_radiant_prompt = """The following is a conversation in {location} in the post-apocalyptic Commonwealth of Fallout between {names}. Here are their backgrounds: {bios} 
-                            And here are their conversation histories: {conversation_summaries} 
+                            And here are their conversation histories: {conversation_summaries}
                             The time is {time} {time_group}.
                             You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'. 
                             Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable). 
@@ -322,6 +341,30 @@ Content Guidelines:
         resummarize_prompt = """You are tasked with summarizing the conversation history between {name} (the assistant) and the player (the user) / other characters. These conversations take place in {game}.
                                             Each paragraph represents a conversation at a new point in time. Please summarize these conversations into a single paragraph in {language}."""
         return ConfigValueString("resummarize_prompt","Resummarize Prompt",resummarize_prompt_description,resummarize_prompt,[PromptDefinitions.PromptChecker(["name", "language", "game", "player_name", "lorebook"])])
+
+    @staticmethod
+    def get_inner_monologue_prompt_config_value() -> ConfigValue:
+        inner_monologue_prompt_description = """The prompt used to generate an NPC's private inner monologue after a conversation is summarized.
+                                            Thoughts are stored separately from memories in data/game/thoughts/NPC_Name/NPC_Name_thoughts_X.txt.
+                                            If you would like to edit this, please ensure that the below dynamic variables are contained in curly brackets {}:
+                                               bios = the background information/bios of the characters involved
+                                               names = the names of the NPCs involved
+                                               name = the NPC whose private thoughts are being written
+                                               language = the selected language
+                                               game = the game selected
+                                               player_name = the name of the player character
+                                               previous_thoughts = this NPC's earlier private thoughts
+                                               conversation_summary = the factual summary just written for this conversation
+                                               lorebook = lorebook entries matched from the prompt context and conversation history"""
+        inner_monologue_prompt = """You are {name}. After this conversation, write your private inner thoughts in the first person. These thoughts are never spoken aloud and other people must never learn them. Cover how you feel about what just happened, how you feel about {player_name} or others involved, and what you want or will refuse to say next time.
+                                            Here is your background:
+                                            {bios}
+                                            Here is the factual summary of what just happened:
+                                            {conversation_summary}
+                                            Your previous private thoughts (if any):
+                                            {previous_thoughts}
+                                            Write a single short paragraph in {language}. These conversations take place in {game}."""
+        return ConfigValueString("inner_monologue_prompt","Inner Monologue Prompt",inner_monologue_prompt_description,inner_monologue_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE)])
     
     @staticmethod
     def get_vision_prompt_config_value() -> ConfigValue:
@@ -357,6 +400,7 @@ Content Guidelines:
             ("skyrim_multi_npc_director_prompt", "Skyrim Multi-NPC Director Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
             ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
             ("memory_prompt", "Memory Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MEMORY),
+            ("inner_monologue_prompt", "Inner Monologue Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE),
             ("resummarize_prompt", "Resummarize Prompt", ["name", "language", "game", "player_name", "lorebook"]),
             ("vision_prompt", "Vision Prompt", ["game"]),
             ("radiant_start_prompt", "Radiant Start Prompt", []),

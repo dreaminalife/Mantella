@@ -348,5 +348,5 @@ class LLMDefinitions:
                         When enabled, multi-NPC conversations will use a specialized director-style prompt instead of the standard multi-NPC prompt.
                         This mode provides more detailed instructions for managing group conversations.
                         Note: This only affects Skyrim multi-NPC conversations, not radiant or single-NPC conversations."""
-        return ConfigValueBool("multi_conversation_director_mode", "Multi Conversation Director Mode", description, False, tags=[ ConfigValueTag.share_row])
+        return ConfigValueBool("multi_conversation_director_mode", "Multi Conversation Director Mode", description, False)
 

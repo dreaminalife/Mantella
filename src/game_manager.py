@@ -10,6 +10,7 @@ from src.llm.sentence import Sentence
 from src.output_manager import ChatManager
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
+from src.remember.inner_monologue import InnerMonologue
 from src.config.config_loader import ConfigLoader
 from src.llm.llm_client import LLMClient
 from src.conversation.conversation import Conversation
@@ -132,7 +133,7 @@ class GameStateManager:
         # Clear per-character client cache to force recreation with new settings
         chat_manager.clear_per_character_client_cache()
             
-        self.__rememberer: Remembering = Summaries(game, config, client, language_info['language'], summary_client)
+        self.__rememberer: Remembering = self._create_rememberer(game, config, client, summary_client)
 
         self.__talk: Conversation | None = None
         self.__mic_input: bool = False
@@ -158,6 +159,17 @@ class GameStateManager:
             client._sonnet_cache_connector = SonnetCacheConnector(True)
         except Exception as e:
             logging.debug(f"Failed to attach Sonnet cache connector to {client_context}: {e}")
+
+    def _create_rememberer(self, game: Gameable, config: ConfigLoader, client: LLMClient, summary_client) -> Summaries:
+        inner_monologue = InnerMonologue(game, config, client, self.__language_info['language'], summary_client)
+        return Summaries(
+            game,
+            config,
+            client,
+            self.__language_info['language'],
+            summary_client,
+            inner_monologue=inner_monologue,
+        )
 
     @utils.time_it
     def hot_swap_settings(self, game: Gameable, chat_manager: ChatManager, config: ConfigLoader, llm_client: LLMClient, secret_key_file: str, image_secret_key_file: str) -> bool:
@@ -277,7 +289,7 @@ class GameStateManager:
                 multi_npc_client = None
             
             # Update rememberer with new config and summary client
-            self.__rememberer = Summaries(game, config, self.__client, self.__language_info['language'], summary_client)
+            self.__rememberer = self._create_rememberer(game, config, self.__client, summary_client)
             
             # Update chat manager with multi-NPC client
             chat_manager.update_multi_npc_client(multi_npc_client)
@@ -708,6 +720,22 @@ class GameStateManager:
         self.__talk.save_summary_only()
         return True
 
+    @utils.time_it
+    def save_inner_thoughts_only(self) -> bool:
+        """Trigger private-thought saving without ending the active conversation.
+
+        Returns:
+            bool: True if a conversation existed and the save was triggered, False otherwise.
+        """
+        if not self.__talk:
+            return False
+        try:
+            self.refresh_summary_client_from_ui_config()
+        except Exception as e:
+            logging.error(f"Failed to refresh summary client before manual inner-thoughts save: {e}", exc_info=True)
+        self.__talk.save_inner_thoughts_only()
+        return True
+
     def get_conversation_as_json(self) -> str | None:
         """Get the current conversation as lossless JSON for the live editor. Returns None if no active conversation."""
         if not self.__talk:
@@ -1009,7 +1037,7 @@ class GameStateManager:
                 self.__game = Skyrim(self.__config)
             
             # Update the rememberer with the new game instance
-            self.__rememberer = Summaries(self.__game, self.__config, self.__client, self.__language_info['language'], None)
+            self.__rememberer = self._create_rememberer(self.__game, self.__config, self.__client, None)
             
             logging.info("Character data reload completed successfully.")
             return True
