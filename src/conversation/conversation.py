@@ -651,6 +651,26 @@ class Conversation:
             return True
 
     @utils.time_it
+    def undo_last_user_message(self) -> bool:
+        """Removes the last message only if it is a real player UserMessage.
+
+        Stops any in-flight generation and clears the sentence queue. Returns True if
+        the last message was a player turn and was removed.
+        """
+        with self.__generation_start_lock:
+            self.__stop_generation()
+            self.__sentences.clear()
+
+            persistent = self.__messages.get_persistent_messages()
+            if not persistent:
+                return False
+            last = persistent[-1]
+            if not isinstance(last, UserMessage) or last.is_system_generated_message:
+                return False
+            self.__messages.replace_persistent_messages(persistent[:-1])
+            return True
+
+    @utils.time_it
     def __save_conversation_log_for_characters(self, characters_to_save_for: list[Character] ):
         """Saves all messages of the conversation to a json file for each NPC in the conversation"""
         for npc in characters_to_save_for:

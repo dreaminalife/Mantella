@@ -739,6 +739,16 @@ class GameStateManager:
         if not self.__talk:
             return None
         return self.__talk.undo_last_npc_reply()
+
+    def undo_last_user_message(self) -> bool | None:
+        """Remove the last message if it is a real player UserMessage.
+
+        Returns None if there is no active conversation, True if the last user
+        message was removed, False if the last message is not a player turn.
+        """
+        if not self.__talk:
+            return None
+        return self.__talk.undo_last_user_message()
     
     def process_stt_setup(self, input_json: dict[str, Any]):
         '''Process the STT setup (mic / text / push-to-talk) based on the settings passed in the input JSON'''
