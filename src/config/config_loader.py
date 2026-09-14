@@ -414,6 +414,19 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             except Exception as e:
                 logging.error(f"Error parsing multi-NPC LLM pool: {e}")
                 self.llm_pool_multi_npc = []
+
+            self.sequential_llm_one_on_one_per_request_enabled = self.__definitions.get_bool_value("sequential_llm_one_on_one_per_request_enabled")
+            self.sequential_llm_multi_npc_per_request_enabled = self.__definitions.get_bool_value("sequential_llm_multi_npc_per_request_enabled")
+            try:
+                self.sequential_llm_pool_one_on_one = json.loads(self.__definitions.get_string_value("sequential_llm_pool_one_on_one"))
+            except Exception as e:
+                logging.error(f"Error parsing sequential one-on-one LLM pool: {e}")
+                self.sequential_llm_pool_one_on_one = []
+            try:
+                self.sequential_llm_pool_multi_npc = json.loads(self.__definitions.get_string_value("sequential_llm_pool_multi_npc"))
+            except Exception as e:
+                logging.error(f"Error parsing sequential multi-NPC LLM pool: {e}")
+                self.sequential_llm_pool_multi_npc = []
             
             self.max_count_events = self.__definitions.get_int_value("max_count_events")
             self.events_refresh_time = self.__definitions.get_int_value("events_refresh_time")

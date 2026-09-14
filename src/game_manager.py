@@ -426,6 +426,8 @@ class GameStateManager:
             self.__talk.end()
             self.__talk = None
 
+        self.__chat_manager.reset_sequential_llm_selection()
+
         world_id = "default"
         if input_json.__contains__(comm_consts.KEY_STARTCONVERSATION_WORLDID):
             world_id = input_json[comm_consts.KEY_STARTCONVERSATION_WORLDID]

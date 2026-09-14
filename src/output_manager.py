@@ -33,6 +33,7 @@ from src.tts.ttsable import TTSable
 from src.tts.synthesization_options import SynthesizationOptions
 from src.random_llm_selector import RandomLLMSelector
 from src.random_llm_selector import LLMSelection
+from src.sequential_llm_selector import SequentialLLMSelector
 from src.model_profile_manager import ModelProfileManager
 from src.llm.client_base import ClientBase
 from src.llm.key_file_resolver import key_file_resolver
@@ -65,6 +66,12 @@ class ChatManager:
         
         # Store vision client reference independently to handle random selection and hot swaps
         self.__vision_client = getattr(client, '_image_client', None)
+        self.__random_selector = RandomLLMSelector()
+        self.__sequential_selector = SequentialLLMSelector()
+
+    def reset_sequential_llm_selection(self) -> None:
+        """Start sequential pools from the first model. Called when a new conversation starts."""
+        self.__sequential_selector.reset()
 
     def update_multi_npc_client(self, multi_npc_client: AIClient | None):
         """Update the multi-NPC client for hot swapping"""
@@ -128,6 +135,89 @@ class ChatManager:
         except Exception as e:
             logging.error(f"Failed to create random LLM client for {selection.service}/{selection.model}: {e}")
             raise
+
+    @staticmethod
+    def _live_client_matches_selection(client: AIClient | None, selection: LLMSelection) -> bool:
+        """True when the live client is already the selected service/model/params."""
+        if client is None:
+            return False
+        service = getattr(client, "service_name", None)
+        model = getattr(client, "model_name", None)
+        params = getattr(client, "_request_params", None) or {}
+        return (
+            service == selection.service
+            and model == selection.model
+            and params == (selection.parameters or {})
+        )
+
+    def _get_client_for_pool_selection(self, selection: LLMSelection, is_multi_npc: bool) -> AIClient:
+        """Reuse a live client only when it is actually the selected model; otherwise cache a new one.
+
+        Per-conversation random selection can replace __client, so matching against
+        config.ini defaults is not enough — the live client's service/model/params
+        must match the pool pick.
+        """
+        candidates: list[AIClient] = []
+        if is_multi_npc and self.__multi_npc_client is not None:
+            candidates.append(self.__multi_npc_client)
+        if self.__client is not None:
+            candidates.append(self.__client)
+
+        for client in candidates:
+            if self._live_client_matches_selection(client, selection):
+                logging.info(
+                    f"Reusing live LLM client for pool selection: {selection.service}/{selection.model}"
+                )
+                return client
+        return self._get_or_create_random_client(selection)
+
+    def _select_next_sequential_client(self, is_multi_npc: bool) -> AIClient | None:
+        """Advance the sequential pool and return a client, skipping models that fail to construct."""
+        if is_multi_npc:
+            pool = getattr(self.__config, "sequential_llm_pool_multi_npc", []) or []
+            select = self.__sequential_selector.select_next_from_multi_npc_pool
+            fallback_service = self.__config.multi_npc_llm_api
+            fallback_model = self.__config.multi_npc_llm
+            fallback_params = self.__config.multi_npc_llm_params or {}
+            fallback_token_count = self.__config.multi_npc_custom_token_count
+        else:
+            pool = getattr(self.__config, "sequential_llm_pool_one_on_one", []) or []
+            select = self.__sequential_selector.select_next_from_one_on_one_pool
+            fallback_service = self.__config.llm_api
+            fallback_model = self.__config.llm
+            fallback_params = self.__config.llm_params or {}
+            fallback_token_count = self.__config.custom_token_count
+
+        max_attempts = len(pool) if isinstance(pool, list) and pool else 1
+        if isinstance(pool, str):
+            try:
+                parsed_pool = json.loads(pool)
+                max_attempts = len(parsed_pool) if isinstance(parsed_pool, list) and parsed_pool else 1
+            except Exception:
+                max_attempts = 1
+        for _ in range(max_attempts):
+            selection = select(
+                config=self.__config,
+                fallback_service=fallback_service,
+                fallback_model=fallback_model,
+                fallback_params=fallback_params,
+                fallback_token_count=fallback_token_count
+            )
+            if selection is None:
+                return None
+            try:
+                profile_status = "with profile" if selection.from_profile else "without profile"
+                client = self._get_client_for_pool_selection(selection, is_multi_npc)
+                logging.info(
+                    f"Using per-request sequential LLM for {'multi-NPC' if is_multi_npc else 'one-on-one'}: "
+                    f"{selection.service}/{selection.model} ({profile_status})"
+                )
+                return client
+            except Exception as e:
+                logging.error(
+                    f"Failed to create sequential LLM client for {selection.service}/{selection.model}, skipping to next: {e}"
+                )
+        return None
 
     def get_profile_client_for_request(
         self,
@@ -448,69 +538,69 @@ class ChatManager:
         try:
             current_sentence: str = ''
             # llm_logged = False  # Track if we've logged the LLM model for this response
-            # Choose per-request random clients once per request (outside retry loop)
+            # Choose per-request pool clients once per request (outside retry loop).
+            # Sequential pools take priority over random pools.
             selected_client_for_request: AIClient | None = None
             selected_multi_client_for_request: AIClient | None = None
-            
-            # Get cached selector or create new one
+            use_sequential = False
+
             selector: RandomLLMSelector = getattr(self, "_ChatManager__random_selector", None) or RandomLLMSelector()
             self.__random_selector = selector
-            
-            # Handle one-on-one per-request randomization
-            if (not is_multi_npc) and (hasattr(self.__config, 'random_llm_one_on_one_per_request_enabled') and self.__config.random_llm_one_on_one_per_request_enabled):
+            sequential_selector: SequentialLLMSelector = getattr(self, "_ChatManager__sequential_selector", None) or SequentialLLMSelector()
+            self.__sequential_selector = sequential_selector
+
+            sequential_enabled = (
+                (not is_multi_npc and getattr(self.__config, "sequential_llm_one_on_one_per_request_enabled", False))
+                or (is_multi_npc and getattr(self.__config, "sequential_llm_multi_npc_per_request_enabled", False))
+            )
+            if sequential_enabled:
                 try:
-                    selection = selector.select_random_llm_from_one_on_one_pool(
-                        config=self.__config,
-                        fallback_service=self.__config.llm_api,
-                        fallback_model=self.__config.llm,
-                        fallback_params=self.__config.llm_params or {},
-                        fallback_token_count=self.__config.custom_token_count
-                    )
-                    if selection is not None:
-                        profile_status = "with profile" if selection.from_profile else "without profile"
-                        # Check if the randomly selected model is exactly the same as the default client
-                        if (not selection.from_profile and
-                            selection.service == self.__config.llm_api and 
-                            selection.model == self.__config.llm and
-                            selection.parameters == (self.__config.llm_params or {})):
-                            # Same model with same parameters - reuse default client
-                            selected_client_for_request = self.__client
-                            logging.info(f"Using per-request randomly selected LLM for one-on-one: {selection.service}/{selection.model} ({profile_status}) - reusing default client")
+                    sequential_client = self._select_next_sequential_client(is_multi_npc)
+                    if sequential_client is not None:
+                        use_sequential = True
+                        if is_multi_npc:
+                            selected_multi_client_for_request = sequential_client
                         else:
-                            # Different model or different parameters - always create/get cached client
-                            selected_client_for_request = self._get_or_create_random_client(selection)
+                            selected_client_for_request = sequential_client
+                except Exception as e:
+                    logging.error(f"Per-request sequential LLM selection failed, falling back to random/default client: {e}")
+
+            if not use_sequential:
+                # Handle one-on-one per-request randomization
+                if (not is_multi_npc) and (hasattr(self.__config, 'random_llm_one_on_one_per_request_enabled') and self.__config.random_llm_one_on_one_per_request_enabled):
+                    try:
+                        selection = selector.select_random_llm_from_one_on_one_pool(
+                            config=self.__config,
+                            fallback_service=self.__config.llm_api,
+                            fallback_model=self.__config.llm,
+                            fallback_params=self.__config.llm_params or {},
+                            fallback_token_count=self.__config.custom_token_count
+                        )
+                        if selection is not None:
+                            profile_status = "with profile" if selection.from_profile else "without profile"
+                            selected_client_for_request = self._get_client_for_pool_selection(selection, False)
                             logging.info(f"Using per-request randomly selected LLM for one-on-one: {selection.service}/{selection.model} ({profile_status})")
-                except Exception as e:
-                    logging.error(f"Per-request random LLM selection failed, falling back to configured/default client: {e}")
-                    selected_client_for_request = None
-            
-            # Handle multi-NPC per-request randomization
-            elif is_multi_npc and (hasattr(self.__config, 'random_llm_multi_npc_per_request_enabled') and self.__config.random_llm_multi_npc_per_request_enabled):
-                try:
-                    selection_multi = selector.select_random_llm_from_multi_npc_pool(
-                        config=self.__config,
-                        fallback_service=self.__config.multi_npc_llm_api,
-                        fallback_model=self.__config.multi_npc_llm,
-                        fallback_params=self.__config.multi_npc_llm_params or {},
-                        fallback_token_count=self.__config.multi_npc_custom_token_count
-                    )
-                    if selection_multi is not None:
-                        profile_status = "with profile" if selection_multi.from_profile else "without profile"
-                        # Check if the randomly selected model matches the multi-NPC client
-                        if (not selection_multi.from_profile and
-                            selection_multi.service == self.__config.multi_npc_llm_api and 
-                            selection_multi.model == self.__config.multi_npc_llm and
-                            selection_multi.parameters == (self.__config.multi_npc_llm_params or {})):
-                            # Same model with same parameters - reuse multi-NPC client
-                            selected_multi_client_for_request = self.__multi_npc_client
-                            logging.info(f"Using per-request randomly selected LLM for multi-NPC: {selection_multi.service}/{selection_multi.model} ({profile_status}) - reusing multi-NPC client")
-                        else:
-                            # Different model or different parameters - create/get cached client
-                            selected_multi_client_for_request = self._get_or_create_random_client(selection_multi)
+                    except Exception as e:
+                        logging.error(f"Per-request random LLM selection failed, falling back to configured/default client: {e}")
+                        selected_client_for_request = None
+
+                # Handle multi-NPC per-request randomization
+                elif is_multi_npc and (hasattr(self.__config, 'random_llm_multi_npc_per_request_enabled') and self.__config.random_llm_multi_npc_per_request_enabled):
+                    try:
+                        selection_multi = selector.select_random_llm_from_multi_npc_pool(
+                            config=self.__config,
+                            fallback_service=self.__config.multi_npc_llm_api,
+                            fallback_model=self.__config.multi_npc_llm,
+                            fallback_params=self.__config.multi_npc_llm_params or {},
+                            fallback_token_count=self.__config.multi_npc_custom_token_count
+                        )
+                        if selection_multi is not None:
+                            profile_status = "with profile" if selection_multi.from_profile else "without profile"
+                            selected_multi_client_for_request = self._get_client_for_pool_selection(selection_multi, True)
                             logging.info(f"Using per-request randomly selected LLM for multi-NPC: {selection_multi.service}/{selection_multi.model} ({profile_status})")
-                except Exception as e:
-                    logging.error(f"Per-request random LLM selection for multi-NPC failed, falling back to multi-NPC configured/default client: {e}")
-                    selected_multi_client_for_request = None
+                    except Exception as e:
+                        logging.error(f"Per-request random LLM selection for multi-NPC failed, falling back to multi-NPC configured/default client: {e}")
+                        selected_multi_client_for_request = None
 
             while retries < max_retries:
                 try:
@@ -608,7 +698,17 @@ class ChatManager:
                     retries += 1
                     utils.play_error_sound()
                     logging.error(f"LLM API Error: {e}")
-                    
+
+                    if use_sequential and retries < max_retries:
+                        logging.info("Sequential LLM failed; skipping to the next model in the pool")
+                        sequential_client = self._select_next_sequential_client(is_multi_npc)
+                        if sequential_client is not None:
+                            if is_multi_npc:
+                                selected_multi_client_for_request = sequential_client
+                            else:
+                                selected_client_for_request = sequential_client
+                            continue
+
                     error_response = "I can't find the right words at the moment."
                     new_sentence = self.generate_sentence(SentenceContent(active_character, error_response, SentenceTypeEnum.SPEECH, True))
                     blocking_queue.put(new_sentence)

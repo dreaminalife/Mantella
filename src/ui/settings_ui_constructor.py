@@ -1030,8 +1030,15 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 )
             
             # Special handling for LLM pools - always allow multi-line
-            if config_value.identifier in ["llm_pool_one_on_one", "llm_pool_multi_npc"]:
-                pool_type = "one-on-one" if config_value.identifier == "llm_pool_one_on_one" else "multi-NPC"
+            if config_value.identifier in [
+                "llm_pool_one_on_one",
+                "llm_pool_multi_npc",
+                "sequential_llm_pool_one_on_one",
+                "sequential_llm_pool_multi_npc",
+            ]:
+                is_sequential = config_value.identifier.startswith("sequential_")
+                pool_kind = "sequential " if is_sequential else ""
+                pool_type = "one-on-one" if "one_on_one" in config_value.identifier else "multi-NPC"
                 return gr.Text(
                     value=config_value.value,
                     show_label=False,
@@ -1039,7 +1046,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     lines=8,  # Start with 8 lines for JSON pool input
                     max_lines=15,  # Allow up to 15 lines
                     elem_classes="multiline-textbox",
-                    placeholder=f"Enter JSON array for {pool_type} LLM pool...\nExample:\n[\n  {{\"service\": \"OpenRouter\", \"model\": \"deepseek/deepseek-chat\"}},\n  {{\"service\": \"OpenAI\", \"model\": \"gpt-4o-mini\"}}\n]"
+                    placeholder=f"Enter JSON array for {pool_kind}{pool_type} LLM pool...\nExample:\n[\n  {{\"service\": \"OpenRouter\", \"model\": \"deepseek/deepseek-chat\"}},\n  {{\"service\": \"OpenAI\", \"model\": \"gpt-4o-mini\"}}\n]"
                 )
             
             count_rows = self.__count_rows_in_text(config_value.value)

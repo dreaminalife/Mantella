@@ -254,6 +254,60 @@ class OtherDefinitions:
         )
 
     @staticmethod
+    def get_sequential_llm_one_on_one_per_request_enabled_config_value() -> ConfigValue:
+        return ConfigValueBool(
+            identifier="sequential_llm_one_on_one_per_request_enabled",
+            name="Enable Per-Request Sequential LLM (One-on-One)",
+            description=(
+                "When enabled, every request in one-on-one conversations uses the next LLM "
+                "from the sequential one-on-one pool, in listed order, wrapping around after the last model. "
+                "This takes priority over per-request random LLM selection. "
+                "If a model fails, the next model in the pool is tried. The position resets at the start of each new conversation."
+            ),
+            default_value=False,
+            tags=["sequential_llm", "conversation", ConfigValueTag.share_row],
+            row_group="sequential_llm_per_request_row",
+        )
+
+    @staticmethod
+    def get_sequential_llm_multi_npc_per_request_enabled_config_value() -> ConfigValue:
+        return ConfigValueBool(
+            identifier="sequential_llm_multi_npc_per_request_enabled",
+            name="Enable Per-Request Sequential LLM (Multi-NPC)",
+            description=(
+                "When enabled, every request in multi-NPC conversations uses the next LLM "
+                "from the sequential multi-NPC pool, in listed order, wrapping around after the last model. "
+                "This takes priority over per-request random LLM selection. "
+                "If a model fails, the next model in the pool is tried. The position resets at the start of each new conversation."
+            ),
+            default_value=False,
+            tags=["sequential_llm", "conversation", ConfigValueTag.share_row],
+            row_group="sequential_llm_per_request_row",
+        )
+
+    @staticmethod
+    def get_sequential_llm_pool_one_on_one_config_value() -> ConfigValue:
+        return ConfigValueString(
+            identifier="sequential_llm_pool_one_on_one",
+            name="Sequential LLM Pool (One-on-One)",
+            description="JSON array of LLM models to iterate through in order for one-on-one conversations. Edit this JSON directly to manage your pool.\n\nExample format:\n[\n  {\"service\": \"OpenRouter\", \"model\": \"deepseek/deepseek-chat\"},\n  {\"service\": \"OpenRouter\", \"model\": \"anthropic/claude-3-haiku\"},\n  {\"service\": \"OpenAI\", \"model\": \"gpt-4o-mini\"}\n]",
+            default_value="[]",
+            tags=["sequential_llm", "conversation", "pool", ConfigValueTag.share_row],
+            row_group="sequential_llm_pool_row",
+        )
+
+    @staticmethod
+    def get_sequential_llm_pool_multi_npc_config_value() -> ConfigValue:
+        return ConfigValueString(
+            identifier="sequential_llm_pool_multi_npc",
+            name="Sequential LLM Pool (Multi-NPC)",
+            description="JSON array of LLM models to iterate through in order for multi-NPC conversations. Edit this JSON directly to manage your pool.\n\nExample format:\n[\n  {\"service\": \"OpenRouter\", \"model\": \"meta-llama/llama-3.1-8b-instruct\"},\n  {\"service\": \"OpenRouter\", \"model\": \"anthropic/claude-3-sonnet\"},\n  {\"service\": \"NanoGPT\", \"model\": \"gpt-4o\"}\n]",
+            default_value="[]",
+            tags=["sequential_llm", "conversation", "pool", ConfigValueTag.share_row],
+            row_group="sequential_llm_pool_row",
+        )
+
+    @staticmethod
     def get_reload_character_data_config_value() -> ConfigValue:
         description = """Reload character CSV files and overrides from disk to pick up any changes.
                         This refreshes character data that is cached in memory.
