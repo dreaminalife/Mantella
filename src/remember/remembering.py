@@ -42,16 +42,28 @@ class Remembering(ABC):
         pass
 
     @abstractmethod
-    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False, save_timestamp: int | None = None):
+    def get_character_personal_reflection(self, character: Character, world_id: str) -> str:
+        """Latest personal reflection for one character, or empty string."""
+        pass
+
+    @abstractmethod
+    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False, save_timestamp: int | None = None, save_thoughts: bool | None = None, save_reflections: bool | None = None):
         """Saves the current state of the conversation.
 
         Args:
             messages (message_thread): The messages in the conversation
             npcs_in_conversation (Characters): the NPCs to save for
+            save_thoughts: If set, overrides Enable Private Thoughts for this save.
+            save_reflections: If set, overrides Enable Personal Reflection for this save.
         """
         pass
 
     @abstractmethod
     def save_thoughts_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None):
         """Generate and save private thoughts without writing a new conversation summary."""
+        pass
+
+    @abstractmethod
+    def save_reflections_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None):
+        """Generate and save personal reflections without writing a new conversation summary."""
         pass

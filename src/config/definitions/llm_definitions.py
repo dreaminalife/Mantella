@@ -320,13 +320,26 @@ class LLMDefinitions:
     def get_enable_bio_section_filter_config_value() -> ConfigValue:
         description = """Enable prompt-time filtering of selected top-level bio sections for single and multi-NPC conversations.
                         This does not modify character files and only affects what gets sent to the LLM.
-                        Section names are matched case-insensitively against markdown headers in the form '## Section Name'."""
+                        Section names are matched case-insensitively against markdown headers in the form '## Section Name'.
+                        Use the nested toggle below to also apply this filter when generating summaries, inner thoughts, and personal reflections."""
         return ConfigValueBool(
             "enable_bio_section_filter",
             "Enable Bio Section Filter (Single + Multi)",
             description,
             False,
-            tags=[ConfigValueTag.share_row],
+        )
+
+    @staticmethod
+    def get_enable_bio_section_filter_for_memory_config_value() -> ConfigValue:
+        description = """Also apply the bio section filter when generating conversation summaries, inner thoughts, and personal reflections (including Bio Editor Generate Reflection).
+                        Uses the same exclude list as conversation prompts. Requires Enable Bio Section Filter to be on.
+                        Does not apply to radiant (player-less) conversations.
+                        This does not modify character files and only affects what gets sent to the LLM for those memory prompts."""
+        return ConfigValueBool(
+            "enable_bio_section_filter_for_memory",
+            "Also Apply to Summary, Inner Thoughts, and Personal Reflection",
+            description,
+            False,
         )
 
     @staticmethod
@@ -348,5 +361,5 @@ class LLMDefinitions:
                         When enabled, multi-NPC conversations will use a specialized director-style prompt instead of the standard multi-NPC prompt.
                         This mode provides more detailed instructions for managing group conversations.
                         Note: This only affects Skyrim multi-NPC conversations, not radiant or single-NPC conversations."""
-        return ConfigValueBool("multi_conversation_director_mode", "Multi Conversation Director Mode", description, False)
+        return ConfigValueBool("multi_conversation_director_mode", "Multi Conversation Director Mode", description, False, tags=[ConfigValueTag.share_row])
 

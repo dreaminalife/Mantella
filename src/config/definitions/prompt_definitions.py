@@ -72,6 +72,18 @@ class PromptDefinitions:
         "previous_thoughts",
         "conversation_summary",
         ]
+
+    ALLOWED_PROMPT_VARIABLES_PERSONAL_REFLECTION = [
+        "bios",
+        "names",
+        "name",
+        "language",
+        "game",
+        "player_name",
+        "lorebook",
+        "previous_reflection",
+        "conversation_summary",
+        ]
     
     BASE_PROMPT_DESCRIPTION = """The starting prompt sent to the LLM when an NPC is selected.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -354,17 +366,41 @@ Content Guidelines:
                                                game = the game selected
                                                player_name = the name of the player character
                                                previous_thoughts = this NPC's earlier private thoughts
-                                               conversation_summary = the factual summary just written for this conversation
+                                               conversation_summary = this NPC's full past-event summaries, including the summary just written
                                                lorebook = lorebook entries matched from the prompt context and conversation history"""
         inner_monologue_prompt = """You are {name}. After this conversation, write your private inner thoughts in the first person. These thoughts are never spoken aloud and other people must never learn them. Cover how you feel about what just happened, how you feel about {player_name} or others involved, and what you want or will refuse to say next time.
                                             Here is your background:
                                             {bios}
-                                            Here is the factual summary of what just happened:
+                                            Here is the history of past events:
                                             {conversation_summary}
                                             Your previous private thoughts (if any):
                                             {previous_thoughts}
                                             Write a single short paragraph in {language}. These conversations take place in {game}."""
         return ConfigValueString("inner_monologue_prompt","Inner Monologue Prompt",inner_monologue_prompt_description,inner_monologue_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE)])
+
+    @staticmethod
+    def get_personal_reflection_prompt_config_value() -> ConfigValue:
+        personal_reflection_prompt_description = """The prompt used to generate an NPC's long-term personal reflection after a conversation is summarized.
+                                            Reflections are stored separately from memories and inner thoughts in data/game/reflections/NPC_Name/NPC_Name_reflections_X.txt.
+                                            If you would like to edit this, please ensure that the below dynamic variables are contained in curly brackets {}:
+                                               bios = the background information/bios of the characters involved
+                                               names = the names of the NPCs involved
+                                               name = the NPC whose personal reflection is being written
+                                               language = the selected language
+                                               game = the game selected
+                                               player_name = the name of the player character
+                                               previous_reflection = this NPC's latest previous personal reflection
+                                               conversation_summary = this NPC's full past-event summaries, including the summary just written
+                                               lorebook = lorebook entries matched from the prompt context and conversation history"""
+        personal_reflection_prompt = """You are {name}. Write your private personal reflection in the first person. These thoughts are never spoken aloud and other people must never learn them. Focus on your long-term self: who you are, how you have changed, and how you feel about {player_name} or others over time. Do not recap only the latest conversation.
+                                            Here is your background and the backgrounds of people involved:
+                                            {bios}
+                                            Here is the history of past events:
+                                            {conversation_summary}
+                                            Your previous personal reflection (if any):
+                                            {previous_reflection}
+                                            Write in first person in {language}. These conversations take place in {game}. Do not include a heading."""
+        return ConfigValueString("personal_reflection_prompt","Personal Reflection Prompt",personal_reflection_prompt_description,personal_reflection_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_PERSONAL_REFLECTION)])
     
     @staticmethod
     def get_vision_prompt_config_value() -> ConfigValue:
@@ -401,6 +437,7 @@ Content Guidelines:
             ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
             ("memory_prompt", "Memory Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MEMORY),
             ("inner_monologue_prompt", "Inner Monologue Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE),
+            ("personal_reflection_prompt", "Personal Reflection Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_PERSONAL_REFLECTION),
             ("resummarize_prompt", "Resummarize Prompt", ["name", "language", "game", "player_name", "lorebook"]),
             ("vision_prompt", "Vision Prompt", ["game"]),
             ("radiant_start_prompt", "Radiant Start Prompt", []),

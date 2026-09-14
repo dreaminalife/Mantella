@@ -12,7 +12,13 @@ from src.llm.client_base import ClientBase
 from src.llm.llm_client import LLMClient
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
-from src.remember.summaries import CharacterSummaryParameters, parse_summary_blocks, player_name_from_thread
+from src.remember.summaries import (
+    CharacterSummaryParameters,
+    format_character_bios_for_memory,
+    parse_summary_blocks,
+    player_name_from_thread,
+    thread_contains_player,
+)
 
 PRIVATE_THOUGHT_HEADER = "--- PRIVATE THOUGHT (unspoken; other people must not know this) ---"
 PRIVATE_THOUGHT_FOOTER = "--- END PRIVATE THOUGHT ---"
@@ -104,6 +110,9 @@ class InnerMonologue:
     ) -> None:
         """Generate and append a private thought for each NPC.
 
+        *saved_summaries* should be this NPC's full past-event summary text (the latest
+        summary file), not only the paragraph just written.
+
         When *require_summary* is True (normal conversation-end path), NPCs without a
         newly written summary are skipped. Manual "save thoughts" can pass False so a
         thought is still written from the live conversation.
@@ -182,9 +191,11 @@ class InnerMonologue:
 
         names = ", ".join([c.name for c in npc_info.characters])
         player_name = player_name_from_thread(npc_info.messages)
-        bios = "\n\n".join(
-            f"{c.name}: {utils.resolve_player_name_placeholder(c.bio, player_name)}"
-            for c in npc_info.characters
+        bios = format_character_bios_for_memory(
+            npc_info.characters,
+            player_name,
+            self.__config,
+            contains_player=thread_contains_player(npc_info.messages),
         )
 
         previous_thoughts = self.get_previous_thoughts_text(npc, world_id) or "(none)"

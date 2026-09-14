@@ -11,6 +11,7 @@ from src.output_manager import ChatManager
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
 from src.remember.inner_monologue import InnerMonologue
+from src.remember.personal_reflection import PersonalReflection
 from src.config.config_loader import ConfigLoader
 from src.llm.llm_client import LLMClient
 from src.conversation.conversation import Conversation
@@ -162,6 +163,7 @@ class GameStateManager:
 
     def _create_rememberer(self, game: Gameable, config: ConfigLoader, client: LLMClient, summary_client) -> Summaries:
         inner_monologue = InnerMonologue(game, config, client, self.__language_info['language'], summary_client)
+        personal_reflection = PersonalReflection(game, config, client, self.__language_info['language'], summary_client)
         return Summaries(
             game,
             config,
@@ -169,6 +171,7 @@ class GameStateManager:
             self.__language_info['language'],
             summary_client,
             inner_monologue=inner_monologue,
+            personal_reflection=personal_reflection,
         )
 
     @utils.time_it
@@ -688,8 +691,9 @@ class GameStateManager:
         return None
 
     def refresh_summary_client_from_ui_config(self) -> None:
-        """Apply the latest summary LLM selection from the UI without clearing other pending config changes."""
+        """Apply the latest UI settings needed for memory saves without clearing other pending config changes."""
         self.__config.sync_summary_llm_settings_from_definitions()
+        self.__config.sync_bio_section_filter_settings_from_definitions()
         summary_client = GameStateManager.create_summary_client(self.__config, self.__api_file)
         logging.info(
             f"Refreshing summary client for manual save: "
@@ -734,6 +738,22 @@ class GameStateManager:
         except Exception as e:
             logging.error(f"Failed to refresh summary client before manual inner-thoughts save: {e}", exc_info=True)
         self.__talk.save_inner_thoughts_only()
+        return True
+
+    @utils.time_it
+    def save_personal_reflection_only(self) -> bool:
+        """Trigger personal-reflection saving without ending the active conversation.
+
+        Returns:
+            bool: True if a conversation existed and the save was triggered, False otherwise.
+        """
+        if not self.__talk:
+            return False
+        try:
+            self.refresh_summary_client_from_ui_config()
+        except Exception as e:
+            logging.error(f"Failed to refresh summary client before manual personal-reflection save: {e}", exc_info=True)
+        self.__talk.save_personal_reflection_only()
         return True
 
     def get_conversation_as_json(self) -> str | None:

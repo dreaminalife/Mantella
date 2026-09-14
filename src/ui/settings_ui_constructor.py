@@ -241,6 +241,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
             container=False
         )
     
+    def __tooltip_content_class(self, config_value: ConfigValue, is_second_setting: bool) -> str:
+        """Bools and the right column of a pair keep the popover anchored to the ? on the right."""
+        use_right_aligned_tooltip = is_second_setting or isinstance(config_value, ConfigValueBool)
+        return "tooltip-content-right" if use_right_aligned_tooltip else "tooltip-content-left"
+
     def __create_tooltip(self, config_value: ConfigValue, is_second_setting: bool = False) -> str:
         """Creates the tooltip HTML for a config value"""
         constraints_html = (
@@ -248,14 +253,13 @@ class SettingsUIConstructor(ConfigValueVisitor):
             '<br>'.join(c.description for c in config_value.constraints) +
             '</p>' if config_value.constraints else ''
         )
-        use_right_aligned_tooltip = is_second_setting or isinstance(config_value, ConfigValueBool)
-        tooltip_content = 'tooltip-content-right' if use_right_aligned_tooltip else 'tooltip-content-left'
+        tooltip_content = self.__tooltip_content_class(config_value, is_second_setting)
         description_html = (config_value.description or "").replace("\n", "<br>")
 
         return f"""
         <div class="tooltip-container" role="tooltip" aria-label="{config_value.name} help">
             <span class="tooltip-icon" tabindex="0">?</span>
-            <div class={tooltip_content}>
+            <div class="{tooltip_content}">
                 <p>{description_html}</p>
                 {constraints_html}
             </div>
@@ -316,6 +320,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
             with gr.Row(elem_classes=elem_class):
                 input_ui = setting.create_input(setting.config_value)
                 gr.HTML(self.__create_tooltip(setting.config_value, is_second_setting))
+            if setting.config_value.identifier == "enable_bio_section_filter":
+                self.__embed_bio_sections_to_exclude()
+                with gr.Column(elem_classes="bio-section-filter-memory-toggle"):
+                    self.__embed_bool_toggle("enable_bio_section_filter_for_memory", is_second_setting=True)
         else:
             self.__construct_name_description_constraints(setting.config_value, is_second_setting)
             with gr.Row(equal_height=True, elem_classes="setting-controls"):
@@ -323,6 +331,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 input_ui.scale = 999
                 self.__create_buttons(setting.config_value, setting.create_input, 
                                     input_ui, gr.Markdown(None), setting.additional_buttons)
+            if setting.config_value.identifier == "save_summary_now":
+                self.__embed_save_summary_now_toggles()
                 
         error_message = self.__construct_initial_error_message(setting.config_value)
         
@@ -332,6 +342,70 @@ class SettingsUIConstructor(ConfigValueVisitor):
         )
         
         return SettingUIComponents(input_ui, error_message)
+
+    def __embed_save_summary_now_toggles(self) -> None:
+        """Render the Save Summary Now extra toggles inside the same settings panel."""
+        with gr.Row(elem_classes="save-summary-now-toggles"):
+            self.__embed_bool_toggle("save_summary_now_also_save_inner_thoughts", is_second_setting=False)
+            self.__embed_bool_toggle("save_summary_now_also_save_personal_reflection", is_second_setting=True)
+
+    def __embed_bio_sections_to_exclude(self) -> None:
+        """Render the exclude-list field inside the bio section filter panel."""
+        if self.__config_loader is None:
+            return
+        try:
+            config_value = self.__config_loader.definitions.get_config_value_definition("bio_sections_to_exclude")
+        except Exception:
+            return
+        if not isinstance(config_value, ConfigValueString):
+            return
+
+        def create_input_component(raw_config_value: ConfigValue) -> gr.Text:
+            config_value = typing.cast(ConfigValueString, raw_config_value)
+            return gr.Text(
+                value=config_value.value,
+                show_label=False,
+                container=False,
+                max_lines=1,
+                placeholder="Personal History, Race",
+            )
+
+        with gr.Column(elem_classes="bio-section-filter-exclude"):
+            setting = SettingConfig(
+                config_value,
+                create_input_component,
+                False,
+                True,
+                True,
+                [],
+            )
+            components = self.__create_setting_components(setting, is_second_setting=True)
+            self.__identifier_to_config_value[config_value.identifier] = config_value
+            self.__config_value_to_ui_element[config_value] = components.input_ui
+
+    def __embed_bool_toggle(self, identifier: str, is_second_setting: bool) -> None:
+        if self.__config_loader is None:
+            return
+        try:
+            config_value = self.__config_loader.definitions.get_config_value_definition(identifier)
+        except Exception:
+            return
+        if not isinstance(config_value, ConfigValueBool):
+            return
+        with gr.Column():
+            error_message = self.__construct_initial_error_message(config_value)
+            with gr.Row(elem_classes="setting-bool-container-wide"):
+                checkbox = gr.Checkbox(
+                    label=config_value.name,
+                    value=config_value.value,
+                    show_label=False,
+                    container=False,
+                    elem_classes="checkboxelement",
+                )
+                gr.HTML(self.__create_tooltip(config_value, is_second_setting))
+            self.__setup_event_handlers(config_value, checkbox, error_message, True, False, False)
+            self.__identifier_to_config_value[config_value.identifier] = config_value
+            self.__config_value_to_ui_element[config_value] = checkbox
 
     def __create_paired_settings(self, setting1: SettingConfig, setting2: SettingConfig):
         """Creates two settings side by side in the same row"""
@@ -421,14 +495,13 @@ class SettingsUIConstructor(ConfigValueVisitor):
     def __construct_name_description_constraints(self, config_value: ConfigValue, is_second_setting: bool = False):
         with gr.Row():
             description_html = (config_value.description or "").replace("\n", "<br>")
-            use_right_aligned_tooltip = is_second_setting or isinstance(config_value, ConfigValueBool)
-            tooltip_content = 'tooltip-content-right' if use_right_aligned_tooltip else 'tooltip-content-left'
+            tooltip_content = self.__tooltip_content_class(config_value, is_second_setting)
             tooltip_html = f"""
             <div style="display: flex; align-items: center;">
                 <h3 style="margin: 0; font-size: 1.25em;">{config_value.name}</h3>
                 <div class="tooltip-container" role="tooltip" aria-label="{config_value.name} help">
                     <span class="tooltip-icon">?</span>
-                    <div class={tooltip_content}>
+                    <div class="{tooltip_content}">
                         <p>{description_html}</p>
                         {'<p>' + '<br>'.join(c.description for c in config_value.constraints if c.description is not None) + '</p>' if config_value.constraints else ''}
                     </div>
@@ -900,6 +973,12 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__create_config_value_ui_element(config_value, create_input_component)
 
     def visit_ConfigValueBool(self, config_value: ConfigValueBool):
+        if config_value.identifier in {
+            "save_summary_now_also_save_inner_thoughts",
+            "save_summary_now_also_save_personal_reflection",
+            "enable_bio_section_filter_for_memory",
+        }:
+            return
         def create_input_component(raw_config_value: ConfigValue) -> gr.Checkbox:
             config_value = typing.cast(ConfigValueBool, raw_config_value)
             return gr.Checkbox(label = config_value.name,
@@ -910,6 +989,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__create_config_value_ui_element(config_value, create_input_component)
 
     def visit_ConfigValueString(self, config_value: ConfigValueString):
+        if config_value.identifier == "bio_sections_to_exclude":
+            return
         def create_input_component(raw_config_value: ConfigValue) -> gr.Text:
             config_value = typing.cast(ConfigValueString, raw_config_value)
             
@@ -1043,6 +1124,26 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Save Inner Thoughts", on_save_inner_thoughts_click))
+
+        elif config_value.identifier == "save_personal_reflection_now":
+            def on_save_personal_reflection_click() -> str:
+                """Trigger personal-reflection saving without ending the current conversation."""
+                global _game_manager_ref
+                try:
+                    if _game_manager_ref:
+                        logging.info("Manual personal-reflection trigger via UI button...")
+                        ok = _game_manager_ref.save_personal_reflection_only()
+                        if ok:
+                            return " Personal reflection save triggered (conversation continues)."
+                        return " No active conversation to save personal reflections for."
+                    else:
+                        logging.warning("Manual personal reflection clicked, but game manager reference is not set. The game might not have been started.")
+                        return " Game not started. Please start the game first."
+                except Exception as e:
+                    logging.error(f"Error triggering personal-reflection save via UI: {e}", exc_info=True)
+                    return f" An error occurred: {str(e)}"
+
+            additional_buttons.append(("Save Personal Reflection", on_save_personal_reflection_click))
         
         elif config_value.identifier == "real_world_timestamp":
             def on_get_timestamp_click() -> str:

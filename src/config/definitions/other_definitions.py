@@ -134,11 +134,12 @@ class OtherDefinitions:
 
     @staticmethod
     def get_inner_monologue_enabled_config_value() -> ConfigValue:
-        description = """Whether to generate and save a private inner monologue when a conversation summary is saved.
+        description = """Whether to generate and save a private inner monologue when a conversation ends and a summary is saved.
                         Requires Enable Conversation Summaries to be on. If summaries are off, thoughts are not saved even if this is on.
                         If enabled: after a summary is written, the NPC also records a first-person private thought.
                         If disabled: summaries still save (when enabled), but no new private thoughts are written.
-                        Whether saved thoughts appear in the next conversation prompt is controlled separately by Private Thoughts in Prompt."""
+                        Whether saved thoughts appear in the next conversation prompt is controlled separately by Private Thoughts in Prompt.
+                        Save Summary Now has its own Inner Thoughts toggle and does not use this setting."""
         return ConfigValueBool("inner_monologue_enabled", "Enable Private Thoughts", description, False, tags=[ ConfigValueTag.share_row])
 
     @staticmethod
@@ -150,6 +151,32 @@ class OtherDefinitions:
         return ConfigValueSelection(
             "inner_monologue_load_mode",
             "Private Thoughts in Prompt",
+            description,
+            "Latest",
+            ["Latest", "None"],
+            tags=[ConfigValueTag.advanced],
+        )
+
+    @staticmethod
+    def get_personal_reflection_enabled_config_value() -> ConfigValue:
+        description = """Whether to generate and save a personal reflection when a conversation ends and a summary is saved.
+                        Personal reflections are long-term (bio + past summaries), unlike private thoughts which focus on the latest conversation.
+                        If enabled: after a summary is written, the NPC also records a first-person personal reflection, as long as that NPC already has summaries.
+                        If disabled: summaries still save (when enabled), but no new personal reflections are written.
+                        Whether saved reflections appear in the next conversation prompt is controlled separately by Personal Reflection in Prompt.
+                        Manual Save Personal Reflection and Bio Editor Generate still work when this is off.
+                        Save Summary Now has its own Personal Reflection toggle and does not use this setting."""
+        return ConfigValueBool("personal_reflection_enabled", "Enable Personal Reflection", description, False, tags=[ ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_personal_reflection_load_mode_config_value() -> ConfigValue:
+        description = """Which personal reflections to include in the next conversation prompt.
+                        This does not change whether new reflections are saved — that is controlled by Enable Personal Reflection.
+                        - Latest: include only the most recent personal reflection at the end of the NPC's bio (default).
+                        - None: do not include personal reflections in the prompt, even if reflection files already exist."""
+        return ConfigValueSelection(
+            "personal_reflection_load_mode",
+            "Personal Reflection in Prompt",
             description,
             "Latest",
             ["Latest", "None"],
@@ -237,8 +264,34 @@ class OtherDefinitions:
     def get_save_summary_now_config_value() -> ConfigValue:
         description = """Trigger saving a conversation summary (and log) without ending the active conversation.
                         Useful if the game crashes and Mantella doesn't receive the normal end-conversation event.
+                        Use the toggles below this button to also write Inner Thoughts and/or Personal Reflection with this save.
+                        Those toggles are only for this button; they do not change conversation-end behavior.
                         Note: When the conversation later ends normally, another summary may be generated again."""
         return ConfigValueString("save_summary_now", "Save Summary Now", description, "")
+
+    @staticmethod
+    def get_save_summary_now_also_save_inner_thoughts_config_value() -> ConfigValue:
+        description = """When Save Summary Now is clicked, also generate and save Inner Thoughts for NPCs in the conversation.
+                        This is independent of Enable Private Thoughts, which only controls conversation-end saves.
+                        Manual Save Inner Thoughts still works on its own."""
+        return ConfigValueBool(
+            "save_summary_now_also_save_inner_thoughts",
+            "Also Save Inner Thoughts",
+            description,
+            True,
+        )
+
+    @staticmethod
+    def get_save_summary_now_also_save_personal_reflection_config_value() -> ConfigValue:
+        description = """When Save Summary Now is clicked, also generate and save Personal Reflections for NPCs that already have summaries.
+                        This is independent of Enable Personal Reflection, which only controls conversation-end saves.
+                        Manual Save Personal Reflection and Bio Editor Generate still work on their own."""
+        return ConfigValueBool(
+            "save_summary_now_also_save_personal_reflection",
+            "Also Save Personal Reflection",
+            description,
+            True,
+        )
 
     @staticmethod
     def get_save_inner_thoughts_now_config_value() -> ConfigValue:
@@ -246,6 +299,13 @@ class OtherDefinitions:
                         Useful if you want to capture the NPC's current unspoken take on the talk so far.
                         Note: When the conversation later ends normally, another thought may be generated again."""
         return ConfigValueString("save_inner_thoughts_now", "Save Inner Thoughts Now", description, "")
+
+    @staticmethod
+    def get_save_personal_reflection_now_config_value() -> ConfigValue:
+        description = """Trigger saving personal reflections for every NPC in the active conversation without ending it, and without writing a new summary.
+                        Uses each NPC's bio and existing summaries (including any already on file). NPCs with no summaries are skipped.
+                        Note: When the conversation later ends normally, another reflection may be generated again if Enable Personal Reflection is on."""
+        return ConfigValueString("save_personal_reflection_now", "Save Personal Reflection Now", description, "")
 
     @staticmethod
     def get_real_world_timestamp_config_value() -> ConfigValue:

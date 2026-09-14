@@ -16,6 +16,26 @@
     width: 100% !important;
 }
 
+.save-summary-now-toggles {
+    width: 100% !important;
+    margin-top: 8px !important;
+    gap: 16px !important;
+}
+
+.bio-section-filter-exclude {
+    width: 100% !important;
+    margin-top: 8px !important;
+}
+
+.bio-section-filter-exclude h3 {
+    font-size: 1.05em !important;
+}
+
+.bio-section-filter-memory-toggle {
+    width: 100% !important;
+    margin-top: 8px !important;
+}
+
 .setting-controls input,
 .setting-controls textarea {
     padding-left: 8px !important;
@@ -120,8 +140,9 @@
     visibility: hidden;
     position: absolute;
     z-index: 1000;
-    min-width: 50px;
-    width: max-content;
+    width: 360px;
+    max-width: min(360px, calc(100vw - 24px));
+    box-sizing: border-box;
     background-color: #333;
     color: #fff;
     text-align: left;
@@ -134,17 +155,16 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     top: 100%;
     margin-top: 10px;
-    white-space: normal; /* Allow text wrapping */
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
 }
 
 .tooltip-content-left {
-    max-width: 800px;
     left: 0px;
 }
 
 .tooltip-content-right {
-    /* Wider help popover (responsive) */
-    max-width: clamp(360px, 55vw, 900px);
     right: 0px;
     left: auto;
 }

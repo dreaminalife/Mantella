@@ -126,6 +126,26 @@ class ConfigLoader:
             logging.error(f"""Error in parsing Summary LLM parameter list: {e}
 Summary LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
             self.summary_llm_params = None
+
+    def sync_bio_section_filter_settings_from_definitions(self) -> None:
+        """Refresh bio-section-filter attributes from UI definitions without clearing the config-changed flag.
+
+        Used by Bio Editor Generate Reflection and manual Save Summary/Thoughts/Reflection
+        so the latest filter toggles apply without preventing a later full hot-swap.
+        """
+        self.__apply_bio_section_filter_settings_from_definitions()
+
+    def __apply_bio_section_filter_settings_from_definitions(self) -> None:
+        self.enable_bio_section_filter = self.__definitions.get_bool_value("enable_bio_section_filter")
+        self.enable_bio_section_filter_for_memory = self.__definitions.get_bool_value("enable_bio_section_filter_for_memory")
+        self.bio_sections_to_exclude = self.__definitions.get_string_value("bio_sections_to_exclude")
+        self.bio_sections_to_exclude_list = []
+        for section in self.bio_sections_to_exclude.split(","):
+            if not section:
+                continue
+            normalized_section = section.strip().strip("\"'").strip().lower()
+            if normalized_section:
+                self.bio_sections_to_exclude_list.append(normalized_section)
     
     def __on_config_value_change(self):
         self.__has_any_value_changed = True
@@ -338,15 +358,7 @@ Multi-NPC LLM parameter list must follow the Python dictionary format: https://w
 
             # Multi-NPC prompt content toggles
             self.multi_npc_bios_only = self.__definitions.get_bool_value("multi_npc_bios_only")
-            self.enable_bio_section_filter = self.__definitions.get_bool_value("enable_bio_section_filter")
-            self.bio_sections_to_exclude = self.__definitions.get_string_value("bio_sections_to_exclude")
-            self.bio_sections_to_exclude_list = []
-            for section in self.bio_sections_to_exclude.split(","):
-                if not section:
-                    continue
-                normalized_section = section.strip().strip("\"'").strip().lower()
-                if normalized_section:
-                    self.bio_sections_to_exclude_list.append(normalized_section)
+            self.__apply_bio_section_filter_settings_from_definitions()
 
             # Summary LLM Configuration
             self.summary_llm_api = self.__definitions.get_string_value("summary_llm_api")
@@ -382,6 +394,10 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.conversation_summary_enabled = self.__definitions.get_bool_value("conversation_summary_enabled")
             self.inner_monologue_enabled = self.__definitions.get_bool_value("inner_monologue_enabled")
             self.inner_monologue_load_mode = self.__definitions.get_string_value("inner_monologue_load_mode")
+            self.personal_reflection_enabled = self.__definitions.get_bool_value("personal_reflection_enabled")
+            self.personal_reflection_load_mode = self.__definitions.get_string_value("personal_reflection_load_mode")
+            self.save_summary_now_also_save_inner_thoughts = self.__definitions.get_bool_value("save_summary_now_also_save_inner_thoughts")
+            self.save_summary_now_also_save_personal_reflection = self.__definitions.get_bool_value("save_summary_now_also_save_personal_reflection")
             
             # Random LLM Selection
             self.random_llm_one_on_one_enabled = self.__definitions.get_bool_value("random_llm_one_on_one_enabled")
@@ -467,6 +483,7 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
         self.memory_prompt = self.__overlay_prompt("memory_prompt", self.__definitions.get_string_value("memory_prompt"))
         self.resummarize_prompt = self.__overlay_prompt("resummarize_prompt", self.__definitions.get_string_value("resummarize_prompt"))
         self.inner_monologue_prompt = self.__overlay_prompt("inner_monologue_prompt", self.__definitions.get_string_value("inner_monologue_prompt"))
+        self.personal_reflection_prompt = self.__overlay_prompt("personal_reflection_prompt", self.__definitions.get_string_value("personal_reflection_prompt"))
         self.vision_prompt = self.__overlay_prompt("vision_prompt", self.__definitions.get_string_value("vision_prompt"))
     
     @staticmethod

@@ -569,7 +569,9 @@ class Conversation:
                 messages_snapshot,
                 self.__context.npcs_in_conversation.get_all_characters(),
                 is_reload=is_reload,
-                force=True
+                force=True,
+                save_thoughts=bool(getattr(self.__context.config, "save_summary_now_also_save_inner_thoughts", True)),
+                save_reflections=bool(getattr(self.__context.config, "save_summary_now_also_save_personal_reflection", True)),
             )
         except Exception as e:
             logging.error(f"save_summary_only failed: {e}", exc_info=True)
@@ -596,6 +598,29 @@ class Conversation:
             )
         except Exception as e:
             logging.error(f"save_inner_thoughts_only failed: {e}", exc_info=True)
+
+    @utils.time_it
+    def save_personal_reflection_only(self) -> None:
+        """Triggers a personal-reflection save WITHOUT ending the conversation or writing a new summary.
+
+        Snapshots persistent messages so the rememberer can safely mutate the copy.
+        """
+        try:
+            messages_snapshot = message_thread(self.__context.config, None)
+            messages_snapshot.add_non_system_messages(self.__messages.get_persistent_messages())
+            characters_object = Characters()
+            for npc in self.__context.npcs_in_conversation.get_all_characters():
+                if not npc.is_player_character:
+                    characters_object.add_or_update_character(npc)
+            save_timestamp = int(time.time())
+            self.__rememberer.save_reflections_only(
+                messages_snapshot,
+                characters_object,
+                self.__context.world_id,
+                save_timestamp,
+            )
+        except Exception as e:
+            logging.error(f"save_personal_reflection_only failed: {e}", exc_info=True)
 
     @utils.time_it
     def get_conversation_as_json(self) -> str | None:
@@ -706,7 +731,9 @@ class Conversation:
         messages_to_summarize: message_thread,
         characters_to_save_for: list[Character],
         is_reload: bool = False,
-        force: bool = False
+        force: bool = False,
+        save_thoughts: bool | None = None,
+        save_reflections: bool | None = None,
     ):
         characters_object = Characters()
         for npc in characters_to_save_for:
@@ -727,6 +754,8 @@ class Conversation:
                 self.__context.world_id,
                 is_reload,
                 save_timestamp=save_timestamp,
+                save_thoughts=save_thoughts,
+                save_reflections=save_reflections,
             )
             # Save the log
             self.__save_conversation_log_for_characters(characters_to_save_for)

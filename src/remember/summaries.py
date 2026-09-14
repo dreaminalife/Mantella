@@ -15,6 +15,7 @@ from src.characters_manager import Characters
 from src.character_manager import Character
 from src.remember.remembering import Remembering
 from src.lorebook_manager import LorebookManager
+from src.bio_section_filter import apply_bio_section_filter, should_filter_memory_bios
 from src import utils
 
 # ---------------------------------------------------------------------------
@@ -201,6 +202,36 @@ def player_name_from_thread(messages: message_thread) -> str:
     return "the player"
 
 
+def thread_contains_player(messages: message_thread | None) -> bool:
+    """True when the thread looks like a player-involved (non-radiant) conversation."""
+    if messages is None:
+        return False
+    try:
+        for message in messages.get_persistent_messages():
+            if isinstance(message, UserMessage):
+                if (message.player_character_name or "").strip():
+                    return True
+                if not message.is_system_generated_message:
+                    return True
+            character = getattr(message, "character", None)
+            if character is not None and getattr(character, "is_player_character", False):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def format_character_bios_for_memory(characters, player_name: str, config, *, contains_player: bool) -> str:
+    """Join character bios for memory prompts, optionally stripping excluded sections."""
+    enabled = should_filter_memory_bios(config, contains_player=contains_player)
+    parts: List[str] = []
+    for character in characters:
+        resolved = utils.resolve_player_name_placeholder(character.bio or "", player_name)
+        filtered = apply_bio_section_filter(resolved, character.name, config, enabled=enabled)
+        parts.append(f"{character.name}: {filtered}")
+    return "\n\n".join(parts)
+
+
 class CharacterSummaryParameters:
     def __init__(self, messages: message_thread, involved_characters: List[Character]) -> None:
         self.messages = messages
@@ -211,7 +242,7 @@ class Summaries(Remembering):
     """ Stores a conversation as a summary in a text file.
         Loads the latest summary from disk for a prompt text.
     """
-    def __init__(self, game: Gameable, config: ConfigLoader, client: LLMClient, language_name: str, summary_client: ClientBase | None = None, summary_limit_pct: float = 0.3, inner_monologue=None) -> None:
+    def __init__(self, game: Gameable, config: ConfigLoader, client: LLMClient, language_name: str, summary_client: ClientBase | None = None, summary_limit_pct: float = 0.3, inner_monologue=None, personal_reflection=None) -> None:
         super().__init__()
         self.loglevel = 28
         self.__config = config
@@ -223,6 +254,7 @@ class Summaries(Remembering):
         self.__memory_prompt: str = config.memory_prompt
         self.__resummarize_prompt:str = config.resummarize_prompt
         self.__inner_monologue = inner_monologue
+        self.__personal_reflection = personal_reflection
         game_folder_name = "Fallout4" if game.game_name_in_filepath.lower() == "fallout4" else "Skyrim"
         lorebook_base_path = os.path.join(utils.resolve_path(), "data", game_folder_name, "lorebook")
         self.__lorebook_manager = LorebookManager(lorebook_base_path, config, game_folder_name)
@@ -233,6 +265,8 @@ class Summaries(Remembering):
         self.__summary_client = summary_client if summary_client else fallback_client
         if self.__inner_monologue:
             self.__inner_monologue.update_summary_client(summary_client, fallback_client)
+        if self.__personal_reflection:
+            self.__personal_reflection.update_summary_client(summary_client, fallback_client)
 
     def __build_lorebook_text_for_prompt(
         self,
@@ -377,6 +411,16 @@ class Summaries(Remembering):
             return ""
         return latest[1]
 
+    def get_character_personal_reflection(self, character: Character, world_id: str) -> str:
+        """Return this character's latest personal reflection (raw, no heading), or empty string."""
+        from src.remember.personal_reflection import should_load_reflections_into_prompt
+        if not self.__personal_reflection or not should_load_reflections_into_prompt(self.__config):
+            return ""
+        latest = self.__personal_reflection.get_latest_reflection_block(character, world_id)
+        if not latest:
+            return ""
+        return latest[1]
+
     def get_private_thoughts_text(self, npcs_in_conversation: Characters, world_id: str) -> str:
         """Single-NPC {private_thoughts} fill. Multi-NPC / radiant return empty (thoughts go in memory)."""
         non_player_characters = [char for char in npcs_in_conversation.get_all_characters() if not char.is_player_character]
@@ -443,7 +487,7 @@ class Summaries(Remembering):
         return hadMissingMessages
 
     @utils.time_it
-    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False, save_timestamp: int | None = None):
+    def save_conversation_state(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, is_reload=False, save_timestamp: int | None = None, save_thoughts: bool | None = None, save_reflections: bool | None = None):
         self.may_add_missing_join_leave_messages(messages, npcs_in_conversation)
 
         characters = self.get_character_lookup_dict(messages)
@@ -458,17 +502,42 @@ class Summaries(Remembering):
                self.__append_new_conversation_summary(summary, characters[npc_name], world_id, ts)
                saved_summaries[npc_name] = summary
 
-        if self.__inner_monologue and self.__config.inner_monologue_enabled:
+        should_save_thoughts = self.__config.inner_monologue_enabled if save_thoughts is None else save_thoughts
+        should_save_reflections = self.__config.personal_reflection_enabled if save_reflections is None else save_reflections
+
+        full_summaries: Dict[str, str] = {}
+        if (self.__inner_monologue and should_save_thoughts) or (self.__personal_reflection and should_save_reflections):
+            for npc_name, npc in characters.items():
+                full_summaries[npc_name] = self.get_character_summary(npc, world_id)
+
+        if self.__inner_monologue and should_save_thoughts:
             try:
+                # Only NPCs that just got a new summary; fill with the full file, including that summary.
+                thought_summaries = {
+                    npc_name: full_summaries.get(npc_name, text) if (text or "").strip() else text
+                    for npc_name, text in saved_summaries.items()
+                }
                 self.__inner_monologue.save_thoughts(
                     npc_message_threads,
                     characters,
-                    saved_summaries,
+                    thought_summaries,
                     world_id,
                     ts,
                 )
             except Exception as e:
                 logging.error(f"Failed to save private thoughts: {e}", exc_info=True)
+
+        if self.__personal_reflection and should_save_reflections:
+            try:
+                self.__personal_reflection.save_reflections(
+                    npc_message_threads,
+                    characters,
+                    full_summaries,
+                    world_id,
+                    ts,
+                )
+            except Exception as e:
+                logging.error(f"Failed to save personal reflections: {e}", exc_info=True)
 
         return saved_summaries
 
@@ -498,6 +567,32 @@ class Summaries(Remembering):
             )
         except Exception as e:
             logging.error(f"Failed to save private thoughts: {e}", exc_info=True)
+
+    @utils.time_it
+    def save_reflections_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None):
+        """Generate personal reflections from existing summaries without writing a new summary."""
+        if not self.__personal_reflection:
+            logging.info("Personal reflections not saved. Personal reflection is not available.")
+            return
+
+        self.may_add_missing_join_leave_messages(messages, npcs_in_conversation)
+        characters = self.get_character_lookup_dict(messages)
+        npc_message_threads: Dict[str, CharacterSummaryParameters] = self.get_threads_for_summarization(messages, characters)
+        ts = save_timestamp if save_timestamp is not None else int(time.time())
+        existing_summaries: Dict[str, str] = {}
+        for npc_name, npc in characters.items():
+            existing_summaries[npc_name] = self.get_character_summary(npc, world_id)
+
+        try:
+            self.__personal_reflection.save_reflections(
+                npc_message_threads,
+                characters,
+                existing_summaries,
+                world_id,
+                ts,
+            )
+        except Exception as e:
+            logging.error(f"Failed to save personal reflections: {e}", exc_info=True)
 
 
         
@@ -647,9 +742,11 @@ class Summaries(Remembering):
         
         names = ', '.join([c.name for c in npcInfo.characters])
         player_name = player_name_from_thread(npcInfo.messages)
-        bios = '\n\n'.join(
-            f"{c.name}: {utils.resolve_player_name_placeholder(c.bio, player_name)}"
-            for c in npcInfo.characters
+        bios = format_character_bios_for_memory(
+            npcInfo.characters,
+            player_name,
+            self.__config,
+            contains_player=thread_contains_player(npcInfo.messages),
         )
 
         # Convert list of characters to Characters object for get_prompt_text

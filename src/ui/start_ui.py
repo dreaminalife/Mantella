@@ -18,6 +18,7 @@ from src.ui.bio_editor_memory_files import (
     conversations_base_dir,
     load_latest_text,
     pick_world_id,
+    reflections_base_dir,
     save_latest_text,
     thoughts_base_dir,
 )
@@ -712,6 +713,9 @@ class StartUI(routeable):
         def _get_thoughts_base_dir() -> str:
             return thoughts_base_dir(config.save_folder, _get_game_folder_name())
 
+        def _get_reflections_base_dir() -> str:
+            return reflections_base_dir(config.save_folder, _get_game_folder_name())
+
         def _base_name_from_label(label: str, l2k: dict[str, str]) -> str:
             key = _key_from_label(label, l2k)
             if key == "":
@@ -757,6 +761,26 @@ class StartUI(routeable):
                 return save_latest_text(_get_thoughts_base_dir(), world_id, base_name, "thoughts", thoughts_text)
             except Exception as e:
                 logging.error(f"Bio Editor: failed to save private thoughts: {e}")
+                return ""
+
+        def _load_reflections_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
+            try:
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
+                    return ""
+                return load_latest_text(_get_reflections_base_dir(), world_id, base_name, "reflections")
+            except Exception as e:
+                logging.debug(f"Bio Editor: failed to load personal reflections: {e}")
+                return ""
+
+        def _save_reflections_for_label(label: str, reflections_text: str, l2k: dict[str, str], world_id: str) -> str:
+            try:
+                base_name = _base_name_from_label(label, l2k)
+                if not base_name:
+                    return ""
+                return save_latest_text(_get_reflections_base_dir(), world_id, base_name, "reflections", reflections_text)
+            except Exception as e:
+                logging.error(f"Bio Editor: failed to save personal reflections: {e}")
                 return ""
 
         def _load_override_tags_for_label(label: str, label_to_key: dict[str, str], user_csv_path: str | None) -> str:
@@ -1022,7 +1046,7 @@ class StartUI(routeable):
                 )
 
             with gr.Accordion(label="Bio Editor", open=True):
-                gr.Markdown("Manually edit character bios, conversation summaries, and private thoughts. Select an NPC from the dropdown, modify their bio, summary, or thoughts, and save your changes.")
+                gr.Markdown("Manually edit character bios, conversation summaries, private thoughts, and personal reflections. Select an NPC from the dropdown, modify their bio, summary, thoughts, or reflections, and save your changes.")
                 npc_dropdown = gr.Dropdown(choices=labels, label="NPC", multiselect=False, allow_custom_value=False)
                 bio_editor = gr.Text(value="", lines=12, label="Bio")
                 tags_editor = gr.Text(value="", lines=2, label='Tags ("tags" column in override csv file only)', placeholder="Comma-separated tags from your personal override file")
@@ -1043,6 +1067,12 @@ class StartUI(routeable):
                 with gr.Row():
                     save_thoughts_btn = gr.Button("Save Thoughts", variant="primary", interactive=False)
                     refresh_thoughts_btn = gr.Button("Refresh thoughts", variant="secondary")
+
+                reflections_editor = gr.Text(value="", lines=12, label="Personal Reflection")
+                with gr.Row():
+                    save_reflections_btn = gr.Button("Save Reflection", variant="primary", interactive=False)
+                    refresh_reflections_btn = gr.Button("Refresh reflection", variant="secondary")
+                    generate_reflection_btn = gr.Button("Generate Reflection", variant="primary", interactive=False)
 
             # --- LLM Request section ---
             with gr.Accordion(label="Bio Editor – LLM Request", open=True):
@@ -1109,10 +1139,11 @@ class StartUI(routeable):
                 bio = _load_bio_for_label(label, df, l2k)
                 summary = _load_summary_for_label(label, l2k, world_id)
                 thoughts = _load_thoughts_for_label(label, l2k, world_id)
+                reflections = _load_reflections_for_label(label, l2k, world_id)
                 override_tags = _load_override_tags_for_label(label, l2k, user_csv)
                 runtime_tags = _compute_runtime_tags_for_label(label, l2k)
                 can_save = bool(label)
-                return bio, summary, thoughts, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save)
+                return bio, summary, thoughts, reflections, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save)
 
             def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str):
                 # Try to infer optional column values from current df row, if present
@@ -1257,6 +1288,10 @@ class StartUI(routeable):
             def on_refresh_thoughts(label: str, l2k: dict[str, str], world_id: str):
                 thoughts = _load_thoughts_for_label(label, l2k, world_id)
                 return "Thoughts refreshed.", thoughts, gr.Button(interactive=bool(label))
+
+            def on_refresh_reflections(label: str, l2k: dict[str, str], world_id: str):
+                reflections = _load_reflections_for_label(label, l2k, world_id)
+                return "Personal reflection refreshed.", reflections, gr.Button(interactive=bool(label)), gr.Button(interactive=bool(label))
             # Prompt profiles handlers
             def _get_profiles_state():
                 try:
@@ -1342,6 +1377,75 @@ class StartUI(routeable):
                 path = _save_thoughts_for_label(label, thoughts_text, l2k, world_id)
                 info = f"Thoughts saved to: {path}" if path else "Thoughts save failed. Check logs."
                 return info
+
+            def on_save_reflections(label: str, reflections_text: str, l2k: dict[str, str], world_id: str):
+                path = _save_reflections_for_label(label, reflections_text, l2k, world_id)
+                info = f"Personal reflection saved to: {path}" if path else "Personal reflection save failed. Check logs."
+                return info
+
+            def on_generate_reflection(label: str, bio_text: str, summary_text: str, l2k: dict[str, str], world_id: str):
+                if not label:
+                    return "Select an NPC first.", "", gr.Button(interactive=False), gr.Button(interactive=False)
+                if not (summary_text or "").strip():
+                    return "Personal reflection not generated. This NPC has no summaries.", _load_reflections_for_label(label, l2k, world_id), gr.Button(interactive=True), gr.Button(interactive=True)
+                npc_name = _base_name_from_label(label, l2k)
+                if not npc_name:
+                    return "Could not resolve NPC name.", "", gr.Button(interactive=False), gr.Button(interactive=False)
+                try:
+                    from src.game_manager import GameStateManager
+                    from src.llm.key_file_resolver import key_file_resolver as _kfr
+                    from src.remember.personal_reflection import PersonalReflection
+                    from src.ui import settings_ui_constructor as sui
+
+                    gm_ref = getattr(sui, "_game_manager_ref", None)
+                    try:
+                        config.sync_summary_llm_settings_from_definitions()
+                        config.sync_bio_section_filter_settings_from_definitions()
+                    except Exception:
+                        pass
+
+                    summary_client = GameStateManager.create_summary_client(config, "GPT_SECRET_KEY.txt")
+                    if summary_client is None:
+                        skf = _kfr.get_key_files_for_service(config.llm_api, "GPT_SECRET_KEY.txt")
+                        summary_client = ClientBase(
+                            config.llm_api,
+                            config.llm,
+                            config.llm_params,
+                            config.custom_token_count,
+                            skf,
+                        )
+                    language_name = getattr(config, "language", "English") or "English"
+                    player_name = "the player"
+                    try:
+                        if gm_ref and getattr(gm_ref, "_GameStateManager__talk", None):
+                            talk = gm_ref._GameStateManager__talk
+                            player = talk.context.npcs_in_conversation.get_player_character()
+                            if player and player.name:
+                                player_name = player.name
+                    except Exception:
+                        pass
+                    manager = PersonalReflection(
+                        getattr(gm_ref, "game", None) if gm_ref else None,
+                        config,
+                        summary_client,
+                        language_name,
+                        summary_client,
+                        reflections_folder_path=_get_reflections_base_dir(),
+                    )
+                    result = manager.save_for_named_npc(
+                        npc_name,
+                        bio_text or "",
+                        summary_text or "",
+                        world_id or "default",
+                        player_name=player_name,
+                    )
+                    updated = _load_reflections_for_label(label, l2k, world_id)
+                    if result:
+                        return "Personal reflection generated and appended.", updated, gr.Button(interactive=True), gr.Button(interactive=True)
+                    return "Personal reflection generation failed. Check the log.", updated, gr.Button(interactive=True), gr.Button(interactive=True)
+                except Exception as e:
+                    logging.error(f"Bio Editor: failed to generate personal reflection: {e}", exc_info=True)
+                    return f"Personal reflection generation failed: {e}", _load_reflections_for_label(label, l2k, world_id), gr.Button(interactive=True), gr.Button(interactive=True)
 
             # --- LLM helper handlers ---
             def _render_prompt_text(template_text: str, bio_text: str, summary_text: str, player_description: str = "", conversation_history: str = "") -> str:
@@ -1816,13 +1920,16 @@ class StartUI(routeable):
                     pass
 
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[])
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn])
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn])
             save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
             refresh_summaries_btn.click(on_refresh_summaries, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, summary_editor, save_summary_btn])
             save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
             refresh_thoughts_btn.click(on_refresh_thoughts, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, thoughts_editor, save_thoughts_btn])
             save_thoughts_btn.click(on_save_thoughts, inputs=[npc_dropdown, thoughts_editor, state_label_to_key, state_world_id], outputs=[info_line])
+            refresh_reflections_btn.click(on_refresh_reflections, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, reflections_editor, save_reflections_btn, generate_reflection_btn])
+            save_reflections_btn.click(on_save_reflections, inputs=[npc_dropdown, reflections_editor, state_label_to_key, state_world_id], outputs=[info_line])
+            generate_reflection_btn.click(on_generate_reflection, inputs=[npc_dropdown, bio_editor, summary_editor, state_label_to_key, state_world_id], outputs=[info_line, reflections_editor, save_reflections_btn, generate_reflection_btn])
 
             # LLM section wiring
             # Prompt profile wiring

@@ -14,58 +14,7 @@ from src.config.config_loader import ConfigLoader
 from src.llm.llm_client import LLMClient
 from src.config.definitions.game_definitions import GameEnum
 from src.lorebook_manager import LorebookManager
-
-
-def _normalize_bio_section_name(section_name: str) -> str:
-    return " ".join(section_name.strip().lower().split())
-
-
-def _filter_markdown_top_level_sections(
-    bio_text: str,
-    sections_to_exclude: set[str],
-) -> tuple[str, set[str]]:
-    """Remove selected top-level markdown sections from bio text.
-
-    A top-level bio section is treated as a markdown header line in the form
-    `## Section Name`. Lines under that section are removed until the next
-    top-level `## ...` header.
-    """
-    if not bio_text or not sections_to_exclude:
-        return bio_text, set()
-
-    lines = bio_text.splitlines()
-    header_regex = re.compile(r"^##\s+(.+?)\s*$")
-
-    headers: list[tuple[int, str]] = []
-    for idx, line in enumerate(lines):
-        match = header_regex.match(line)
-        if not match:
-            continue
-        normalized_header = _normalize_bio_section_name(match.group(1))
-        headers.append((idx, normalized_header))
-
-    if not headers:
-        return bio_text, set()
-
-    remove_ranges: list[tuple[int, int]] = []
-    matched_sections: set[str] = set()
-    for i, (start_idx, normalized_header) in enumerate(headers):
-        if normalized_header not in sections_to_exclude:
-            continue
-        end_idx = headers[i + 1][0] if i + 1 < len(headers) else len(lines)
-        remove_ranges.append((start_idx, end_idx))
-        matched_sections.add(normalized_header)
-
-    if not remove_ranges:
-        return bio_text, set()
-
-    filtered_lines: list[str] = []
-    for idx, line in enumerate(lines):
-        should_remove = any(start <= idx < end for start, end in remove_ranges)
-        if not should_remove:
-            filtered_lines.append(line)
-
-    return "\n".join(filtered_lines), matched_sections
+from src.bio_section_filter import apply_bio_section_filter, should_filter_conversation_bios
 
 
 class add_or_update_result:
@@ -514,28 +463,24 @@ class context:
 
     def _filter_bio_sections_for_prompt(self, bio: str, character_name: str) -> str:
         """Filter configured top-level markdown bio sections for prompt rendering."""
-        if not bio:
-            return bio
+        enabled = should_filter_conversation_bios(
+            self.__config,
+            contains_player=self.__npcs_in_conversation.contains_player_character(),
+        )
+        return apply_bio_section_filter(bio, character_name, self.__config, enabled=enabled)
 
-        # Requirement scope: apply to single + multi NPC only (not radiant).
-        if not self.__npcs_in_conversation.contains_player_character():
+    def _append_reflection_to_bio(self, bio: str, character: Character) -> str:
+        """Append the latest wrapped personal reflection after the filtered bio."""
+        from src.remember.personal_reflection import wrap_personal_reflection
+        reflection = wrap_personal_reflection(
+            self.__rememberer.get_character_personal_reflection(character, self.__world_id)
+        )
+        if not reflection:
             return bio
-
-        if not getattr(self.__config, "enable_bio_section_filter", False):
-            return bio
-
-        configured_sections = set(getattr(self.__config, "bio_sections_to_exclude_list", []))
-        if not configured_sections:
-            logging.debug("Bio section filter enabled, but no sections are configured.")
-            return bio
-
-        filtered_bio, matched_sections = _filter_markdown_top_level_sections(bio, configured_sections)
-        missing_sections = sorted(configured_sections.difference(matched_sections))
-        if missing_sections:
-            logging.debug(
-                f"Bio section filter: no matching '##' header found in {character_name}'s bio for: {', '.join(missing_sections)}"
-            )
-        return filtered_bio
+        reflection = self._resolve_bio_player_name(reflection)
+        if bio:
+            return f"{bio.rstrip()}\n\n{reflection}"
+        return reflection
 
     @utils.time_it
     def __get_bios_text(self) -> str:
@@ -548,6 +493,7 @@ class context:
         for character in self.get_characters_excluding_player().get_all_characters():
             resolved_bio = self._resolve_bio_player_name(character.bio)
             resolved_bio = self._filter_bio_sections_for_prompt(resolved_bio, character.name)
+            resolved_bio = self._append_reflection_to_bio(resolved_bio, character)
             if len(self.__npcs_in_conversation) == 1:
                 bio_descriptions.append(resolved_bio)
             else:
@@ -574,6 +520,7 @@ class context:
             # Get the bio
             bio = self._resolve_bio_player_name(character.bio)
             bio = self._filter_bio_sections_for_prompt(bio, character.name)
+            bio = self._append_reflection_to_bio(bio, character)
             
             # Get the summary for this specific character using the new interface method
             summary = ""

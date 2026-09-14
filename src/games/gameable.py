@@ -45,6 +45,7 @@ class Gameable(ABC):
 
         self.__conversation_folder_path = config.save_folder + f"data/{mantella_game_folder_path}/conversations"
         self.__thoughts_folder_path = os.path.join(config.save_folder, f"data/{mantella_game_folder_path}/thoughts")
+        self.__reflections_folder_path = os.path.join(config.save_folder, f"data/{mantella_game_folder_path}/reflections")
         conversation_log.game_path = self.__conversation_folder_path
     
     @property
@@ -79,6 +80,10 @@ class Gameable(ABC):
     @property
     def thoughts_folder_path(self) -> str:
         return self.__thoughts_folder_path
+
+    @property
+    def reflections_folder_path(self) -> str:
+        return self.__reflections_folder_path
     
     @property
     @abstractmethod
@@ -597,6 +602,7 @@ class Gameable(ABC):
             mantella_game_folder_path = self.game_name_in_filepath.capitalize()
             self.__conversation_folder_path = config.save_folder + f"data/{mantella_game_folder_path}/conversations"
             self.__thoughts_folder_path = os.path.join(config.save_folder, f"data/{mantella_game_folder_path}/thoughts")
+            self.__reflections_folder_path = os.path.join(config.save_folder, f"data/{mantella_game_folder_path}/reflections")
             conversation_log.game_path = self.__conversation_folder_path
             
             logging.info(f"{self.__class__.__name__} hot-swap completed successfully")
