@@ -44,6 +44,18 @@ def remove_trailing_number(s):
         return s
 
 
+def resolve_player_name_placeholder(text: str | None, player_name: str | None = None) -> str | None:
+    """Replace exact `{player_name}` occurrences in text.
+
+    Uses *player_name* when it is a non-empty string, otherwise ``the player``.
+    Matching is exact and case-sensitive. Returns *text* unchanged if it is None.
+    """
+    if text is None:
+        return text
+    replacement = player_name if player_name else "the player"
+    return text.replace("{player_name}", replacement)
+
+
 def resolve_path():
     if getattr(sys, 'frozen', False):
         resolved_path = os.path.dirname(sys.executable)

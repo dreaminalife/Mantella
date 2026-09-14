@@ -509,11 +509,8 @@ class context:
         If a player character is present, use their name; otherwise use
         the literal text "the player". Matching is exact and case-sensitive.
         """
-        if bio is None:
-            return bio
         player = self.__npcs_in_conversation.get_player_character()
-        replacement = player.name if player else "the player"
-        return bio.replace("{player_name}", replacement)
+        return utils.resolve_player_name_placeholder(bio, player.name if player else None)
 
     def _filter_bio_sections_for_prompt(self, bio: str, character_name: str) -> str:
         """Filter configured top-level markdown bio sections for prompt rendering."""

@@ -187,6 +187,20 @@ def _build_new_events_section(new_events: List[Tuple[int, str]]) -> str:
     return "\n".join(lines)
 
 
+def player_name_from_thread(messages: message_thread) -> str:
+    """Best-effort player name from talk messages, else ``the player``."""
+    try:
+        talk_messages = messages.get_talk_only()
+        for m in reversed(talk_messages):
+            if isinstance(m, UserMessage):
+                pn = m.player_character_name if hasattr(m, "player_character_name") else ""
+                if pn:
+                    return pn
+    except Exception:
+        pass
+    return "the player"
+
+
 class CharacterSummaryParameters:
     def __init__(self, messages: message_thread, involved_characters: List[Character]) -> None:
         self.messages = messages
@@ -631,20 +645,12 @@ class Summaries(Remembering):
         else:
             location: str = "Skyrim"
         
-        bios = '\n\n'.join([f"{c.name}: {c.bio}" for c in npcInfo.characters])
         names = ', '.join([c.name for c in npcInfo.characters])
-        # Try to extract player name from the latest user message; default to 'the player'
-        player_name = "the player"
-        try:
-            talk_messages = npcInfo.messages.get_talk_only()
-            for m in reversed(talk_messages):
-                if isinstance(m, UserMessage):
-                    pn = m.player_character_name if hasattr(m, 'player_character_name') else ""
-                    if pn:
-                        player_name = pn
-                        break
-        except Exception:
-            pass
+        player_name = player_name_from_thread(npcInfo.messages)
+        bios = '\n\n'.join(
+            f"{c.name}: {utils.resolve_player_name_placeholder(c.bio, player_name)}"
+            for c in npcInfo.characters
+        )
 
         # Convert list of characters to Characters object for get_prompt_text
         characters_obj = Characters()

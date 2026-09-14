@@ -12,7 +12,7 @@ from src.llm.client_base import ClientBase
 from src.llm.llm_client import LLMClient
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
-from src.remember.summaries import CharacterSummaryParameters, parse_summary_blocks
+from src.remember.summaries import CharacterSummaryParameters, parse_summary_blocks, player_name_from_thread
 
 PRIVATE_THOUGHT_HEADER = "--- PRIVATE THOUGHT (unspoken; other people must not know this) ---"
 PRIVATE_THOUGHT_FOOTER = "--- END PRIVATE THOUGHT ---"
@@ -180,19 +180,12 @@ class InnerMonologue:
         else:
             location = "Skyrim"
 
-        bios = "\n\n".join([f"{c.name}: {c.bio}" for c in npc_info.characters])
         names = ", ".join([c.name for c in npc_info.characters])
-        player_name = "the player"
-        try:
-            talk_messages = npc_info.messages.get_talk_only()
-            for m in reversed(talk_messages):
-                if isinstance(m, UserMessage):
-                    pn = m.player_character_name if hasattr(m, "player_character_name") else ""
-                    if pn:
-                        player_name = pn
-                        break
-        except Exception:
-            pass
+        player_name = player_name_from_thread(npc_info.messages)
+        bios = "\n\n".join(
+            f"{c.name}: {utils.resolve_player_name_placeholder(c.bio, player_name)}"
+            for c in npc_info.characters
+        )
 
         previous_thoughts = self.get_previous_thoughts_text(npc, world_id) or "(none)"
         prompt = self.__config.inner_monologue_prompt.format(
