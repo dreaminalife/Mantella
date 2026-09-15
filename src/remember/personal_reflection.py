@@ -22,10 +22,10 @@ from src.remember.summaries import (
     thread_contains_player,
 )
 
-PERSONAL_REFLECTION_HEADER = "## Personal Reflection"
+PERSONAL_REFLECTION_HEADER = "## Personal Reflection (Don't speak out loud, these are private thoughts)"
 PERSONAL_REFLECTION_LOAD_NONE = "none"
 _TS_MARKER_RE = re.compile(r"^ts=(\d+)$")
-_HEADING_RE = re.compile(r"^##\s*personal reflection\s*$", re.IGNORECASE)
+_HEADING_RE = re.compile(r"^##\s*personal reflection(?:\s*\(.*\))?\s*$", re.IGNORECASE)
 _USER_INSTRUCTION = "Write your personal reflection."
 
 
