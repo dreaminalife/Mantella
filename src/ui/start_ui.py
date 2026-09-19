@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 import webbrowser
 import gradio as gr
@@ -14,6 +14,14 @@ import src.utils as utils
 import json
 import re
 from src.ui.bio_llm_requester import BioLLMRequester
+from src.ui.tab_reorder import (
+    BIO_EDITOR_TAB,
+    DOCUMENTATION_TAB,
+    LIVE_CONVERSATION_TAB,
+    TAB_REORDER_JS,
+    default_tab_names,
+    merge_tab_order,
+)
 from src.ui.bio_editor_memory_files import (
     conversations_base_dir,
     load_latest_text,
@@ -31,17 +39,13 @@ class StartUI(routeable):
         self.__constructor = SettingsUIConstructor(config)
 
     def create_main_block(self) -> gr.Blocks:
-        with gr.Blocks(title="Mantella", fill_height=True, analytics_enabled=False, theme= self.__get_theme(), css=self.__load_css()) as main_block:
+        with gr.Blocks(title="Mantella", fill_height=True, analytics_enabled=False, theme= self.__get_theme(), css=self.__load_css(), js="() => {\n" + TAB_REORDER_JS + "\n}", head="<script>" + TAB_REORDER_JS + "</script>") as main_block:
             # with gr.Tab("Settings") as tabs:
-            settings_page = self.__generate_settings_page()
+            self.__generate_tabs()
             # with gr.Tab("Chat with NPCs", interactive=False):
             #     self.__generate_chat_page()
             # with gr.Tab("NPC editor", interactive=False):
             #     self.__generate_character_editor_page()
-            with gr.Tab("Bio Editor"):
-                self.__generate_bio_editor_page()
-            with gr.Tab("Documentation"):
-                self.__generate_documentation_page()
 
             with gr.Row(elem_classes="custom-footer"):
                 gr.HTML("""
@@ -51,20 +55,26 @@ class StartUI(routeable):
                 """)
         return main_block
 
-    def __generate_settings_page(self) -> gr.Column:
-        # with gr.Column() as settings:
-        for cf in self._config.definitions.base_groups:
-            if not cf.is_hidden:
-                with gr.Tab(cf.name):
-                    cf.accept_visitor(self.__constructor)
-                if cf.name == "Prompt Profiles":
-                    with gr.Tab("Live Conversation"):
-                        self.__generate_live_conversation_page()
-        
-        # Set up model dependencies after all UI elements are created
+    def __generate_tabs(self) -> None:
+        groups_by_name = {cf.name: cf for cf in self._config.definitions.base_groups if not cf.is_hidden}
+        ordered_names = merge_tab_order(
+            default_tab_names(self._config.definitions.base_groups),
+            self._config.get_ui_tab_order(),
+        )
+        for name in ordered_names:
+            with gr.Tab(name):
+                if name == LIVE_CONVERSATION_TAB:
+                    self.__generate_live_conversation_page()
+                elif name == BIO_EDITOR_TAB:
+                    self.__generate_bio_editor_page()
+                elif name == DOCUMENTATION_TAB:
+                    self.__generate_documentation_page()
+                else:
+                    group = groups_by_name.get(name)
+                    if group is not None:
+                        group.accept_visitor(self.__constructor)
+
         self.__constructor.setup_model_dependencies()
-        
-        return None #settings
     
     def __generate_chat_page(self):
         return gr.Column()
@@ -1919,34 +1929,34 @@ class StartUI(routeable):
                 except Exception:
                     pass
 
-            override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[])
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn])
-            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
-            refresh_summaries_btn.click(on_refresh_summaries, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, summary_editor, save_summary_btn])
-            save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
-            refresh_thoughts_btn.click(on_refresh_thoughts, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, thoughts_editor, save_thoughts_btn])
-            save_thoughts_btn.click(on_save_thoughts, inputs=[npc_dropdown, thoughts_editor, state_label_to_key, state_world_id], outputs=[info_line])
-            refresh_reflections_btn.click(on_refresh_reflections, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, reflections_editor, save_reflections_btn, generate_reflection_btn])
-            save_reflections_btn.click(on_save_reflections, inputs=[npc_dropdown, reflections_editor, state_label_to_key, state_world_id], outputs=[info_line])
+            override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[], show_progress="hidden")
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn], show_progress="hidden")
+            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown], show_progress="hidden")
+            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn], show_progress="hidden")
+            refresh_summaries_btn.click(on_refresh_summaries, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, summary_editor, save_summary_btn], show_progress="hidden")
+            save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line], show_progress="hidden")
+            refresh_thoughts_btn.click(on_refresh_thoughts, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, thoughts_editor, save_thoughts_btn], show_progress="hidden")
+            save_thoughts_btn.click(on_save_thoughts, inputs=[npc_dropdown, thoughts_editor, state_label_to_key, state_world_id], outputs=[info_line], show_progress="hidden")
+            refresh_reflections_btn.click(on_refresh_reflections, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=[info_line, reflections_editor, save_reflections_btn, generate_reflection_btn], show_progress="hidden")
+            save_reflections_btn.click(on_save_reflections, inputs=[npc_dropdown, reflections_editor, state_label_to_key, state_world_id], outputs=[info_line], show_progress="hidden")
             generate_reflection_btn.click(on_generate_reflection, inputs=[npc_dropdown, bio_editor, summary_editor, state_label_to_key, state_world_id], outputs=[info_line, reflections_editor, save_reflections_btn, generate_reflection_btn])
 
             # LLM section wiring
             # Prompt profile wiring
-            prompt_selector.change(apply_selected_prompt, inputs=[prompt_selector], outputs=[prompt_editor, save_prompt_btn])
-            save_prompt_btn.click(save_prompt_profile, inputs=[prompt_editor, new_prompt_name, prompt_selector], outputs=[info_line, prompt_selector, new_prompt_name])
-            delete_prompt_btn.click(delete_prompt_profile, inputs=[prompt_selector], outputs=[info_line, prompt_selector, prompt_editor, new_prompt_name])
+            prompt_selector.change(apply_selected_prompt, inputs=[prompt_selector], outputs=[prompt_editor, save_prompt_btn], show_progress="hidden")
+            save_prompt_btn.click(save_prompt_profile, inputs=[prompt_editor, new_prompt_name, prompt_selector], outputs=[info_line, prompt_selector, new_prompt_name], show_progress="hidden")
+            delete_prompt_btn.click(delete_prompt_profile, inputs=[prompt_selector], outputs=[info_line, prompt_selector, prompt_editor, new_prompt_name], show_progress="hidden")
 
-            service_dropdown.change(on_service_change_persist, inputs=[service_dropdown], outputs=[model_dropdown])
-            update_models_btn.click(on_service_change_persist, inputs=[service_dropdown], outputs=[model_dropdown])
-            model_dropdown.change(on_model_change_persist, inputs=[model_dropdown], outputs=[model_dropdown])
-            apply_profile_checkbox.change(on_apply_profile_change_persist, inputs=[apply_profile_checkbox], outputs=[])
-            omit_stop_checkbox.change(on_omit_stop_change_persist, inputs=[omit_stop_checkbox], outputs=[])
-            temp_override.change(on_temp_override_persist, inputs=[temp_override], outputs=[])
-            max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[])
+            service_dropdown.change(on_service_change_persist, inputs=[service_dropdown], outputs=[model_dropdown], show_progress="hidden")
+            update_models_btn.click(on_service_change_persist, inputs=[service_dropdown], outputs=[model_dropdown], show_progress="hidden")
+            model_dropdown.change(on_model_change_persist, inputs=[model_dropdown], outputs=[model_dropdown], show_progress="hidden")
+            apply_profile_checkbox.change(on_apply_profile_change_persist, inputs=[apply_profile_checkbox], outputs=[], show_progress="hidden")
+            omit_stop_checkbox.change(on_omit_stop_change_persist, inputs=[omit_stop_checkbox], outputs=[], show_progress="hidden")
+            temp_override.change(on_temp_override_persist, inputs=[temp_override], outputs=[], show_progress="hidden")
+            max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[], show_progress="hidden")
             send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, omit_stop_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
-            save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
+            save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown], show_progress="hidden")
+            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn], show_progress="hidden")
 
     def __get_theme(self):
         return gr.themes.Soft(primary_hue="green",
@@ -1963,6 +1973,22 @@ class StartUI(routeable):
         @app.get("/favicon.ico")
         async def favicon():
             return FileResponse("Mantella.ico")
+
+        @app.post("/tab-order")
+        async def save_tab_order(request: Request):
+            try:
+                payload = await request.json()
+                order = payload.get("order", [])
+                if not isinstance(order, list):
+                    return {"ok": False}
+                names = [str(item).strip() for item in order if str(item).strip()]
+                if not names:
+                    return {"ok": False}
+                self._config.save_ui_tab_order(names)
+                return {"ok": True}
+            except Exception as e:
+                logging.warning(f"Failed to save tab order: {e}")
+                return {"ok": False}
 
         gr.mount_gradio_app(app,
                             self.create_main_block(),

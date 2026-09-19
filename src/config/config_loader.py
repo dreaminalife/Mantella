@@ -107,6 +107,23 @@ class ConfigLoader:
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
 
+    def get_ui_tab_order(self) -> list[str]:
+        try:
+            raw = self.__definitions.get_string_value("ui_tab_order") or ""
+        except Exception:
+            return []
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
+    def save_ui_tab_order(self, names: list[str]) -> None:
+        already_changed = self.__has_any_value_changed
+        order = ",".join(name.strip() for name in names if isinstance(name, str) and name.strip())
+        cv = self.__definitions.get_config_value_definition("ui_tab_order")
+        if cv.value == order:
+            return
+        cv.value = order
+        if not already_changed:
+            self.__has_any_value_changed = False
+
     def sync_summary_llm_settings_from_definitions(self) -> None:
         """Refresh summary LLM attributes from UI definitions without clearing the config-changed flag.
 

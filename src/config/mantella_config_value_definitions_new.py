@@ -115,6 +115,13 @@ class MantellaConfigValueDefinitionsNew:
             "",
             []
         ))
+        hidden_category.add_config_value(ConfigValueString(
+            "ui_tab_order",
+            "UI Tab Order",
+            "Comma-separated settings tab names in the order they should appear. Empty uses the default order.",
+            "",
+            []
+        ))
         result.add_base_group(hidden_category)
         
         llm_category = ConfigValueGroup("LLM", "Large Language Model", "Settings for the LLM providers and the LLMs themselves.", on_value_change_callback)

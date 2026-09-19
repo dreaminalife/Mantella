@@ -232,4 +232,11 @@
     flex-shrink: 0 !important;
     padding-left: 10px !important;
     padding-right: 10px !important;
+    cursor: grab !important;
+    user-select: none !important;
+}
+
+.tab-nav button.mantella-tab-dragging {
+    cursor: grabbing !important;
+    opacity: 0.55 !important;
 }
