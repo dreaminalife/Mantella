@@ -201,6 +201,11 @@
     border: 1px solid red !important;
 }
 
+/* Keep validation output from collapsing the page when it appears or hides. */
+.constraint-violation-slot {
+    min-height: 1.5em;
+}
+
 .custom-footer {
     text-align: left;
     font-size: 20px;

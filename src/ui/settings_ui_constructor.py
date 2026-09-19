@@ -149,19 +149,22 @@ class SettingsUIConstructor(ConfigValueVisitor):
                                 service_ui.change(
                                     profile_service_change_handler,
                                     inputs=service_ui,
-                                    outputs=[model_ui, parameters_ui]
+                                    outputs=[model_ui, parameters_ui],
+                                    show_progress="hidden"
                                 )
                             else:
                                 service_ui.change(
                                     change_handler,
                                     inputs=service_ui,
-                                    outputs=model_ui
+                                    outputs=model_ui,
+                                    show_progress="hidden"
                                 )
                         else:
                             service_ui.change(
                                 change_handler,
                                 inputs=service_ui,
-                                outputs=model_ui
+                                outputs=model_ui,
+                                show_progress="hidden"
                             )
         
         # Set up automatic profile loading for model profiles  
@@ -208,7 +211,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 profile_model_ui.change(
                     load_profile_on_model_change,
                     inputs=profile_model_ui,
-                    outputs=parameters_ui
+                    outputs=parameters_ui,
+                    show_progress="hidden"
                 )
     
     def __create_model_dropdown(self, model_config: ConfigValue, handler: ModelConfig) -> gr.Dropdown:
@@ -232,13 +236,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
             # Update the config value to the default model
             model_config.value = selected_model
             
-        return gr.Dropdown(
-            value=selected_model,                        
+        return gr.update(
+            value=selected_model,
             choices=model_list.available_models,
-            multiselect=False,
-            allow_custom_value=model_list.allows_manual_model_input,
-            show_label=False,
-            container=False
+            allow_custom_value=model_list.allows_manual_model_input
         )
     
     def __tooltip_content_class(self, config_value: ConfigValue, is_second_setting: bool) -> str:
@@ -277,25 +278,25 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 button = gr.Button(btn_label, variant="primary", size='sm')
                 # Ensure the button click event is properly connected
                 if hasattr(button, "_id"):
-                    button.click(btn_action, outputs=input_ui)
+                    button.click(btn_action, outputs=input_ui, show_progress="hidden")
                 else:
                     # Fallback: try connecting without checking _id
                     try:
-                        button.click(btn_action, outputs=input_ui)
+                        button.click(btn_action, outputs=input_ui, show_progress="hidden")
                     except Exception as e:
                         logging.error(f"Failed to connect button '{btn_label}' click event: {e}")
             if not additional_buttons:
                 reset_button = gr.Button("Default", size='sm')
                 if hasattr(reset_button, "_id"):
                     reset_button.click(
-                        lambda: self.__on_reset_click(config_value, create_input_component), 
-                        outputs = [input_ui, error_message]
+                        lambda: self.__on_reset_click(config_value, create_input_component),
+                        outputs = [input_ui, error_message],
+                        show_progress="hidden"
                     )
 
     def __on_reset_click(self, config_value: ConfigValue, create_input_component: Callable[[ConfigValue], Any]):
         error_message = self.__on_change(config_value, config_value.default_value)
-        new_input = create_input_component(config_value)
-        return [new_input, error_message]
+        return [gr.update(value=config_value.default_value), error_message]
 
     def __setup_event_handlers(self, config_value: ConfigValue, 
                              input_ui: Any,
@@ -306,11 +307,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
         """Sets up the event handlers for an input component"""
         if hasattr(input_ui, "_id"):
             if update_on_change:
-                input_ui.change(lambda x: self.__on_change(config_value, x), input_ui, error_message)
+                input_ui.change(lambda x: self.__on_change(config_value, x), input_ui, error_message, show_progress="hidden")
             if update_on_submit:
-                input_ui.submit(lambda x: self.__on_change(config_value, x), input_ui, error_message)
+                input_ui.submit(lambda x: self.__on_change(config_value, x), input_ui, error_message, show_progress="hidden")
             if update_on_blur:
-                input_ui.blur(lambda x: self.__on_change(config_value, x), input_ui, error_message)
+                input_ui.blur(lambda x: self.__on_change(config_value, x), input_ui, error_message, show_progress="hidden")
 
     def __create_setting_components(self, setting: SettingConfig, is_second_setting: bool = False) -> SettingUIComponents:
         """Creates the UI components for a single setting"""
@@ -471,19 +472,22 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__create_single_setting(current_setting)
 
     T = TypeVar('T')
-    def __on_change(self, config_value: ConfigValue[T], new_value: T) -> gr.Markdown:
+    def __on_change(self, config_value: ConfigValue[T], new_value: T) -> Any:
         result: ConfigValueConstraintResult = config_value.does_value_cause_error(new_value)
         if result.is_success:
             if config_value.value != new_value:
                 config_value.value = new_value
                 logging.info(f'{config_value.name} set to {config_value.value}')
-            return self.__construct_error_message_panel('', is_visible=False)
+            return self.__update_error_message_panel('', is_visible=False)
         else:
-            return self.__construct_error_message_panel(result.error_message, is_visible=True)
-     
+            return self.__update_error_message_panel(result.error_message, is_visible=True)
+
     def __construct_error_message_panel(self, message: str, is_visible: bool) -> gr.Markdown:
-        markdown = gr.Markdown(value=message, visible=is_visible, elem_classes="constraint-violation")
-        return markdown
+        with gr.Column(elem_classes="constraint-violation-slot"):
+            return gr.Markdown(value=message, visible=is_visible, elem_classes="constraint-violation")
+
+    def __update_error_message_panel(self, message: str, is_visible: bool) -> Any:
+        return gr.update(value=message, visible=is_visible)
 
     def _construct_badges(self, config_value: ConfigValue):
         if len(config_value.tags) > 0:
@@ -558,6 +562,13 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 label="Model"
             )
 
+        def update_model_dropdown(model: str, model_list: Any) -> Any:
+            return gr.update(
+                value=model,
+                choices=model_list.available_models,
+                allow_custom_value=model_list.allows_manual_model_input
+            )
+
         def get_slot_values(service: str, model: str) -> list[Any]:
             slots = self.get_profile_manager().get_profile_slots(service, model)
             result: list[Any] = []
@@ -608,7 +619,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             model, model_list = get_models_for_service(service)
             values_by_id["profile_selected_service"].value = service
             values_by_id["profile_selected_model"].value = model
-            return [make_model_dropdown(model, model_list)] + get_slot_values(service, model)
+            return [update_model_dropdown(model, model_list)] + get_slot_values(service, model)
 
         def load_model(service: str, model: str):
             values_by_id["profile_selected_service"].value = service
@@ -656,17 +667,20 @@ class SettingsUIConstructor(ConfigValueVisitor):
         service_ui.change(
             load_service,
             inputs=service_ui,
-            outputs=[model_ui] + slot_inputs
+            outputs=[model_ui] + slot_inputs,
+            show_progress="hidden"
         )
         model_ui.change(
             load_model,
             inputs=[service_ui, model_ui],
-            outputs=slot_inputs
+            outputs=slot_inputs,
+            show_progress="hidden"
         )
         save_ui.click(
             save_profiles,
             inputs=[service_ui, model_ui] + slot_inputs,
-            outputs=status_ui
+            outputs=status_ui,
+            show_progress="hidden"
         )
 
     def render_prompt_profile_editor(self, config_value: ConfigValueGroup) -> None:
@@ -684,29 +698,28 @@ class SettingsUIConstructor(ConfigValueVisitor):
         def type_id(type_display: str) -> str:
             return PromptProfileManager.identifier_for_display(type_display) or "skyrim_prompt"
 
-        def edit_dropdown(prompt_type: str, selected: str | None) -> gr.Dropdown:
+        def edit_dropdown(prompt_type: str, selected: str | None) -> Any:
             names = manager.get_profile_names(prompt_type)
             value = selected if selected in names else None
-            return gr.Dropdown(choices=names, value=value, label="Edit profile", allow_custom_value=False)
+            return gr.update(choices=names, value=value)
 
-        def active_dropdown(prompt_type: str) -> gr.Dropdown:
+        def active_dropdown(prompt_type: str) -> Any:
             names = manager.get_profile_names(prompt_type)
             active = manager.get_active_name(prompt_type) or none_label
-            return gr.Dropdown(
-                choices=[none_label] + names,
-                value=active,
-                label="Active profile",
-                allow_custom_value=False
-            )
+            return gr.update(choices=[none_label] + names, value=active)
 
-        def error_panel(message: str, visible: bool) -> gr.Markdown:
-            return self.__construct_error_message_panel(message, is_visible=visible)
+        def error_panel(message: str, visible: bool) -> Any:
+            return self.__update_error_message_panel(message, is_visible=visible)
 
-        def validation_panel(prompt_type: str, text: str) -> gr.Markdown:
+        def validation_result(prompt_type: str, text: str) -> tuple[str, bool]:
             result = manager.validate_text(prompt_type, text or "")
             if result.is_success:
-                return error_panel("", False)
-            return error_panel(result.error_message, True)
+                return "", False
+            return result.error_message, True
+
+        def validation_panel(prompt_type: str, text: str) -> Any:
+            message, visible = validation_result(prompt_type, text)
+            return error_panel(message, visible)
 
         def notify_if_needed(changed: bool) -> None:
             if changed and self.__config_loader is not None:
@@ -737,10 +750,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
             value=initial_text or "",
             label="Prompt text",
             lines=16,
-            max_lines=30,
+            max_lines=16,
             elem_classes="multiline-textbox"
         )
-        error_ui = validation_panel(initial_type, initial_text or "")
+        initial_error_message, initial_error_visible = validation_result(initial_type, initial_text or "")
+        error_ui = self.__construct_error_message_panel(initial_error_message, is_visible=initial_error_visible)
         active_ui = gr.Dropdown(
             choices=[none_label] + initial_names,
             value=initial_active,
@@ -841,37 +855,50 @@ class SettingsUIConstructor(ConfigValueVisitor):
         type_ui.change(
             on_type_change,
             inputs=[type_ui],
-            outputs=[variables_ui, edit_ui, name_ui, text_ui, error_ui, active_ui, status_ui]
+            outputs=[variables_ui, edit_ui, name_ui, text_ui, error_ui, active_ui, status_ui],
+            show_progress="hidden"
         )
         edit_ui.change(
             on_edit_change,
             inputs=[type_ui, edit_ui],
-            outputs=[name_ui, text_ui, error_ui]
+            outputs=[name_ui, text_ui, error_ui],
+            show_progress="hidden"
         )
-        text_ui.change(
+        text_ui.blur(
             on_text_change,
             inputs=[type_ui, text_ui],
-            outputs=[error_ui]
+            outputs=[error_ui],
+            show_progress="hidden"
+        )
+        text_ui.submit(
+            on_text_change,
+            inputs=[type_ui, text_ui],
+            outputs=[error_ui],
+            show_progress="hidden"
         )
         save_btn.click(
             on_save,
             inputs=[type_ui, edit_ui, name_ui, text_ui],
-            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui]
+            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui],
+            show_progress="hidden"
         )
         rename_btn.click(
             on_rename,
             inputs=[type_ui, edit_ui, name_ui],
-            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui]
+            outputs=[status_ui, error_ui, edit_ui, name_ui, active_ui],
+            show_progress="hidden"
         )
         delete_btn.click(
             on_delete,
             inputs=[type_ui, edit_ui],
-            outputs=[status_ui, error_ui, edit_ui, name_ui, text_ui, active_ui]
+            outputs=[status_ui, error_ui, edit_ui, name_ui, text_ui, active_ui],
+            show_progress="hidden"
         )
         active_ui.change(
             on_active_change,
             inputs=[type_ui, active_ui],
-            outputs=[status_ui]
+            outputs=[status_ui],
+            show_progress="hidden"
         )
 
     def visit_ConfigValueGroup(self, config_value: ConfigValueGroup):
