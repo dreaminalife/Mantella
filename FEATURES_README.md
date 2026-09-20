@@ -806,11 +806,11 @@ Say you have been traveling with **Serana after you saved her from her past**. Y
 
 **Conversation summary** (factual — *what happened*):
 
-*"Serana and {player_name} camped after clearing a Nordic ruin. Serana teased {player_name} for nearly triggering a pressure plate. {player_name} asked if she was alright. She said she was fine, mentioned staying ahead of Harkon's people, volunteered for first watch."*
+> Serana and {player_name} camped after clearing a Nordic ruin. Serana teased {player_name} for nearly triggering a pressure plate. {player_name} asked if she was alright. She said she was fine, mentioned staying ahead of Harkon's people, volunteered for first watch.
 
 **Private thought** (unspoken — how she actually feels, in the style the default **Inner Monologue Prompt** is trying to produce: first person, not a recap, with a next-time intent). She is starting to develop feelings she did not show:
 
-*"I played it like it was nothing. The trap joke, 'I'm fine,' taking first watch so I wouldn't have to sit across the fire and actually look at them — that is the version they get. The real one is I have been thinking about them since we left the last village, and it is stupid, and I know it is stupid, and I still keep doing it. I haven't wanted someone near me in a very long time since I left that tomb, not like this, and I am not about to say that out loud to a person who just asked if I was 'alright' like I am some shivering mortal. Next time I see them I am going to act like tonight never got under my skin. Then I am probably going to stand a little closer anyway, or ask where they are headed after all this, just to hear that they are not planning to walk off without me. I don't know what this is yet. But I will figure it out."*
+> I played it like it was nothing. The trap joke, "I'm fine," taking first watch so I wouldn't have to sit across the fire and actually look at them — that is the version they get. The real one is I have been thinking about them since we left the last village, and it is stupid, and I know it is stupid, and I still keep doing it. I haven't wanted someone near me in a very long time since I left that tomb, not like this, and I am not about to say that out loud to a person who just asked if I was "alright" like I am some shivering mortal. Next time I see them I am going to act like tonight never got under my skin. Then I am probably going to stand a little closer anyway, or ask where they are headed after all this, just to hear that they are not planning to walk off without me. I don't know what this is yet. But I will figure it out.
 
 You never hear that spoken. Next time you talk to her, the latest thought is injected as `{private_thoughts}` (or appended to her memory in a group chat). The summary still says the night was uneventful. The thought is why she might suddenly be warmer, sharper, quieter, or a little too interested in whether you are staying — a change you have no conversation to explain.
 
@@ -923,17 +923,17 @@ Say you found her in that tomb, walked her home, got tangled in her family's mes
 
 **Conversation summaries** (factual — the whole history, compressed):
 
-*"{player_name} found Serana in Dimhollow Crypt. She was wary, asked for an escort home, and kept her past to herself. Serana and {player_name} reached Castle Volkihar. After facing Harkon, she asked for space and later chose to keep traveling with {player_name} rather than stay with her father. They have been on the road together since — hunting the prophecy, clearing ruins, camping. Last night she teased {player_name} about a trap, said she was fine, and took first watch."*
+> {player_name} found Serana in Dimhollow Crypt. She was wary, asked for an escort home, and kept her past to herself. Serana and {player_name} reached Castle Volkihar. After facing Harkon, she asked for space and later chose to keep traveling with {player_name} rather than stay with her father. They have been on the road together since — hunting the prophecy, clearing ruins, camping. Last night she teased {player_name} about a trap, said she was fine, and took first watch.
 
 **Personal reflection** (unspoken — how she sees the relationship *over time*, in the style the default **Personal Reflection Prompt** is trying to produce: first person, sectioned, not a recap of last night). The feelings she did not show have been building since the beginning:
 
-*"Relationship: {player_name}: They pulled me out of that tomb when I had no reason to trust a stranger, and I still remember keeping them at arm's length the whole way to the castle. I told myself they were useful. That was a lie I needed at the time. Somewhere between then and now I stopped waiting for them to turn on me, and I have not said that out loud because saying it would make it real. I still get sharp when they get too close to the old wounds. That is not them being the problem. That is me. I want them to stay. I also want them not to notice that I want that."*
-
-*"Current Life: I am not locked in the dark anymore, and I am still not sure this is better. Traveling with them is the closest thing I have had to a life that is mine in a very long time. I keep waiting for it to end."*
-
-*"Long-Term Goals & Desires: Harkon and the prophecy still sit in the back of my head, but they are not the only thing I am moving toward anymore. I want a future that is not my father's, and I keep catching myself picturing them in it, which is a problem I have not decided how to handle."*
-
-*"Future Outlook: I expect they will keep walking into danger like it is nothing. I expect I will keep following. What I am afraid of is the day they decide they are done with a vampire who cannot even say she is glad they stayed."*
+> **Relationship:** {player_name}: They pulled me out of that tomb when I had no reason to trust a stranger, and I still remember keeping them at arm's length the whole way to the castle. I told myself they were useful. That was a lie I needed at the time. Somewhere between then and now I stopped waiting for them to turn on me, and I have not said that out loud because saying it would make it real. I still get sharp when they get too close to the old wounds. That is not them being the problem. That is me. I want them to stay. I also want them not to notice that I want that.
+>
+> **Current Life:** I am not locked in the dark anymore, and I am still not sure this is better. Traveling with them is the closest thing I have had to a life that is mine in a very long time. I keep waiting for it to end.
+>
+> **Long-Term Goals & Desires:** Harkon and the prophecy still sit in the back of my head, but they are not the only thing I am moving toward anymore. I want a future that is not my father's, and I keep catching myself picturing them in it, which is a problem I have not decided how to handle.
+>
+> **Future Outlook:** I expect they will keep walking into danger like it is nothing. I expect I will keep following. What I am afraid of is the day they decide they are done with a vampire who cannot even say she is glad they stayed.
 
 You never hear that spoken. Next time you talk to her, the latest reflection is appended to her **bio** (single-NPC and group chat).  In the prompt log it looks like this (a new section appended at the end of the bio section):
 
