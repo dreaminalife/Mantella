@@ -157,8 +157,9 @@ class MantellaConfigValueDefinitionsNew:
         
         
         
-        # Random LLM Selection
-        
+        # Random LLM Selection (advanced)
+        llm_category.add_config_value(OtherDefinitions.get_random_llm_one_on_one_enabled_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_random_llm_multi_npc_enabled_config_value())
         llm_category.add_config_value(OtherDefinitions.get_random_llm_one_on_one_per_request_enabled_config_value())
         llm_category.add_config_value(OtherDefinitions.get_random_llm_multi_npc_per_request_enabled_config_value())
         llm_category.add_config_value(OtherDefinitions.get_llm_pool_one_on_one_config_value())
@@ -178,8 +179,6 @@ class MantellaConfigValueDefinitionsNew:
         llm_category.add_config_value(LLMDefinitions.get_enable_bio_section_filter_for_memory_config_value())
         llm_category.add_config_value(LLMDefinitions.get_allow_per_character_llm_overrides_config_value())
         llm_category.add_config_value(LLMDefinitions.get_enable_character_tag_reading_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_one_on_one_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_multi_npc_enabled_config_value())
         llm_category.add_config_value(LLMDefinitions.get_wait_time_buffer_config_value())
         llm_category.add_config_value(LLMDefinitions.get_custom_token_count_config_value())
         llm_category.add_config_value(LLMDefinitions.get_multi_npc_custom_token_count_config_value())

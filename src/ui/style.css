@@ -36,6 +36,10 @@
     margin-top: 8px !important;
 }
 
+.bio-section-filter-memory-toggle [class^="setting-bool-container"] label span {
+    font-size: 1.05em !important;
+}
+
 .setting-controls input,
 .setting-controls textarea {
     padding-left: 8px !important;

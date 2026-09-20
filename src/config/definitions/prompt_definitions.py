@@ -26,9 +26,11 @@ class PromptDefinitions:
                                 "conversation_summaries",
                                 "bios_and_summaries",
                                 "private_thoughts",
-                                "private_thought",
                                 "actions",
                                 "lorebook"]
+
+    # Multi-NPC / director: private thoughts are mixed into memory, not a prompt variable.
+    ALLOWED_PROMPT_VARIABLES_MULTI = [v for v in ALLOWED_PROMPT_VARIABLES if v != "private_thoughts"]
     
     ALLOWED_PROMPT_VARIABLES_RADIANT = [
                                 "game",
@@ -45,8 +47,6 @@ class PromptDefinitions:
                                 "conversation_summary",
                                 "conversation_summaries",
                                 "bios_and_summaries",
-                                "private_thoughts",
-                                "private_thought",
                                 "actions",
                                 "lorebook"]
     
@@ -99,7 +99,7 @@ class PromptDefinitions:
                                 time_group = the time of day in words (eg "in the morning", "at night")
                                 language = the selected language
                                 conversation_summary = reads the latest conversation summaries for the NPC stored in data/conversations/NPC_Name/NPC_Name_summary_X.txt
-                                private_thoughts = the NPC's latest private inner monologue as its own block (single-NPC only; not used in multi-NPC / radiant)
+                                private_thoughts = the NPC's latest private inner monologue as its own block (single-NPC conversation prompts only)
                                 player_name = the name of the player character
                                 player_description = a description of the player character (needs to be added in game or using the config value)
                                 player_equipment = a basic description of the equipment the player character carries
@@ -107,7 +107,28 @@ class PromptDefinitions:
                                 actions = instructions for the LLM how to trigger actions
                                 lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
     
- 
+    BASE_MULTI_PROMPT_DESCRIPTION = """The starting prompt sent to the LLM when multiple NPCs are selected.
+                                The following are dynamic variables that need to be contained in curly brackets {}:
+                                name = the NPC's name
+                                names = the names of all NPCs in the conversation
+                                names_w_player = the names of all NPCs in the conversation and the name of the player character
+                                game = the selected game
+                                bio = the NPC's background description
+                                bios = the backgrounds of the NPCs
+                                bios_and_summaries = combined bios and summaries for all NPCs in the conversation. Each NPC's latest private thought is appended at the end of that NPC's memory.
+                                trust = how well the NPC knows the player (eg "a stranger", "a friend")
+                                location = the current location
+                                weather = the current weather
+                                time = the time of day as a number (eg 1, 22)
+                                time_group = the time of day in words (eg "in the morning", "at night")
+                                language = the selected language
+                                conversation_summary = reads the latest conversation summaries for the NPCs stored in data/conversations/NPC_Name/NPC_Name_summary_X.txt. Each NPC's latest private thought is appended at the end of that NPC's memory.
+                                player_name = the name of the player character
+                                player_description = a description of the player character (needs to be added in game or using the config value)
+                                player_equipment = a basic description of the equipment the player character carries
+                                equipment = a basic description of the equipment the NPCs carry
+                                actions = instructions for the LLM how to trigger actions
+                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
     
     BASE_RADIANT_DESCRIPTION = """The starting prompt sent to the LLM when a radiant conversation is started.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -172,7 +193,7 @@ class PromptDefinitions:
                                     {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
-        return ConfigValueString("skyrim_multi_npc_prompt","Skyrim Multi-NPC Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION + "\n bios_and_summaries = combined bios and summaries for all NPCs in the conversation",skyrim_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
+        return ConfigValueString("skyrim_multi_npc_prompt","Skyrim Multi-NPC Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI)])
 
     @staticmethod
     def get_skyrim_multi_npc_director_prompt_config_value() -> ConfigValue:
@@ -264,7 +285,7 @@ Content Guidelines:
 - The conversation is in {language}.
 
 """
-        return ConfigValueString("skyrim_multi_npc_director_prompt","Skyrim Multi-NPC Director Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION + "\n bios_and_summaries = combined bios and summaries for all NPCs in the conversation",skyrim_multi_npc_director_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
+        return ConfigValueString("skyrim_multi_npc_director_prompt","Skyrim Multi-NPC Director Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_director_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI)])
 
     @staticmethod
     def get_skyrim_radiant_prompt_config_value() -> ConfigValue:
@@ -307,7 +328,7 @@ Content Guidelines:
                             {actions}
                             Remember, you can only respond as {names}. Ensure to use their full name when responding.
                             The conversation takes place in {language}."""
-        return ConfigValueString("fallout4_multi_npc_prompt","Fallout 4 Multi-NPC Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION,fallout4_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
+        return ConfigValueString("fallout4_multi_npc_prompt","Fallout 4 Multi-NPC Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,fallout4_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI)])
 
     @staticmethod
     def get_fallout4_radiant_prompt_config_value() -> ConfigValue:
@@ -522,8 +543,8 @@ Content Guidelines:
         """
         return [
             ("skyrim_prompt", "Skyrim Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
-            ("skyrim_multi_npc_prompt", "Skyrim Multi-NPC Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
-            ("skyrim_multi_npc_director_prompt", "Skyrim Multi-NPC Director Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
+            ("skyrim_multi_npc_prompt", "Skyrim Multi-NPC Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI),
+            ("skyrim_multi_npc_director_prompt", "Skyrim Multi-NPC Director Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI),
             ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
             ("memory_prompt", "Memory Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MEMORY),
             ("inner_monologue_prompt", "Inner Monologue Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE),

@@ -53,8 +53,8 @@ class Remembering(ABC):
         Args:
             messages (message_thread): The messages in the conversation
             npcs_in_conversation (Characters): the NPCs to save for
-            save_thoughts: If set, overrides Enable Private Thoughts for this save.
-            save_reflections: If set, overrides Enable Personal Reflection for this save.
+            save_thoughts: If set, overrides Save Private Thoughts for this save.
+            save_reflections: If set, overrides Save Personal Reflection for this save.
         """
         pass
 
