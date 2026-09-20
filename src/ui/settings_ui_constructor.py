@@ -483,8 +483,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             return self.__update_error_message_panel(result.error_message, is_visible=True)
 
     def __construct_error_message_panel(self, message: str, is_visible: bool) -> gr.Markdown:
-        with gr.Column(elem_classes="constraint-violation-slot"):
-            return gr.Markdown(value=message, visible=is_visible, elem_classes="constraint-violation")
+        return gr.Markdown(value=message, visible=is_visible, elem_classes="constraint-violation")
 
     def __update_error_message_panel(self, message: str, is_visible: bool) -> Any:
         return gr.update(value=message, visible=is_visible)

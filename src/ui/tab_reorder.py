@@ -10,7 +10,7 @@ TAB_REORDER_JS = r"""
   }
   window.__mantellaTabReorderInit = true;
   const STORAGE_KEY = "mantella-tab-order";
-  const DRAG_THRESHOLD_PX = 8;
+  const DRAG_THRESHOLD_PX = 24;
   let applying = false;
   let setupTimer = null;
   let drag = null;
@@ -37,6 +37,40 @@ TAB_REORDER_JS = r"""
     return buttons(nav).map(function (btn) {
       return (btn.textContent || "").trim();
     });
+  }
+
+  function ordersMatch(current, desired) {
+    if (!current || !desired || current.length !== desired.length) {
+      return false;
+    }
+    for (let i = 0; i < current.length; i++) {
+      if (current[i] !== desired[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function desiredOrder(current, saved) {
+    const currentSet = {};
+    current.forEach(function (name) {
+      currentSet[name] = true;
+    });
+    const ordered = [];
+    const seen = {};
+    (saved || []).forEach(function (name) {
+      if (currentSet[name] && !seen[name]) {
+        ordered.push(name);
+        seen[name] = true;
+      }
+    });
+    current.forEach(function (name) {
+      if (!seen[name]) {
+        ordered.push(name);
+        seen[name] = true;
+      }
+    });
+    return ordered;
   }
 
   function readSavedOrder() {
@@ -66,11 +100,14 @@ TAB_REORDER_JS = r"""
   }
 
   function applyOrder(nav) {
-    const order = readSavedOrder();
-    if (!order || !order.length) {
+    const current = buttons(nav);
+    const labels = current.map(function (btn) {
+      return (btn.textContent || "").trim();
+    });
+    const desired = desiredOrder(labels, readSavedOrder());
+    if (ordersMatch(labels, desired)) {
       return;
     }
-    const current = buttons(nav);
     const byLabel = {};
     current.forEach(function (btn) {
       const label = (btn.textContent || "").trim();
@@ -80,22 +117,20 @@ TAB_REORDER_JS = r"""
       byLabel[label].push(btn);
     });
     applying = true;
-    const placed = [];
-    order.forEach(function (name) {
+    desired.forEach(function (name, index) {
       const list = byLabel[name];
       if (!list || !list.length) {
         return;
       }
       const btn = list.shift();
-      nav.appendChild(btn);
-      placed.push(btn);
-    });
-    current.forEach(function (btn) {
-      if (placed.indexOf(btn) === -1) {
-        nav.appendChild(btn);
+      const reference = nav.children[index];
+      if (reference !== btn) {
+        nav.insertBefore(btn, reference || null);
       }
     });
-    applying = false;
+    queueMicrotask(function () {
+      applying = false;
+    });
   }
 
   function bindNav(nav) {
@@ -115,7 +150,9 @@ TAB_REORDER_JS = r"""
         nav: nav,
         btn: btn,
         startX: e.clientX,
-        started: false
+        startY: e.clientY,
+        started: false,
+        pointerId: e.pointerId
       };
     });
   }
@@ -124,12 +161,17 @@ TAB_REORDER_JS = r"""
     if (!drag) {
       return;
     }
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
     if (!drag.started) {
-      if (Math.abs(e.clientX - drag.startX) < DRAG_THRESHOLD_PX) {
+      if ((dx * dx + dy * dy) < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
         return;
       }
       drag.started = true;
       drag.btn.classList.add("mantella-tab-dragging");
+      try {
+        drag.btn.setPointerCapture(drag.pointerId);
+      } catch (err) {}
     }
     e.preventDefault();
     const siblings = buttons(drag.nav).filter(function (btn) {
@@ -160,13 +202,29 @@ TAB_REORDER_JS = r"""
     }
   }
 
+  function suppressClick(btn) {
+    const suppress = function (ev) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      btn.removeEventListener("click", suppress, true);
+    };
+    btn.addEventListener("click", suppress, true);
+    setTimeout(function () {
+      btn.removeEventListener("click", suppress, true);
+    }, 0);
+  }
+
   function onPointerUp() {
     if (!drag) {
       return;
     }
     if (drag.started) {
       drag.btn.classList.remove("mantella-tab-dragging");
+      try {
+        drag.btn.releasePointerCapture(drag.pointerId);
+      } catch (err) {}
       saveOrder(buttonLabels(drag.nav));
+      suppressClick(drag.btn);
     }
     drag = null;
   }
@@ -187,14 +245,47 @@ TAB_REORDER_JS = r"""
     if (setupTimer) {
       clearTimeout(setupTimer);
     }
-    setupTimer = setTimeout(setup, 40);
+    setupTimer = setTimeout(setup, 50);
+  }
+
+  function mutationTouchesTabNav(mutations) {
+    for (let i = 0; i < mutations.length; i++) {
+      const mutation = mutations[i];
+      if (mutation.target && mutation.target.classList && mutation.target.classList.contains("tab-nav")) {
+        return true;
+      }
+      const lists = [mutation.addedNodes, mutation.removedNodes];
+      for (let j = 0; j < lists.length; j++) {
+        for (let k = 0; k < lists[j].length; k++) {
+          const node = lists[j][k];
+          if (!node) {
+            continue;
+          }
+          if (node.classList && node.classList.contains("tab-nav")) {
+            return true;
+          }
+          if (node.querySelector && node.querySelector(".tab-nav")) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   document.addEventListener("pointermove", onPointerMove, { passive: false });
   document.addEventListener("pointerup", onPointerUp);
   document.addEventListener("pointercancel", onPointerUp);
 
-  const observer = new MutationObserver(scheduleSetup);
+  const observer = new MutationObserver(function (mutations) {
+    if (applying) {
+      return;
+    }
+    if (!mutationTouchesTabNav(mutations)) {
+      return;
+    }
+    scheduleSetup();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   if (document.readyState === "loading") {
@@ -227,3 +318,9 @@ def merge_tab_order(defaults: list[str], saved: list[str]) -> list[str]:
         if name not in seen:
             ordered.append(name)
     return ordered
+
+
+def tab_order_needs_apply(current: list[str], saved: list[str] | None) -> bool:
+    if not saved:
+        return False
+    return merge_tab_order(current, saved) != list(current)

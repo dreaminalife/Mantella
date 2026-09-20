@@ -201,9 +201,13 @@
     border: 1px solid red !important;
 }
 
-/* Keep validation output from collapsing the page when it appears or hides. */
-.constraint-violation-slot {
-    min-height: 1.5em;
+/* Hidden validation messages must not reserve a row of space. */
+.constraint-violation.hidden,
+.constraint-violation[style*="display: none"] {
+    display: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
 .custom-footer {
@@ -232,8 +236,9 @@
     flex-shrink: 0 !important;
     padding-left: 10px !important;
     padding-right: 10px !important;
-    cursor: grab !important;
+    cursor: pointer !important;
     user-select: none !important;
+    touch-action: pan-y !important;
 }
 
 .tab-nav button.mantella-tab-dragging {
