@@ -242,7 +242,6 @@ The same pattern works for quest endings, romance turning points, guild promotio
 
 So: undated memory stays at the front as a fixed block; everything with a timestamp is ordered by when it happened.
 
-
 ---
 
 ### Feature 2: New developments since last meeting
@@ -798,6 +797,11 @@ They work on different time scales:
 - **Private thoughts** are **short-term**. They only look at the **latest** event, so they capture how the NPC feels *right now* after what just happened — current mood, thoughts, opinions,  suspicion, affection, what they want to bring up next time.
 - **[Personal reflection](#personal-reflection)** focuses on **long-term relationships and character development**. It is based on how the NPC feels and how their relationship with you has developed **from the first meeting through today**, not just the last conversation.
 
+A private thought is not invented from nothing. It is the NPC processing *this* conversation on top of how they already see you. Two inputs matter most:
+
+1. Their **[personal reflection](#personal-reflection)** — the long-term relationship they have already been carrying.
+2. The small things in the latest talk — wording, tone, expressions, and what they *did* instead of what they admitted out loud. Those unspoken tells become the thought after you part.
+
 ### Example
 
 A conversation can look ordinary from the outside and still leave the NPC carrying something you never heard. That is the point of private thoughts.
@@ -811,6 +815,12 @@ Say you have been traveling with **Serana after you saved her from her past**. Y
 **Private thought** (unspoken — how she actually feels, in the style the default **Inner Monologue Prompt** is trying to produce: first person, not a recap, with a next-time intent). She is starting to develop feelings she did not show:
 
 > I played it like it was nothing. The trap joke, "I'm fine," taking first watch so I wouldn't have to sit across the fire and actually look at them — that is the version they get. The real one is I have been thinking about them since we left the last village, and it is stupid, and I know it is stupid, and I still keep doing it. I haven't wanted someone near me in a very long time since I left that tomb, not like this, and I am not about to say that out loud to a person who just asked if I was "alright" like I am some shivering mortal. Next time I see them I am going to act like tonight never got under my skin. Then I am probably going to stand a little closer anyway, or ask where they are headed after all this, just to hear that they are not planning to walk off without me. I don't know what this is yet. But I will figure it out.
+
+That paragraph did not come out of nowhere. Two things produced it.
+
+**1. Her personal reflection.** By this camp she already has a longer unspoken write-up of how she sees you — the full example is in [Personal Reflection](#personal-reflection). It already says she stopped waiting for you to turn on her, wants you to stay, does not want you to notice that she wants that, and keeps catching herself picturing you in a future that is not her father's. Tonight's thought is that same relationship, zoomed in on *this* night. The reflection is why "I haven't wanted someone near me in a very long time" is already true before she teases you about a trap. The thought is the short-term version of a feeling the reflection has been carrying since Dimhollow.
+
+**2. What she did in the conversation, not only what she said.** Nothing romantic is spoken. The summary only records teasing, "I'm fine," first watch. But in the actual conversation, her subtle wordings, her expressions, her tones and actions would indicate how she truly feels. These will be hidden by the summary totally, but will be caught by the private thoughts. After you part, those actions, expressions, and word choices are what the thought is allowed to interpret. 
 
 You never hear that spoken. Next time you talk to her, the latest thought is injected as `{private_thoughts}` (or appended to her memory in a group chat). The summary still says the night was uneventful. The thought is why she might suddenly be warmer, sharper, quieter, or a little too interested in whether you are staying — a change you have no conversation to explain.
 
@@ -836,7 +846,7 @@ I played it like it was nothing... But I will figure it out.
 
 Here we want to talk more about "Private thoughts".
 
-Private thoughts are a short first-person inner monologue written after a summary is saved, based on the conversation, bio, and past events. Tht thoughts are stored in a separate folder from memories:
+Private thoughts are a short first-person inner monologue written after a summary is saved, based on the conversation (including wording, tone, and unspoken actions), the bio, [personal reflection](#personal-reflection) when one exists, and past events. The thoughts are stored in a separate folder from memories:
 
 `data/<game>/thoughts/<world_id>/<NPC name>/..._thoughts_X.txt`
 
