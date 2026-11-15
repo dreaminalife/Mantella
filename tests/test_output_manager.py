@@ -61,11 +61,11 @@ def mock_actions() -> list[Action]:
         keyword="Wave",
         description="Waves at the player",
         prompt_text="If the player asks you to wave, begin your response with 'Wave:'.",
+        requires_response=False,
         is_interrupting=False,
         one_on_one=True,
         multi_npc=False,
         radiant=False,
-        info_text="Waving action completed",
     )
     return [action]
 

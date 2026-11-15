@@ -24,6 +24,10 @@ class LanguageDefinitions:
         return ConfigValueString("collecting_thoughts_npc_response", "NPC Response: Collecting Thoughts","The response the NPC gives when they need to summarise the conversation because the maximum token count has been reached.","I need to gather my thoughts for a moment", tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
 
     @staticmethod
+    def action_keyword_key(action: Action) -> str:
+        """e.g. follow_npc_response for mantella_npc_follow"""
+        return f"{action.identifier.removeprefix('mantella_').removeprefix('npc_')}_npc_response"
+
+    @staticmethod
     def get_action_keyword_override(action: Action) -> ConfigValue:
-        identifier = action.identifier.lstrip("mantella_").lstrip("npc_")
-        return ConfigValueString(f"{identifier}_npc_response",f"NPC Response override: {action.name}",action.description, action.keyword, tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
+        return ConfigValueString(LanguageDefinitions.action_keyword_key(action),f"NPC Response override: {action.name}",action.description, action.keyword, tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])

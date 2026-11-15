@@ -676,7 +676,14 @@ class context:
         """
         result = ""
         for a in actions:
-            result += a.prompt_text.format(key=a.keyword) + " "
+            if a.prompt_text:
+                text = a.prompt_text.format(key=a.keyword).strip()
+                if not text.endswith((".", "!", "?")): # Some end with the quoted keyword: without a full stop the next one would run on
+                    text += "."
+                result += text + " "
+        if result and len(self.get_characters_excluding_player()) > 1:
+            # Each line starts with the speaker's name here, so the action comes after it
+            result += "Both the action prefix and NPC name need colons to be valid, e.g. 'CharacterName: Action: Lead the way.' "
         return result
 
     def __build_lorebook_text(

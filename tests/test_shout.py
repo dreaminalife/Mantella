@@ -8,6 +8,7 @@ from src import utils
 from src.config.definitions.game_definitions import GameEnum
 from src.conversation.bystanders import (EventPerson, ShoutState, NEWCOMERS_REMEMBER_EVERYTHING, NEWCOMERS_REMEMBER_LAST_LINE,
                                          NEWCOMERS_REMEMBER_SINCE_SHOUT)
+from src.conversation.action import Action
 from src.conversation.conversation import Conversation
 from src.conversation.conversation_type import multi_npc_game_master, pc_to_npc, radiant, shout
 from src.conversation.game_master import GameMaster, GameMasterTurns, is_player_line, messages_heard_by
@@ -538,16 +539,16 @@ def test_switching_to_private_tells_who_is_left_once_the_actors_are_updated():
     context.get_character_names_as_text.assert_called_with(False)
 
 
-@pytest.mark.parametrize("has_more_npcs, expected", [(False, ["Follow"]), (True, ["Chat"])])
-def test_npc_prompt_actions_follow_how_many_npcs_there_are(has_more_npcs, expected):
-    follow = SimpleNamespace(keyword="Follow", use_in_on_on_one=True, use_in_multi_npc=False)
-    chat = SimpleNamespace(keyword="Chat", use_in_on_on_one=False, use_in_multi_npc=True)
-    shout_type = shout(config(actions=[follow, chat]))
+@pytest.mark.parametrize("has_more_npcs", [False, True])
+def test_npc_prompt_actions_are_the_shout_switches_however_many_npcs_there_are(has_more_npcs):
+    follow = Action("mantella_npc_follow", "Follow", "Follow", "", "To follow, begin your response with '{key}:'.", False, False, True, False, False)
+    wait = Action("mantella_npc_wait", "Wait", "Wait", "", "To wait, begin your response with '{key}:'.", False, False, True, True, False)
+    shout_type = shout(config(all_actions=[follow, wait], actions_one_on_one=["Follow"], actions_shout=["Wait"]))
     context = MagicMock()
     context.npcs_in_conversation.contains_multiple_npcs.return_value = has_more_npcs
     shout_type.generate_npc_prompt(context, HULDA_NPC)
     actions = context.generate_system_message.call_args.args[1]
-    assert [a.keyword for a in actions] == expected
+    assert [a.keyword for a in actions] == ["Wait"]
 
 
 # Game Master

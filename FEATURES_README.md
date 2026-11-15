@@ -47,6 +47,7 @@ Trying my best to explain why I added these features and how to make the most of
 
 **During a conversation**
 
+- [NPC Actions](#npc-actions)
 - [Conversation Wheel](#conversation-wheel)
 - [Talk, Nearby and Random Events](#talk-nearby-and-random-events)
 - [Drop Last Sentences](#drop-last-sentences)
@@ -2325,7 +2326,7 @@ With Director Mode on, it applies to every conversation you are in:
 | Conversation | What happens |
 | --- | --- |
 | With several NPCs | The NPCs talk among themselves. With Game Master Mode, they talk for **Max NPC Turns per Direction** replies in a row (default **6**), then you can direct again. Who still speaks after that limit is set by the talk settings (see [Talk Level](#talk-level)). |
-| With one NPC | The NPC answers each direction once, then you direct again. The NPC keeps the actions of a one-on-one conversation, so a direction like *Lydia decides to follow the Dragonborn* can make her follow. |
+| With one NPC | The NPC answers each direction once, then you direct again. The NPC uses the Director Mode actions (see [NPC Actions](#npc-actions)), like with several NPCs: none that would involve you, since the NPC doesn't know you're there. |
 | Shout | Your directions are heard by everyone around. People nearby join when a direction involves them or someone calls them over. |
 | Saying something to the room | What you type is a direction to whoever is around (*A guard spots a thief running past*). Someone nearby reacts and joins, or nobody does and it ends. |
 | An NPC Event you joined | Once you step in, you direct the scene instead of taking part in it. While you only watch, nothing changes. |
@@ -2380,7 +2381,7 @@ What your prompts say about you is up to them: variables like `{player_name}` or
 - Which conversations are directed is decided in `Conversation.__select_conversation_type`: with Director Mode on, a conversation with the player and one NPC uses `multi_npc` / `multi_npc_game_master` instead of `pc_to_npc`. `shout` follows the setting through `multi_npc.is_director_mode()`; `npc_event` never does.
 - `context.started_by_npc` (set from the NPC Initiative start, never reset) makes every type pass `can_direct=False`.
 - In the merged prompts, `director` is true together with `shout` or `say_to_room`, so the default prompts keep it in its own `{if director}` blocks (checked by `tests/test_prompt_merge.py`). The **Skyrim Say To Room Decision Nobody Criteria** also knows `director`.
-- With one NPC, every type uses the one-on-one actions (`multi_npc.npc_actions`). With one directed NPC, the Game Master isn't asked when nobody nearby can join. When someone can, it may still bring them in, but picking the NPC who just spoke ends the turn (`GameMaster.__lone_npc_spoke_last`). Either way the NPC answers each direction once.
+- Directed conversations use the Director Mode actions however many NPCs are in them (`conversation_type.action_kind`, see [NPC Actions](#npc-actions)). With one directed NPC, the Game Master isn't asked when nobody nearby can join. When someone can, it may still bring them in, but picking the NPC who just spoke ends the turn (`GameMaster.__lone_npc_spoke_last`). Either way the NPC answers each direction once.
 - In Shout, a direction is asked about like a wheel event ("Is X part of what just happened?"), with no speaker, and the people it involves count as the people you talk to (see [Talk Level](#talk-level)).
 - Keeping the player out: `context.hides_player()` (set by the `Conversation` to `Conversation.hides_player()`: its type's `is_director_mode()`, or watching an NPC Event with the Director Mode setting on) switches off the player's combat, attack and trust events and the vision hint event in `context.py`. With the same check, `GameStateManager.__update_context` drops the game's events that name the player or say "the player" (`__without_player_events`), then adds the quest tag announcements. `conversation_event` ignores Include Player and passes `hides_player`, which adds `director` to the event generator's conditions.
 - `ShoutState.free_places` / `nearby_choices` get `has_player=False` while directing, and `is_direction`, which lets people join past Most People. `NpcEvent.can_notice_player` is False whenever the Director Mode setting is on.
@@ -2402,7 +2403,7 @@ The [Game Master](#game-master-mode), the part of Mantella that decides who spea
 - **It knows who is around.** It gets the names of everyone nearby, up to **Most People Listed**, so if you call someone by name they can answer from across the room. For the nearest few (**Most People Described**) it also gets their bio, reflection, memories and private thoughts, so "is there a healer here?" can bring the priestess over.
 - **Several people can answer one line.** Say "hello Jake and Emily" or "hello guys" and each of them answers before it's your turn again. Who has to answer is set by the talk settings (see [Talk Level](#talk-level)). When you speak to the whole group, **People Who Must Answer a Group Line** sets how many of them count as talked to (with the default talk settings, each of them must speak at least once before your turn), and people you call by name are always included. Each of them is asked to keep it short (**Skyrim Shout Group Answer Note**; empty it to send no note).
 - **Newcomers know what they heard.** **Newcomers Remember** sets what someone who joins by shouting heard before they joined.
-- **Talking to one person still works as before.** While nobody nearby could join, the person answers and then it's your turn. They keep their one-on-one actions (follow, trade, and so on).
+- **Talking to one person still works as before.** While nobody nearby could join, the person answers and then it's your turn. They use the Shout actions (see [NPC Actions](#npc-actions)), however many people are in the conversation.
 - Shout stays on until you switch to **Private** or the conversation ends.
 
 **Switching back to Private**
@@ -2896,6 +2897,64 @@ The events are written by the NPC Event Generator model (**LLM** tab), whether [
 - Pressing **End** while the event is being written cancels it.
 - With [Director Mode](#multi-conversation-director-mode) on, the events are never about you.
 - The full rules are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Events".
+
+## NPC Actions
+
+### What it does
+
+NPCs can do things while they talk. An NPC starts its line with the action's name, and the game does it as the line starts: "Wait: As you wish" and Lydia waits where she is. The name isn't spoken.
+
+| Action | What the NPC does | On by default in |
+| --- | --- | --- |
+| Attack | Attacks you | One-on-one, Group, Shout |
+| StandDown | Stops fighting | Every kind |
+| Inventory | Opens the give and take menu | One-on-one, Group, Shout |
+| Barter | Opens their shop | One-on-one, Group, Shout |
+| Flee | Runs away from you | One-on-one, Group, Shout |
+| MoveTo | Walks over to you | One-on-one, Group, Shout |
+| Follow | Starts following you | Off |
+| Unfollow | Stops following you | Off |
+| Wait | Waits where they are | Off |
+| Teleport | Jumps to you, e.g. when stuck | Off |
+| Loot | Picks up items nearby | Off |
+| CollectIngredients | Gathers ingredients nearby | Off |
+| Brawl | A fistfight with you, nobody dies | Off |
+| Listen | Gives you more time to speak | Off (you can always say it, see below) |
+
+These are the original Mantella's actions, with its defaults. Its EndConversation isn't offered: only you end a conversation (the end conversation keyword, or in game), so an NPC never ends a scene on you. Offended and Forgiven are now called Attack and StandDown. The Actions For Mantella mod's actions (Sex, Trade, Undress) work as before and show up in the same lists.
+
+How actions fit the kinds of conversation:
+
+- **Each NPC acts only for themselves.** In a group, every NPC who speaks can act on their own line, and nobody follows, waits or walks over because someone else said so. You say "Stay here." Lydia answers "Wait: As you wish" and waits. Faendal waits only if he says Wait himself.
+- **Nothing involves you while the NPCs don't know you're there.** While you watch an [NPC Event](#npc-events), in [Director Mode](#multi-conversation-director-mode) and in radiant conversations (Skyrim's own small talk between two NPCs), the actions that would act on you are left out, whatever is ticked: Attack, Brawl, Flee, Teleport, Inventory, Barter, Follow, Unfollow and MoveTo. That leaves Wait, StandDown, Loot and CollectIngredients.
+- **An action that is switched off does nothing.** If an NPC says one anyway, its name is still taken out of the line, so it isn't spoken.
+- **Typing just an action's name** (e.g. `Barter`) makes the last NPC who spoke do it, without asking the AI. It works with the actions the NPCs can use in that conversation, also in a group.
+- **Listen:** say or type "listen" and your next line waits for 10 seconds of silence before it ends, so you have time to think (with the microphone). The NPCs still hear it. An NPC who uses Listen gives you the same extra time.
+- **The interrupt key:** an action happens when its line starts. Interrupting before the line is sent drops the action with it; interrupting during the line doesn't undo it.
+
+### Where to find it
+
+**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one list of tick boxes for each kind of conversation, **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
+
+In game, **MCM → Mantella → General → NPC Actions**: **Allow Follow (Experimental)**, **Allow Inventory** and **Allow Aggro** still have to be on for Follow, Inventory, Attack and StandDown to happen.
+
+The words NPCs start their lines with can be changed on the **Language** tab (**NPC Response override**).
+
+When you update, your old **Actions** list (Other tab) is moved over once: an action you had on is on wherever the original Mantella allows it (Follow: One-on-one, Group and Shout), one you had off stays off, Offended and Forgiven become Attack and StandDown, and the actions new to you start from the defaults above.
+
+### Quick start
+
+1. Open **Conversation** → **Actions** and tick **Wait** and **Follow** under **One-on-one**.
+2. In game, turn on **Allow Follow (Experimental)** in **MCM → Mantella → General → NPC Actions**.
+3. Talk to an NPC and ask them to come with you. They answer with Follow and start following you. Ask them to wait here: they stop where they are.
+
+### For developers
+
+- Actions are loaded from `data/actions/*.json` by `src/actions/function_manager.py` (from the original Mantella). Only the ones with a `prompt` can be used as basic actions; the others need Advanced Actions, which comes later. Look (not offered yet) and EndConversation (only the player ends a conversation) are loaded but never offered (`action_definitions.NOT_OFFERED`).
+- `src/actions/action_rules.actions_for(config, kind)` decides what NPCs can use: the kind's ticks minus `INVOLVE_PLAYER` for the kinds without the player. Each conversation type has an `action_kind()`, and `conversation_type.npc_actions()` is used both for the prompt's `{actions}` and for reading the reply (`Conversation.npc_actions()`, the Game Master's `__run_reply`), so the two always agree. `actions_parser` also takes the names of every other action out of a line.
+- The settings are in `src/config/definitions/action_definitions.py`. `ConfigLoader.__carry_over_actions` moves `active_actions` over when config.ini has it and none of the new keys.
+- Listen never goes to the game: `Conversation.listen_longer()` sets a one-line pause on the speech recognition (`Transcriber.set_temporary_pause`).
+- Tests: `tests/test_action_permissions.py` (every action in every kind, defaults, carry-over, prompts), `tests/test_actions_flow.py` (whole conversations with a pretend game), `tests/actions/test_function_manager.py`, and in the game `tests/ingame/actions/actions_ingame.py` with `bat mta`.
 
 ## Conversation Wheel
 

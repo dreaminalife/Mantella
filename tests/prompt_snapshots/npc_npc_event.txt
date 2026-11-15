@@ -8,6 +8,9 @@
 -  People who are in the same room now: Ysolda, Belethor, Dragonborn. Lydia can call out to them, ask them something or drag them in by name, if Lydia would. Never speak for them.
 - Everyone in the scene heard everything that was said so far, including people who joined later.
 
+## ACTIONS
+- If the player renounces their words, or to end combat, begin your response with 'StandDown:'. Both the action prefix and NPC name need colons to be valid, e.g. 'CharacterName: Action: Lead the way.' 
+
 
 ## FORMAT RULES
 - Do not wrap the utterance in quotes
@@ -56,4 +59,4 @@ Always use the most recent memory to determine the current relationship
 
 
 ## Extra info/reference
- LOREBOOK SEARCHED: 12 | English | Lydia | Lydia | Lydia and Faendal | Lydia is naked now. Faendal is naked now. | Whiterun | Ysolda, Belethor, Dragonborn | in the afternoon
+ LOREBOOK SEARCHED: 12 | English | If the player renounces their words, or to end combat, begin your response with 'StandDown:'. Both the action prefix and NPC name need colons to be valid, e.g. 'CharacterName: Action: Lead the way.'  | Lydia | Lydia | Lydia and Faendal | Lydia is naked now. Faendal is naked now. | Whiterun | Ysolda, Belethor, Dragonborn | in the afternoon

@@ -58,6 +58,7 @@ class Transcriber:
         self.min_refresh_secs = config.min_refresh_secs # Minimum time between transcription updates
         self.refresh_freq = self.min_refresh_secs // self.CHUNK_DURATION # Number of chunks between transcription updates
         self.pause_threshold = config.pause_threshold
+        self._temporary_pause: float | None = None # The Listen action: a longer pause for the player's next line only
         self.audio_threshold = config.audio_threshold
         logging.log(self.loglevel, f"Audio threshold set to {self.audio_threshold}. If the mic is not picking up your voice, try lowering this `Speech-to-Text`->`Audio Threshold` value in the Mantella UI. If the mic is picking up too much background noise, try increasing this value.\n")
 
@@ -508,9 +509,17 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
             model=self.vad_model,
             sampling_rate=self.SAMPLING_RATE,
             threshold=self.audio_threshold,
-            min_silence_duration_ms=int(self.pause_threshold * 1000),
+            min_silence_duration_ms=int((self._temporary_pause or self.pause_threshold) * 1000),
             speech_pad_ms = 30 # default
         )
+
+
+    def set_temporary_pause(self, pause_seconds: float) -> None:
+        """The Listen action: the player's next line ends only after this much silence, giving them more time to think. Then the pause is as set again"""
+        with self._lock:
+            self._temporary_pause = pause_seconds
+            if self._running and not self._speech_detected:
+                self.vad_iterator = self._create_vad_iterator()
 
 
     def _create_input_callback(self, q: queue.Queue):
@@ -687,6 +696,9 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
                 if transcription:
                     self._transcription_ready.clear()
                     self._speech_detected = False
+                    if self._temporary_pause is not None: # Listen lasts for one line
+                        self._temporary_pause = None
+                        self.vad_iterator = self._create_vad_iterator()
                     logging.log(self.loglevel, f"Player said '{transcription.strip()}'")
                     return transcription
                 

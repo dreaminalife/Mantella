@@ -5,6 +5,7 @@ from src.config.types.config_value_bool import ConfigValueBool
 from src.config.types.config_value import ConfigValue
 from src.config.types.config_value_group import ConfigValueGroup
 from src.config.definitions.game_definitions import GameDefinitions
+from src.config.definitions.action_definitions import ACTION_KINDS, ActionDefinitions
 from src.config.definitions.language_definitions import LanguageDefinitions
 from src.config.definitions.llm_definitions import LLMDefinitions
 from src.config.definitions.conversation_definitions import (CONVERSATION_EVENT, CONVERSATION_PAGE, DIRECTOR, GROUP, NEARBY_EVENT, NPC_EVENT, RANDOM_EVENT, SHARED,
@@ -239,7 +240,7 @@ class MantellaConfigValueDefinitionsNew:
         llm_category.add_config_value(LLMDefinitions.get_narration_indicators())
         result.add_base_group(llm_category)
 
-        for group in MantellaConfigValueDefinitionsNew.__conversation_groups(on_value_change_callback):
+        for group in MantellaConfigValueDefinitionsNew.__conversation_groups(on_value_change_callback, actions):
             result.add_base_group(group)
 
         tts_category = ConfigValueGroup("TTS", "Text-to-Speech", "Settings for the TTS methods Mantella supports.", on_value_change_callback)
@@ -362,7 +363,6 @@ class MantellaConfigValueDefinitionsNew:
 
         other_category = ConfigValueGroup("Other", "Other", "Other settings.", on_value_change_callback)
         other_category.add_config_value(OtherDefinitions.get_automatic_greeting_config_value())
-        other_category.add_config_value(OtherDefinitions.get_active_actions(actions))
         other_category.add_config_value(OtherDefinitions.get_reload_character_data_config_value())
         other_category.add_config_value(OtherDefinitions.get_save_summary_now_config_value())
         other_category.add_config_value(OtherDefinitions.get_save_summary_now_also_save_inner_thoughts_config_value())
@@ -410,9 +410,10 @@ class MantellaConfigValueDefinitionsNew:
         return result
 
     @staticmethod
-    def __conversation_groups(on_value_change_callback: Callable[..., Any] | None) -> list[ConfigValueGroup]:
-        """The settings at the end of the Conversation page, one section each: who speaks when in Game Master Mode,
-        and the Shout and event options the game only sends to Mantella. Each section can be folded away, and shows its title on the fold"""
+    def __conversation_groups(on_value_change_callback: Callable[..., Any] | None, actions: list[Action]) -> list[ConfigValueGroup]:
+        """The settings at the end of the Conversation page, one section each: who speaks when in Game Master Mode, and the Shout and event
+        options the game only sends to Mantella. Each section can be folded away, and shows its title on the fold. Last, not folded and under its
+        own heading, the actions NPCs can use"""
         def section(identifier: str, title: str, description: str) -> ConfigValueGroup:
             return ConfigValueGroup(identifier, title, description, on_value_change_callback, page=CONVERSATION_PAGE, foldable=True)
 
@@ -420,6 +421,11 @@ class MantellaConfigValueDefinitionsNew:
         all_conversations.add_config_value(LLMDefinitions.get_game_master_addressed_threshold_config_value())
         for value in ConversationDefinitions.get_talk_config_values(SHARED):
             all_conversations.add_config_value(value)
+
+        actions_section = ConfigValueGroup("ConversationActions", "Actions", ActionDefinitions.SECTION_DESCRIPTION, on_value_change_callback,
+                                           page=CONVERSATION_PAGE)
+        for kind in ACTION_KINDS:
+            actions_section.add_config_value(ActionDefinitions.get_actions_config_value(actions, kind))
 
         def own_talk_settings(target: ConfigValueGroup, kind: str):
             """A kind's "Use its own settings" switch, then its own talk settings, which only show while it is on"""
@@ -477,4 +483,4 @@ class MantellaConfigValueDefinitionsNew:
         npc_event.add_config_value(LLMDefinitions.get_npc_event_player_notice_delay_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_max_lines_without_player_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_wind_down_lines_config_value())
-        return [all_conversations, group, shout, director, *event_sections, npc_event]
+        return [all_conversations, group, shout, director, *event_sections, npc_event, actions_section]

@@ -159,20 +159,26 @@ def test_the_game_master_never_reads_the_players_name_while_directing(default_co
     assert any(PLAYER.name in request for request in model.game_master_requests[asked:]) is not director_mode
 
 
-def test_one_npc_you_direct_keeps_its_one_on_one_actions(director, game: DirectorGame, model: RecordingModel):
-    """"Make the NPC do stuff": a direction can make the NPC follow the player, as in a one-on-one conversation"""
+def test_one_npc_you_direct_gets_the_director_mode_actions(director, game: DirectorGame, model: RecordingModel):
+    """"Make the NPC do stuff": a direction can make the NPC wait, but not follow the player, who the NPC doesn't know is there"""
+    director.actions_director = ["Follow", "Wait"]
     game.start(HULDA)
-    model.npc_lines = ["Follow: Very well, I'll come along."]
+    model.npc_lines = ["Follow: Very well, I'll come along.", "Wait: I'll stay right here."]
     game.say("Hulda decides to follow the Dragonborn.")
-    assert "begin your response with 'Follow:'" in plain(model.npc_requests[-1]) # The one-on-one actions are offered
-    assert "mantella_npc_follow" in game.actions
+    assert "begin your response with 'Follow:'" not in plain(model.npc_requests[-1])
+    assert "begin your response with 'Wait:'" in plain(model.npc_requests[-1])
+    game.say("Hulda decides to stay.")
+    assert "mantella_npc_follow" not in game.actions and "mantella_npc_wait" in game.actions
 
 
-def test_a_group_you_direct_gets_the_group_actions(director, game: DirectorGame, model: RecordingModel):
+def test_a_group_you_direct_gets_the_director_mode_actions(director, game: DirectorGame, model: RecordingModel):
+    director.actions_director = ["Wait"]
+    director.actions_group = ["MoveTo"]
     game.start(HULDA, MIKAEL)
     model.picks = [HULDA.name]
     game.say("Hulda decides to follow the Dragonborn.")
-    assert "begin your response with 'Follow:'" not in plain(model.npc_requests[-1]) # Follow is a one-on-one action
+    assert "begin your response with 'Wait:'" in plain(model.npc_requests[-1])
+    assert "begin your response with 'MoveTo:'" not in plain(model.npc_requests[-1])
 
 
 @pytest.mark.parametrize("director_mode", [True, False])

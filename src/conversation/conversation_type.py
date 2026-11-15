@@ -7,6 +7,9 @@ from src.character_manager import Character
 from src.llm.message_thread import message_thread
 from src.conversation.context import context as Context
 from src.llm.messages import UserMessage
+from src.actions.action_rules import actions_for
+from src.config.definitions.action_definitions import DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, RADIANT, SHOUT
+from src.conversation.action import Action
 from src import utils
 
 class conversation_type(ABC):
@@ -69,6 +72,14 @@ class conversation_type(ABC):
         """True if the player directs the scene instead of taking part in it"""
         return False
 
+    def action_kind(self) -> str:
+        """Whose action switches apply (Conversation page, Actions section): the kind of conversation this is, however many people are in it"""
+        return ONE_ON_ONE
+
+    def npc_actions(self, context_for_conversation: Context) -> list[Action]:
+        """The actions an NPC can take in this conversation. The prompt lists them, and only these are taken from an NPC's line"""
+        return actions_for(self._config, self.action_kind())
+
 class pc_to_npc(conversation_type):
     """PC talks to a single NPC. The classic conversation"""
     def __init__(self, config: ConfigLoader) -> None:
@@ -76,7 +87,7 @@ class pc_to_npc(conversation_type):
 
     @utils.time_it
     def generate_prompt(self, context_for_conversation: Context, should_log: bool = False, messages_for_lorebook: message_thread | None = None) -> str:
-        actions = [a for a in self._config.actions if a.use_in_on_on_one]
+        actions = self.npc_actions(context_for_conversation)
         if self._config.game.base_game == GameEnum.FALLOUT4:
             return context_for_conversation.generate_system_message(self._config.prompt, actions, should_log, messages_for_lorebook, None)
         if context_for_conversation.npc_initiative:
@@ -142,12 +153,8 @@ class multi_npc(conversation_type):
         """The player directs this conversation: Director Mode is on and an NPC didn't start it"""
         return self._can_direct and multi_npc.is_director_enabled(self._config)
 
-    def npc_actions(self, context_for_conversation: Context) -> list:
-        """The actions an NPC can take in this conversation. With only one NPC (Shout, or a directed conversation),
-        they keep the actions of a one-on-one conversation (follow, trade, ...)"""
-        if context_for_conversation.npcs_in_conversation.contains_multiple_npcs():
-            return [a for a in self._config.actions if a.use_in_multi_npc]
-        return [a for a in self._config.actions if a.use_in_on_on_one]
+    def action_kind(self) -> str:
+        return DIRECTOR if self.is_director_mode() else GROUP
 
     @utils.time_it
     def generate_prompt(self, context_for_conversation: Context, should_log: bool = False, messages_for_lorebook: message_thread | None = None) -> str:
@@ -211,7 +218,7 @@ class multi_npc_game_master(multi_npc):
 
     @utils.time_it
     def generate_game_master_prompt(self, context_for_conversation: Context, messages_for_lorebook: message_thread | None = None, should_log: bool = False) -> str:
-        actions = [a for a in self._config.actions if a.use_in_multi_npc]
+        actions = self.npc_actions(context_for_conversation)
         prompt_type = "skyrim_game_master_prompt"
         return context_for_conversation.generate_system_message(self._config.game_master_prompt, actions, should_log, messages_for_lorebook, prompt_type,
                                                                 conditions=self.prompt_conditions(context_for_conversation, prompt_type))
@@ -232,8 +239,8 @@ class npc_event(multi_npc_game_master):
     def prompt_conditions(self, context_for_conversation: Context, prompt_type: str) -> set[str]:
         return {"npc_event"}
 
-    def npc_actions(self, context_for_conversation: Context) -> list:
-        return [a for a in self._config.actions if a.use_in_multi_npc]
+    def action_kind(self) -> str:
+        return NPC_EVENT
 
     @utils.time_it
     def get_user_message(self, context_for_conversation: Context, messages: message_thread) -> UserMessage | None:
@@ -259,6 +266,9 @@ class shout(multi_npc_game_master):
         if self.is_director_mode():
             conditions.add("director")
         return conditions
+
+    def action_kind(self) -> str:
+        return DIRECTOR if self.is_director_mode() else SHOUT
 
     @staticmethod
     def is_said_to_room(context_for_conversation: Context) -> bool:
@@ -286,9 +296,12 @@ class radiant(conversation_type):
     def mark_prompt_unusable(self) -> None:
         self.__prompt_unusable = True
 
+    def action_kind(self) -> str:
+        return RADIANT
+
     @utils.time_it
     def generate_prompt(self, context_for_conversation: Context, should_log: bool = False, messages_for_lorebook: message_thread | None = None) -> str:
-        actions = [a for a in self._config.actions if a.use_in_radiant]
+        actions = self.npc_actions(context_for_conversation)
         prompt_type = None if self._config.game.base_game == GameEnum.FALLOUT4 else "skyrim_radiant_prompt"
         return context_for_conversation.generate_system_message(self._config.radiant_prompt, actions, should_log, messages_for_lorebook, prompt_type)
     

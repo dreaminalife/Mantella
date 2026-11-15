@@ -1442,7 +1442,7 @@ class GameMasterTurns:
             if turn_id != self.__turn_id:
                 return None, None
             self.__output_manager = output_manager
-        output_manager.generate_response(npc_request, characters, reply, config.actions, single_speaker=speaker)
+        output_manager.generate_response(npc_request, characters, reply, conversation_type.npc_actions(self.__context), single_speaker=speaker)
         add_reply_to_history(history, reply.sentences, config, characters.contains_multiple_npcs())
         with self.__lock:
             if turn_id != self.__turn_id:

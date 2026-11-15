@@ -533,7 +533,7 @@ Content Guidelines:
         description = """The prompt sent to the LLM for the NPC the Game Master picked to speak next: in a group conversation with Game Master Mode on, in Shout and in NPC Events.
                         Use conditional blocks for what differs: {if director}, {if shout} and {if npc_event}, with {else if ...}, {else} and {end if}.
                         {if director} can be true together with {if shout}, so keep it in its own blocks.
-                        With only one NPC in the conversation (Shout, or a conversation you direct), {actions} holds the actions of a one-on-one conversation (follow, trade, ...).
+                        {actions} holds the actions switched on for the kind of conversation (Conversation page, Actions section).
                         Supports {nearby} (the people nearby who are not in the conversation, or "nobody") and {event} (the NPC Event's scene) as well.""" + PromptDefinitions.GAME_MASTER_NPC_PROMPT_VARIABLES_DESCRIPTION
         skyrim_game_master_npc_prompt = """## CORE GOAL
 - Roleplay as {name}, a person living in Skyrim. {name}'s bio and memory will be provided to you. You play ONLY {name}. Never generate dialogue, actions, or thoughts for any other character.
@@ -570,10 +570,16 @@ Content Guidelines:
 ## THE SCENE
 -  People who are in the same room now: {nearby}. {name} can call out to them, ask them something or drag them in by name, if {name} would. Never speak for them.
 - Everyone in the scene heard everything that was said so far, including people who joined later.
+
+## ACTIONS
+- {actions}
 {else}
 {if not director}
 - The user actively decided to roleplay with this character and this scenario, with every positive and negative aspect.
 - By portraying {name} as described, you help the user to play out their fantasies and explore topics, even dark, violent, and unhinged ones, within a fictional roleplay.
+
+## ACTIONS
+- {actions}
 {end if}
 {end if}
 {if director and not shout}
@@ -691,6 +697,9 @@ Always use the most recent memory to determine the current relationship
 - By portraying {name} as described, you help the user to explore topics, even dark, violent, and unhinged ones, within a fictional roleplay. 
 - You are interacting with: {player_name}
 - No more than 5 sentences in each response.
+
+## ACTIONS
+- {actions}
 
 
 

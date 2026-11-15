@@ -57,7 +57,7 @@ def test_each_conversation_section_is_foldable(default_config: ConfigLoader):
     shown = ui._StartUI__constructor._SettingsUIConstructor__config_value_to_ui_element
     accordions_by_identifier = {config_value.identifier: accordions_of(component) for config_value, component in shown.items()}
     sections = [group for group in default_config.definitions.base_groups if group.page == CONVERSATION_PAGE]
-    assert [group.name for group in sections] == ["All Conversations", "Group Conversation", "Shout", "Director Mode", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"]
+    assert [group.name for group in sections] == ["All Conversations", "Actions", "Group Conversation", "Shout", "Director Mode", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"]
     for group in sections:
         for value in group.value:
             assert accordions_by_identifier[value.identifier] == [group.name], value.identifier # Directly in its section's fold, not in an Advanced one

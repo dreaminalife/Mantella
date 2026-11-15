@@ -1,5 +1,6 @@
 """The merged built-in prompts reproduce, branch by branch, the 18 prompts they replaced. The old texts are frozen in
-tests/prompt_merge_fixtures, as they were before the merge. So is the Memory Prompt from before it got a Director Mode part"""
+tests/prompt_merge_fixtures, as they were before the merge. So is the Memory Prompt from before it got a Director Mode part.
+What was added to a branch since is listed in ADDED_SINCE and taken out before comparing"""
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,14 @@ CASES = [
 ]
 
 
+# Added to a merged prompt's branch after the merge: (merged prompt, the old prompt) -> the text added
+ACTIONS_SECTION = "\n\n## ACTIONS\n- {actions}" # Every kind of conversation lists the actions (NPC Actions)
+ADDED_SINCE = {
+    ("skyrim_game_master_npc_prompt", "skyrim_game_master_npc_prompt"): ACTIONS_SECTION,
+    ("skyrim_game_master_npc_prompt", "skyrim_npc_event_npc_prompt"): ACTIONS_SECTION,
+}
+
+
 def default(prompt_type: str) -> str:
     return getattr(P, f"get_{prompt_type}_config_value")().default_value
 
@@ -40,7 +49,12 @@ def default(prompt_type: str) -> str:
 @pytest.mark.parametrize("merged, old, conditions", CASES, ids=[f"{old}-{'+'.join(sorted(c)) or 'none'}" for _m, old, c in CASES])
 def test_each_branch_is_the_old_prompt(merged, old, conditions):
     old_text = (FIXTURES / f"{old}.txt").read_text(encoding="utf-8")
-    assert P.apply_prompt_conditions(merged, default(merged), conditions) == old_text
+    text = P.apply_prompt_conditions(merged, default(merged), conditions)
+    added = ADDED_SINCE.get((merged, old))
+    if added:
+        assert text.count(added) == 1
+        text = text.replace(added, "")
+    assert text == old_text
 
 
 def test_every_old_prompt_is_covered():

@@ -7,6 +7,7 @@ from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.llm_definitions import NarrationIndicatorsEnum
 from src.conversation.conversation import Conversation
 from src.conversation.conversation_serializer import deserialize_persistent_messages, serialize_persistent_messages
+from src.conversation.action import Action
 from src.conversation.conversation_type import multi_npc, multi_npc_game_master, npc_event, pc_to_npc, shout
 from src.llm.messages import UserMessage
 
@@ -84,20 +85,27 @@ def test_multi_npc_director_mode_uses_the_director_prompt():
     assert context.generate_system_message.call_args.args[4] == "skyrim_multi_npc_director_prompt"
 
 
-FOLLOW = SimpleNamespace(keyword="Follow", use_in_on_on_one=True, use_in_multi_npc=False)
-CHAT = SimpleNamespace(keyword="Chat", use_in_on_on_one=False, use_in_multi_npc=True)
+def basic_action(name: str, identifier: str) -> Action:
+    return Action(identifier, name, name, "", f"To {name.lower()}, begin your response with '{{key}}:'.", False, False, True, True, True)
 
 
-@pytest.mark.parametrize("has_more_npcs, expected", [(False, ["Follow"]), (True, ["Chat"])])
-def test_a_directed_npc_alone_keeps_the_one_on_one_actions(has_more_npcs, expected):
+WAIT = basic_action("Wait", "mantella_npc_wait")
+FOLLOW = basic_action("Follow", "mantella_npc_follow")
+
+
+@pytest.mark.parametrize("has_more_npcs", [False, True])
+def test_a_directed_conversation_uses_the_director_mode_switches_however_many_npcs_there_are(has_more_npcs):
     cfg = config()
-    cfg.actions = [FOLLOW, CHAT]
+    cfg.all_actions = [WAIT, FOLLOW]
+    cfg.actions_one_on_one = ["Wait", "Follow"]
+    cfg.actions_group = ["Wait", "Follow"]
+    cfg.actions_director = ["Wait", "Follow"] # Follow would involve the player, who the NPCs don't know is there
     context = MagicMock()
     context.npcs_in_conversation.contains_multiple_npcs.return_value = has_more_npcs
     multi_npc(cfg).generate_prompt(context) # Without Game Master Mode
-    assert [a.keyword for a in context.generate_system_message.call_args.args[1]] == expected
+    assert [a.keyword for a in context.generate_system_message.call_args.args[1]] == ["Wait"]
     multi_npc_game_master(cfg).generate_npc_prompt(context, MagicMock()) # With Game Master Mode
-    assert [a.keyword for a in context.generate_system_message.call_args.args[1]] == expected
+    assert [a.keyword for a in context.generate_system_message.call_args.args[1]] == ["Wait"]
 
 
 def test_the_director_prompts_offer_the_actions():

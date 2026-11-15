@@ -1,6 +1,9 @@
 """In-game test of the NPC actions: the game plays a one-on-one conversation by itself (MantellaActionTest.psc in Mantella-Spell), saying the
-player's lines, and checks what really happens: the NPC follows, the give and take menu opens, the NPC attacks and stops. It does this first
-with the in-game menu's NPC Actions switches (Allow Follow, Allow Aggro, Allow Inventory) off, when nothing may happen, then on.
+player's lines, and checks what really happens: the NPC follows and stops following, waits, the give and take menu and the shop open, the NPC
+appears next to you (Teleport) and walks over to you (MoveTo) when you stand across the room, starts a fistfight (Brawl), runs away (Flee),
+attacks and stops. It does this first with the in-game menu's NPC Actions switches (Allow Follow, Allow Aggro, Allow Inventory) off, when
+nothing may happen, then on. Loot is switched off for one-on-one conversations on the Conversation page (Actions section), as by default:
+the NPC who says it doesn't start looting, and Mantella's log notes it was left out.
 
 So that each action happens on cue, MantellaSoftware talks to a stand-in AI service this script runs on your PC instead of a real model.
 The stand-in answers each of the player's lines with the action its cue asks for, e.g. "ACTIONTEST_follow Come with me." gets
@@ -49,14 +52,26 @@ MODEL = "stand-in"
 CUE = re.compile(r"ACTIONTEST_([a-z]+)", re.IGNORECASE)
 ANSWERS = {
     "follow": "Follow: Right behind you.",
+    "unfollow": "Unfollow: I'll stay here, then.",
+    "wait": "Wait: I'll be right here.",
     "inventory": "Inventory: Here, have a look.",
-    "offended": "Offended: How dare you!",
-    "forgiven": "Forgiven: Fine. Let's forget it.",
+    "barter": "Barter: Take a look at my wares.",
+    "loot": "Loot: Let's see what's lying around.",
+    "teleport": "Teleport: Here I am.",
+    "moveto": "MoveTo: Coming over.",
+    "brawl": "Brawl: Come on, then!",
+    "flee": "Flee: I'm getting out of here!",
+    "offended": "Attack: How dare you!",
+    "forgiven": "StandDown: Fine. Let's forget it.",
 }
+# The actions switched on for one-on-one conversations during the test. Loot stays off
+ONE_ON_ONE_ACTIONS = "Follow, Unfollow, Wait, Inventory, Barter, Teleport, MoveTo, Brawl, Flee, Attack, StandDown"
+LEFT_OUT = "used Loot, which NPCs can't use in this conversation" # Mantella's log, when the NPC says the switched-off Loot
 PLAIN_ANSWER = "Alright."
 
 # The checks MantellaActionTest notes, by id. A check that never shows counts as failed: the test stopped before it
-CHECKS = ["follow-off", "inventory-off", "offended-off", "follow-on", "inventory-on", "inventory-typed", "offended-on", "forgiven-on"]
+CHECKS = ["follow-off", "inventory-off", "offended-off", "follow-on", "unfollow-on", "wait-on", "inventory-on", "inventory-typed", "barter-on",
+          "loot-switched-off", "teleport-on", "moveto-on", "brawl-on", "flee-on", "offended-on", "forgiven-on"]
 
 
 def settings_for_test(port: int) -> dict[str, str]:
@@ -65,7 +80,8 @@ def settings_for_test(port: int) -> dict[str, str]:
                 "npc_event_llm_api", "fallback_llm_api", "bio_llm_api", "vision_llm_api"]
     models = ["model", "multi_npc_model", "game_master_model", "summary_model", "thoughts_model", "reflection_model", "npc_event_model",
               "fallback_model", "bio_llm_model", "vision_model"]
-    off = ["game_master_use_decision_model", "conversation_summary_enabled", "inner_monologue_enabled", "personal_reflection_enabled",
+    off = ["multi_conversation_director_mode", # Would make the conversation with one NPC a directed one, with the Director Mode actions
+           "game_master_use_decision_model", "conversation_summary_enabled", "inner_monologue_enabled", "personal_reflection_enabled",
            "random_llm_one_on_one_enabled", "random_llm_multi_npc_enabled", "random_llm_one_on_one_per_request_enabled",
            "random_llm_multi_npc_per_request_enabled", "sequential_llm_one_on_one_per_request_enabled",
            "sequential_llm_multi_npc_per_request_enabled", "sonnet_prompt_caching_enabled", "allow_per_character_llm_overrides",
@@ -74,9 +90,11 @@ def settings_for_test(port: int) -> dict[str, str]:
            "apply_profile_reflection", "apply_profile_npc_event", "apply_profile_fallback"]
     return {**{key: url for key in services}, **{key: MODEL for key in models}, **{key: "False" for key in off},
             "custom_token_count": "64000", "multi_npc_custom_token_count": "64000", # A local model counts as small, so long prompts would be cut
-            "active_actions": "Follow, Inventory, Offended, Forgiven",
-            "follow_npc_response": "Follow", "inventory_npc_response": "Inventory",
-            "offended_npc_response": "Offended", "forgiven_npc_response": "Forgiven", **voice_settings()}
+            "actions_one_on_one": ONE_ON_ONE_ACTIONS,
+            "follow_npc_response": "Follow", "unfollow_npc_response": "Unfollow", "wait_npc_response": "Wait",
+            "inventory_npc_response": "Inventory", "barter_npc_response": "Barter", "brawl_npc_response": "Brawl",
+            "loot_npc_response": "Loot", "teleport_npc_response": "Teleport", "moveto_npc_response": "MoveTo", "flee_npc_response": "Flee",
+            "offended_npc_response": "Attack", "forgiven_npc_response": "StandDown", **voice_settings()}
 
 
 # The stand-in AI service
@@ -189,6 +207,9 @@ def check(mantella_folder: str, papyrus_log: str) -> bool:
             results[check_id] = f"{match.group(1).upper()} {check_id}: {match.group(3)}"
         elif note.lower() != "starting":
             print(f"INFO {note}")
+    left_out = [text for _level, text in entries if LEFT_OUT in text]
+    if "loot-switched-off" in results and not left_out:
+        results["loot-switched-off"] = "FAIL loot-switched-off: the NPC didn't start looting, but Mantella's log doesn't say it left Loot out"
     passed = True
     for check_id in CHECKS:
         result = results.pop(check_id, f"FAIL {check_id}: never checked (the test stopped before it)")
@@ -224,7 +245,7 @@ def setup(game_folder: str, mantella_folder: str, port: int):
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
-        print(f"These settings are not in config.ini, so nothing was changed. Start Mantella once so it writes them, then run again: {missing}")
+        print(f"These settings are not in config.ini, so nothing was changed. Start the new Mantella once so it writes them, close it, then run again: {missing}")
         sys.exit(1)
     with open(os.path.join(game_folder, f"{BATCH}.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write("\n".join(BATCH_LINES) + "\n")
@@ -269,7 +290,8 @@ Now:
   2. Load a save where you can go to Whiterun (not during a quest scene). Don't save during or after the test.
   3. Console: bat {BATCH} (moves you next to Hulda in the Bannered Mare at 8 pm and starts the test)
   4. Watch the notes "Action test: ...". It says your lines itself. It takes a minute or two, until "Action test: done".
-     One NPC attacks you briefly, then stops. The NPCs' lines are silent, only their subtitles flash.
+     Hulda (or the nearest NPC) follows you and stops, opens her shop, then you jump across the room twice: she appears next to you,
+     then walks over. She starts a fistfight, runs off, attacks you briefly and stops. The NPCs' lines are silent, only their subtitles flash.
   5. Press Enter here. It checks the results and puts your config.ini back. Then restart Mantella.""")
     try:
         input()

@@ -436,8 +436,8 @@ class ChatManager:
         # Check for short voicelines before sending to TTS
         if len(content.text.strip()) < 3:
             logging.warning(f"Skipping TTS for voiceline that is too-short: '{content.text.strip()}'")
-            # Return a sentence object without audio - skipping TTS entirely
-            return Sentence(SentenceContent(character_to_talk, text, content.sentence_type, True), "", 0)
+            # Return a sentence object without audio - skipping TTS entirely. Its actions still go to the game: a reply can be only "Barter:"
+            return Sentence(SentenceContent(character_to_talk, text, content.sentence_type, True, content.actions), "", 0)
 
         with self.__tts_access_lock:
             try:
@@ -610,7 +610,7 @@ class ChatManager:
                                                  self.__config.speech_start_indicators, self.__config.speech_end_indicators))
         parser_chain.extend([
             sentence_end_parser(),
-            actions_parser(actions),
+            actions_parser(actions, getattr(self.__config, 'all_actions', None)),
             sentence_length_parser(self.__config.number_words_tts),
             max_count_sentences_parser(
                 max_response_sentences,

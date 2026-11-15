@@ -9,7 +9,7 @@
 - Someone who joined later heard what was said since Dragonborn started speaking up, not what was said before.
 
 ## ACTIONS
-- 
+- If an NPC says something highly offensive, begin your response with 'Attack:'. To show the player what you have for sale, begin your response with 'Barter:'. If you need to escape from the player, begin your response with 'Flee:'. To show the player what you have in your inventory or to give / take an item, begin your response with 'Inventory:'. If the player asks you to move to them, begin your response with 'MoveTo:'. If the player renounces their words, or to end combat, begin your response with 'StandDown:'. Both the action prefix and NPC name need colons to be valid, e.g. 'CharacterName: Action: Lead the way.' 
 
 
 ## FORMAT RULES
@@ -59,4 +59,4 @@ Always use the most recent memory to determine the current relationship
 
 
 ## Extra info/reference
- LOREBOOK SEARCHED: 12 | Dragonborn | Dragonborn, Lydia and Faendal | English | Lydia | Lydia | Lydia is naked now. Faendal is naked now. | Whiterun | Ysolda, Belethor | in the afternoon
+ LOREBOOK SEARCHED: 12 | Dragonborn | Dragonborn, Lydia and Faendal | English | If an NPC says something highly offensive, begin your response with 'Attack:'. To show the player what you have for sale, begin your response with 'Barter:'. If you need to escape from the player, begin your response with 'Flee:'. To show the player what you have in your inventory or to give / take an item, begin your response with 'Inventory:'. If the player asks you to move to them, begin your response with 'MoveTo:'. If the player renounces their words, or to end combat, begin your response with 'StandDown:'. Both the action prefix and NPC name need colons to be valid, e.g. 'CharacterName: Action: Lead the way.'  | Lydia | Lydia | Lydia is naked now. Faendal is naked now. | Whiterun | Ysolda, Belethor | in the afternoon

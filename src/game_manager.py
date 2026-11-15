@@ -9,6 +9,7 @@ from src.games.external_character_info import external_character_info
 from src.games.gameable import Gameable
 from src.llm.sentence import Sentence
 from src.llm.sentence_content import has_action
+from src.actions.action_rules import LISTEN
 from src.output_manager import ChatManager
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
@@ -775,10 +776,16 @@ class GameStateManager:
 
         cleaned_player_text = utils.clean_text(updated_player_text)
         npcs_in_conversation = self.__talk.context.npcs_in_conversation
-        if not npcs_in_conversation.contains_multiple_npcs(): # actions are only enabled in 1-1 conversations
-            for action in self.__config.actions:
-                # if the player response is just the name of an action, force the action to trigger
-                if action.keyword.lower() == cleaned_player_text.lower() and npcs_in_conversation.last_added_character:
+        typed = cleaned_player_text.lower().replace(' ', '')
+        listen = next((a for a in self.__config.all_actions if a.identifier == LISTEN), None)
+        if listen and listen.keyword.lower().replace(' ', '') == typed:
+            # Saying "listen" gives the player more time for their next line. Never sent to the game, and the NPCs still hear it
+            self.__talk.listen_longer()
+        elif npcs_in_conversation.last_added_character:
+            for action in self.__talk.npc_actions():
+                # if the player response is just the name of an action the NPCs can use here, force the action to trigger
+                # (the game does it with the last NPC who spoke)
+                if action.keyword.lower().replace(' ', '') == typed and action.identifier != LISTEN:
                     return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCACTION,
                             comm_consts.KEY_REPLYTYPE_NPCACTION: {
                                 'mantella_actor_speaker': npcs_in_conversation.last_added_character.name,

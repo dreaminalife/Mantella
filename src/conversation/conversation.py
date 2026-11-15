@@ -9,6 +9,8 @@ from src.characters_manager import Characters
 from src.conversation.conversation_log import conversation_log
 from src.conversation.conversation_serializer import serialize_persistent_messages, deserialize_persistent_messages
 from src.conversation.action import Action
+from src.actions.action_rules import LISTEN
+from src.actions.function_manager import FunctionManager
 from src.llm.sentence_queue import SentenceQueue
 from src.llm.sentence import Sentence
 from src.remember.remembering import Remembering
@@ -116,7 +118,18 @@ class Conversation:
     @property
     def stt(self) -> Transcriber | None:
         return self.__stt
-    
+
+    def npc_actions(self) -> list[Action]:
+        """The actions the NPCs can use now, by the kind of conversation (Conversation page, Actions section)"""
+        return self.__conversation_type.npc_actions(self.__context)
+
+    def listen_longer(self):
+        """Listen: the player gets more time to speak in their next turn. Only makes a difference with the microphone"""
+        seconds = FunctionManager.get_action_pause_seconds(LISTEN)
+        if self.__stt:
+            self.__stt.set_temporary_pause(seconds)
+        logging.log(23, f"Listen: the player's next turn waits {seconds} seconds of silence before it ends")
+
     @utils.time_it
     def hot_swap_settings(self, config: ConfigLoader, llm_client: AIClient, chat_manager: ChatManager, rememberer: Remembering, stt: Transcriber | None = None) -> bool:
         """Attempts to hot-swap settings without ending the conversation.
@@ -424,6 +437,9 @@ class Conversation:
         if next_sentence and len(next_sentence.text) > 0:
             if has_action(next_sentence.actions, comm_consts.ACTION_REMOVECHARACTER):
                 self.__context.remove_character(next_sentence.speaker)
+            if has_action(next_sentence.actions, LISTEN): # Not sent to the game
+                next_sentence.content.actions = [a for a in next_sentence.actions if a.get('identifier') != LISTEN]
+                self.listen_longer()
             #if there is a next sentence and it actually has content, return it as something for an NPC to say
             if self.last_sentence_audio_length > 0:
                 logging.debug(f'Waiting {round(self.last_sentence_audio_length, 1)} seconds for last voiceline to play')
@@ -956,7 +972,7 @@ class Conversation:
                 except Exception as e:
                     logging.debug(f"Could not refresh system prompt before generation: {e}")
                 self.__sentences.is_more_to_come = True
-                self.__generation_thread = Thread(None, self.__output_manager.generate_response, None, [self.__messages, self.__context.npcs_in_conversation, self.__sentences, self.context.config.actions]).start()   
+                self.__generation_thread = Thread(None, self.__output_manager.generate_response, None, [self.__messages, self.__context.npcs_in_conversation, self.__sentences, self.npc_actions()]).start()   
 
     @utils.time_it
     def __stop_generation(self):

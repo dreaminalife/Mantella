@@ -11,8 +11,11 @@ from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, DIR
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.tts_definitions import TTSEnum
 from src.conversation.action import Action
+from src.actions.function_manager import FunctionManager
+from src.config.definitions.action_definitions import ACTION_KINDS, NOT_OFFERED, OLD_KEYWORDS, actions_key, carried_over_ticks
 from src.config.config_values import ConfigValues
 from src.config.mantella_config_value_definitions_new import MantellaConfigValueDefinitionsNew
+from src.config.definitions.language_definitions import LanguageDefinitions
 from src.config.config_json_writer import ConfigJsonWriter
 from src.config.config_file_writer import ConfigFileWriter
 from src.config.types.config_value_string import ConfigValueString
@@ -32,7 +35,7 @@ class ConfigLoader:
         self.__game_override = game_override
         self.__prompt_profile_manager = PromptProfileManager(prompt_profiles_path)
         path_to_actions = os.path.join(utils.resolve_path(),"data","actions")
-        self.__actions = ConfigLoader.load_actions_from_json(path_to_actions)
+        self.__actions = [a for a in ConfigLoader.load_actions_from_json(path_to_actions) if a.identifier not in NOT_OFFERED]
         self.__definitions: ConfigValues = MantellaConfigValueDefinitionsNew.get_config_values(self.is_run_integrated, self.__actions, self.__on_config_value_change)
         if not os.path.exists(self.__file_name):
             logging.log(24,"Cannot find 'config.ini'. Assuming first time usage of MantellaSoftware and creating it.")
@@ -47,8 +50,15 @@ class ConfigLoader:
             input("Press Enter to exit.")
 
         create_back_up_configini = False
+        old_actions: str | None = None # The old Actions list of the Other tab, which the Actions section of the Conversation page replaces
+        has_action_switches = False
+        action_keys = {actions_key(kind) for kind in ACTION_KINDS}
         for section_name in config.sections():
             for (each_key, each_value) in config.items(section_name):
+                if each_key == "active_actions":
+                    old_actions = each_value
+                    continue
+                has_action_switches = has_action_switches or each_key in action_keys
                 try:
                     config_value = self.__definitions.get_config_value_definition(each_key)
                     # Unescape hash symbols that were escaped for INI file storage
@@ -71,6 +81,11 @@ class ConfigLoader:
                     utils.play_error_sound()
                     logging.warning(f"Could not identify config value '{each_key} = {each_value}' in current config.ini. Value will not be loaded. A backup of this config.ini will be created.")
 
+        if old_actions is not None:
+            if not has_action_switches:
+                self.__carry_over_actions(old_actions)
+            create_back_up_configini = True # Written again without the old list, once
+
         if create_back_up_configini:
             self.__write_config_state(self.__definitions, True)
         
@@ -78,6 +93,21 @@ class ConfigLoader:
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
     
+    def __carry_over_actions(self, old_actions: str):
+        """Someone updating: the Actions section's switches start from their old Actions list (see action_definitions.carried_over_ticks),
+        and Offended and Forgiven, now Attack and StandDown, lose their old keywords if they kept the old default"""
+        old_ticked = [name.strip() for name in old_actions.split(",") if name.strip()]
+        for kind in ACTION_KINDS:
+            self.__definitions.get_config_value_definition(actions_key(kind)).value = carried_over_ticks(self.__actions, kind, old_ticked)
+        for key, (old_keyword, new_keyword) in OLD_KEYWORDS.items():
+            try:
+                keyword = self.__definitions.get_config_value_definition(key)
+            except Exception:
+                continue
+            if keyword.value == old_keyword:
+                keyword.value = new_keyword
+        logging.log(24, f"Your Actions list ({', '.join(old_ticked) or 'nothing ticked'}) was moved to the new Actions section of the Conversation page.")
+
     @property
     def have_all_config_values_loaded_correctly(self) -> bool:
         return self.__definitions.have_all_loaded_values_succeded
@@ -302,16 +332,16 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.mod_path_base = self.mod_path
             self.mod_path += "\\Sound\\Voice\\Mantella.esp"
 
-            selected_actions = self.__definitions.get_string_list_value("active_actions")
-            self.actions = [a for a in self.__actions if a.name in selected_actions]
+            self.all_actions: list[Action] = self.__actions # Which ones NPCs can use depends on the kind of conversation: see action_rules
+            for kind in ACTION_KINDS:
+                setattr(self, actions_key(kind), self.__definitions.get_string_list_value(actions_key(kind)))
 
             self.language = self.__definitions.get_string_value("language")
             self.end_conversation_keyword = self.__definitions.get_string_value("end_conversation_keyword")
             self.goodbye_npc_response = self.__definitions.get_string_value("goodbye_npc_response")
             self.collecting_thoughts_npc_response = self.__definitions.get_string_value("collecting_thoughts_npc_response")
             for a in self.__actions:
-                identifier = a.identifier.lstrip("mantella_").lstrip("npc_")
-                a.keyword = self.__definitions.get_string_value(f"{identifier}_npc_response")
+                a.keyword = self.__definitions.get_string_value(LanguageDefinitions.action_keyword_key(a))
 
             #TTS
             self.tts_service: TTSEnum = self.__definitions.get_enum_value("tts_service", TTSEnum)
@@ -670,35 +700,10 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
     
     @staticmethod
     def load_actions_from_json(actions_folder: str) -> list[Action]:
-        result = []
+        """The actions an NPC can start its line with (the ones with a prompt), from the action files in the folder"""
         os.makedirs(actions_folder, exist_ok=True)
-        override_files: list[str] = os.listdir(actions_folder)
-        for file in override_files:
-            try:
-                filename, extension = os.path.splitext(file)
-                full_path_file = os.path.join(actions_folder,file)
-                if extension == ".json":
-                    with open(full_path_file) as fp:
-                        json_object = json.load(fp)
-                        if isinstance(json_object, dict):#Otherwise it is already a list
-                            json_object = [json_object]
-                        for json_content in json_object:
-                            content: dict[str, str] = json_content
-                            identifier: str = content.get("identifier", "").lower() # IDs must be lower case to avoid issues with case sensitivity
-                            name: str = content.get("name", "")
-                            key: str = content.get("key", "")
-                            description: str = content.get("description", "")
-                            prompt: str = content.get("prompt", "")
-                            is_interrupting: bool = bool(content.get("is-interrupting", ""))
-                            one_on_one: bool = bool(content.get("one-on-one", ""))
-                            multi_npc: bool = bool(content.get("multi-npc", ""))
-                            radiant: bool = bool(content.get("radiant", ""))
-                            info_text: str = content.get("info-text", "")
-                            result.append(Action(identifier, name, key,description,prompt,is_interrupting, one_on_one,multi_npc,radiant,info_text))
-            except Exception as e:
-                utils.play_error_sound()
-                logging.log(logging.WARNING, f"Could not load action definition file '{file}' in '{actions_folder}'. Most likely there is an error in the formating of the file. Error: {e}")
-        return result
+        FunctionManager.load_all_actions(actions_dir=actions_folder)
+        return FunctionManager.get_legacy_actions()
     
     def get_narration_indicators(self) -> tuple[str, str]:
         if self.narration_indicators == NarrationIndicatorsEnum.BRACKETS:
