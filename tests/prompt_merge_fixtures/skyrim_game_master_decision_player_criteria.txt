@@ -1,0 +1,1 @@
+{player_name} gets the turn: someone asked {player_name} something or addressed them, and no one wants to react to the events that just happened, if any

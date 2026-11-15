@@ -21,7 +21,7 @@ class MockAIClient:
         self.error_on_call = error_on_call
         self.delay = delay
         
-    async def streaming_call(self, messages=None, is_multi_npc=False):
+    async def streaming_call(self, messages=None, is_multi_npc=False, response_started_at=None):
         """Simulates streaming call with configurable response patterns"""
         if self.error_on_call:
             raise Exception("Simulated API error")
@@ -293,3 +293,552 @@ async def test_process_response_param(
 
     assert actual == expected_texts
     assert actual_types == expected_types
+
+
+def _spoken_texts_from_queue(queue: SentenceQueue) -> list[str]:
+    return [sentence.content.text.strip() for sentence in get_sentence_list_from_queue(queue)]
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentence_single_npc(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["One. ", "Two. ", "Three."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 1
+
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        example_characters_pc_to_npc,
+        mock_actions,
+    )
+
+    assert _spoken_texts_from_queue(mock_queue) == ["One.", "Two.", ""]
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentence_keeps_at_least_one(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["Only one sentence."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 1
+
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        example_characters_pc_to_npc,
+        mock_actions,
+    )
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Only one sentence.", ""]
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentences_keeps_one_when_drop_exceeds_count(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["One. ", "Two."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 3
+
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        example_characters_pc_to_npc,
+        mock_actions,
+    )
+
+    assert _spoken_texts_from_queue(mock_queue) == ["One.", ""]
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentence_also_drops_its_action(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["Hello there. ", "Wave: See you later."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 1
+
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        example_characters_pc_to_npc,
+        mock_actions,
+    )
+
+    output_sentences = get_sentence_list_from_queue(mock_queue)
+    assert [sentence.content.text.strip() for sentence in output_sentences] == ["Hello there.", ""]
+    assert not output_sentences[0].content.actions
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentences_does_not_apply_to_multi_npc(
+    output_manager: ChatManager,
+    example_skyrim_player_character: Character,
+    example_skyrim_npc_character: Character,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    second_npc = Character(
+        base_id="1",
+        ref_id="1",
+        name="Lydia",
+        gender=1,
+        race=example_skyrim_npc_character.race,
+        is_player_character=False,
+        bio="You are Lydia.",
+        is_in_combat=False,
+        is_enemy=False,
+        relationship_rank=0,
+        is_generic_npc=True,
+        ingame_voice_model="FemaleEvenToned",
+        tts_voice_model="FemaleEvenToned",
+        csv_in_game_voice_model="FemaleEvenToned",
+        advanced_voice_model="FemaleEvenToned",
+        voice_accent="en",
+        equipment=None,
+        custom_character_values=None,
+    )
+    characters = Characters()
+    characters.add_or_update_character(example_skyrim_player_character)
+    characters.add_or_update_character(example_skyrim_npc_character)
+    characters.add_or_update_character(second_npc)
+
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["One. ", "Two. ", "Three."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 1
+
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        characters,
+        mock_actions,
+    )
+
+    assert _spoken_texts_from_queue(mock_queue) == ["One.", "Two.", "Three.", ""]
+
+
+@pytest.mark.asyncio
+async def test_drop_last_sentences_applies_to_game_master_reply(
+    output_manager: ChatManager,
+    example_skyrim_player_character: Character,
+    example_skyrim_npc_character: Character,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    second_npc = Character(
+        base_id="1",
+        ref_id="1",
+        name="Lydia",
+        gender=1,
+        race=example_skyrim_npc_character.race,
+        is_player_character=False,
+        bio="You are Lydia.",
+        is_in_combat=False,
+        is_enemy=False,
+        relationship_rank=0,
+        is_generic_npc=True,
+        ingame_voice_model="FemaleEvenToned",
+        tts_voice_model="FemaleEvenToned",
+        csv_in_game_voice_model="FemaleEvenToned",
+        advanced_voice_model="FemaleEvenToned",
+        voice_accent="en",
+        equipment=None,
+        custom_character_values=None,
+    )
+    characters = Characters()
+    characters.add_or_update_character(example_skyrim_player_character)
+    characters.add_or_update_character(example_skyrim_npc_character)
+    characters.add_or_update_character(second_npc)
+
+    client = output_manager._ChatManager__client
+    config = output_manager._ChatManager__config
+    client.response_pattern = ["One. ", "Two. ", "Three."]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 1
+
+    # Game Master Mode locks the reply to one speaker
+    await output_manager.process_response(
+        example_skyrim_npc_character,
+        mock_queue,
+        mock_messages,
+        characters,
+        mock_actions,
+        lock_speaker=True,
+    )
+
+    assert _spoken_texts_from_queue(mock_queue) == ["One.", "Two.", ""]
+
+
+def _enable_sequential_one_on_one(config: ConfigLoader, models: list[str]):
+    config.sequential_llm_one_on_one_per_request_enabled = True
+    config.sequential_llm_pool_one_on_one = [
+        {"service": "OpenRouter", "model": model} for model in models
+    ]
+    config.apply_profile_one_on_one = False
+
+
+def _patch_pool_clients(output_manager: ChatManager, monkeypatch, clients_by_model: dict[str, MockAIClient]):
+    created: list[str] = []
+
+    def fake_create(selection):
+        created.append(selection.model)
+        client = clients_by_model[selection.model]
+        client.model_name = selection.model
+        return client
+
+    monkeypatch.setattr(output_manager, "_get_or_create_random_client", fake_create)
+    return created
+
+
+@pytest.mark.asyncio
+async def test_sequential_pool_uses_models_in_order(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    config = output_manager._ChatManager__config
+    _enable_sequential_one_on_one(config, ["model-a", "model-b"])
+    created = _patch_pool_clients(
+        output_manager,
+        monkeypatch,
+        {
+            "model-a": MockAIClient(response_pattern=["From A."]),
+            "model-b": MockAIClient(response_pattern=["From B."]),
+        },
+    )
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+    first = _spoken_texts_from_queue(mock_queue)
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+    second = _spoken_texts_from_queue(mock_queue)
+
+    assert created == ["model-a", "model-b"]
+    assert "From A." in first
+    assert "From B." in second
+
+
+@pytest.mark.asyncio
+async def test_sequential_pool_skips_to_next_on_failure(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    monkeypatch.setattr("src.utils.play_error_sound", lambda *a, **kw: None)
+    monkeypatch.setattr(time, "sleep", lambda *a, **kw: None)
+    config = output_manager._ChatManager__config
+    _enable_sequential_one_on_one(config, ["model-a", "model-b"])
+    created = _patch_pool_clients(
+        output_manager,
+        monkeypatch,
+        {
+            "model-a": MockAIClient(error_on_call=True),
+            "model-b": MockAIClient(response_pattern=["From B."]),
+        },
+    )
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+    spoken = _spoken_texts_from_queue(mock_queue)
+
+    assert created == ["model-a", "model-b"]
+    assert "From B." in spoken
+    assert not any("I can't find the right words" in text for text in spoken)
+
+
+@pytest.mark.asyncio
+async def test_sequential_pool_takes_priority_over_random(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    config = output_manager._ChatManager__config
+    _enable_sequential_one_on_one(config, ["model-seq"])
+    config.random_llm_one_on_one_per_request_enabled = True
+    config.llm_pool_one_on_one = [{"service": "OpenRouter", "model": "model-random"}]
+    created = _patch_pool_clients(
+        output_manager,
+        monkeypatch,
+        {
+            "model-seq": MockAIClient(response_pattern=["From sequential."]),
+            "model-random": MockAIClient(response_pattern=["From random."]),
+        },
+    )
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+    spoken = _spoken_texts_from_queue(mock_queue)
+
+    assert created == ["model-seq"]
+    assert "From sequential." in spoken
+    assert "From random." not in spoken
+
+
+def test_pool_selection_does_not_reuse_client_that_only_matches_config_default(output_manager: ChatManager, monkeypatch):
+    """Per-conversation random can replace __client; config.ini matching must not reuse it."""
+    from src.random_llm_selector import LLMSelection
+
+    config = output_manager._ChatManager__config
+    config.llm_api = "OpenRouter"
+    config.llm = "config-default"
+    config.llm_params = {}
+
+    live_client = MockAIClient()
+    live_client.service_name = "OpenRouter"
+    live_client.model_name = "per-conversation-random"
+    live_client._request_params = {}
+    output_manager._ChatManager__client = live_client
+
+    created: list[str] = []
+
+    def fake_create(selection):
+        created.append(selection.model)
+        replacement = MockAIClient()
+        replacement.service_name = selection.service
+        replacement.model_name = selection.model
+        return replacement
+
+    monkeypatch.setattr(output_manager, "_get_or_create_random_client", fake_create)
+
+    selection = LLMSelection(
+        service="OpenRouter",
+        model="config-default",
+        parameters={},
+        token_count=2048,
+        from_profile=False,
+    )
+    chosen = output_manager._get_client_for_pool_selection(selection, False)
+
+    assert created == ["config-default"]
+    assert chosen is not live_client
+    assert chosen.model_name == "config-default"
+
+
+def test_pool_selection_reuses_live_client_when_it_is_the_selected_model(output_manager: ChatManager, monkeypatch):
+    from src.random_llm_selector import LLMSelection
+
+    live_client = MockAIClient()
+    live_client.service_name = "OpenRouter"
+    live_client.model_name = "pool-model"
+    live_client._request_params = {"temperature": 0.7}
+    output_manager._ChatManager__client = live_client
+
+    def fail_if_created(selection):
+        raise AssertionError(f"Should reuse live client, not create {selection.model}")
+
+    monkeypatch.setattr(output_manager, "_get_or_create_random_client", fail_if_created)
+
+    selection = LLMSelection(
+        service="OpenRouter",
+        model="pool-model",
+        parameters={"temperature": 0.7},
+        token_count=2048,
+        from_profile=False,
+    )
+    chosen = output_manager._get_client_for_pool_selection(selection, False)
+
+    assert chosen is live_client
+
+
+def test_pool_selection_does_not_reuse_live_client_when_params_differ(output_manager: ChatManager, monkeypatch):
+    from src.random_llm_selector import LLMSelection
+
+    live_client = MockAIClient()
+    live_client.service_name = "OpenRouter"
+    live_client.model_name = "pool-model"
+    live_client._request_params = {}
+    output_manager._ChatManager__client = live_client
+
+    created: list[str] = []
+
+    def fake_create(selection):
+        created.append(selection.model)
+        replacement = MockAIClient()
+        replacement.model_name = selection.model
+        return replacement
+
+    monkeypatch.setattr(output_manager, "_get_or_create_random_client", fake_create)
+
+    selection = LLMSelection(
+        service="OpenRouter",
+        model="pool-model",
+        parameters={"temperature": 0.9},
+        token_count=2048,
+        from_profile=True,
+    )
+    chosen = output_manager._get_client_for_pool_selection(selection, False)
+
+    assert created == ["pool-model"]
+    assert chosen is not live_client
+
+
+
+class ProviderErrorClient(MockAIClient):
+    """The LLM service rejects every request before any text"""
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    async def streaming_call(self, messages=None, is_multi_npc=False, response_started_at=None):
+        from src.llm.client_base import ProviderError
+        self.calls += 1
+        raise ProviderError("An error occurred during streaming")
+        yield
+
+
+def _enable_fallback(output_manager: ChatManager, monkeypatch, fallback: MockAIClient) -> list[str]:
+    config = output_manager._ChatManager__config
+    config.fallback_llm_enabled = True
+    config.apply_profile_fallback = False
+    config.fallback_llm_api = "OpenRouter"
+    config.fallback_llm = "fallback-model"
+    return _patch_pool_clients(output_manager, monkeypatch, {"fallback-model": fallback})
+
+
+@pytest.mark.asyncio
+async def test_fallback_model_answers_when_the_service_rejects_the_reply(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    output_manager._ChatManager__client = ProviderErrorClient()
+    created = _enable_fallback(output_manager, monkeypatch, MockAIClient(response_pattern=["From fallback."]))
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+
+    assert created == ["fallback-model"]
+    assert _spoken_texts_from_queue(mock_queue) == ["From fallback.", ""]
+
+
+@pytest.mark.asyncio
+async def test_fallback_model_is_asked_only_once(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    output_manager._ChatManager__client = ProviderErrorClient()
+    fallback = ProviderErrorClient()
+    _enable_fallback(output_manager, monkeypatch, fallback)
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+
+    assert fallback.calls == 1
+    assert _spoken_texts_from_queue(mock_queue) == [""]
+
+
+@pytest.mark.asyncio
+async def test_rejected_reply_stays_empty_without_fallback(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    client = ProviderErrorClient()
+    output_manager._ChatManager__client = client
+    output_manager._ChatManager__config.fallback_llm_enabled = False
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+
+    assert client.calls == 1
+    assert _spoken_texts_from_queue(mock_queue) == [""]
+
+
+class NotAnsweringClient(MockAIClient):
+    """The LLM takes long to send its first token"""
+    async def streaming_call(self, messages=None, is_multi_npc=False, response_started_at=None):
+        await asyncio.sleep(30)
+        yield "Too late."
+
+
+@pytest.mark.asyncio
+async def test_stopping_does_not_wait_for_the_llm_to_answer(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+):
+    output_manager._ChatManager__client = NotAnsweringClient()
+    response = asyncio.create_task(output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    ))
+    await asyncio.sleep(0.1)
+    output_manager._ChatManager__stop_generation.set()
+
+    await asyncio.wait_for(response, timeout=2)
+
+    assert _spoken_texts_from_queue(mock_queue) == [""]

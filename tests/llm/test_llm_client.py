@@ -103,3 +103,15 @@ async def test_async_call(llm_client: LLMClient, example_system_message: SystemM
             response += content
     assert response is not None
     assert isinstance(response, str)
+
+def test_llm_client_applies_replace_braille_blank_setting(default_config: ConfigLoader, monkeypatch):
+    from src.llm.client_base import ClientBase
+    monkeypatch.setattr(ClientBase, "replace_braille_blank", False)
+
+    default_config.replace_braille_blank = True
+    llm_client = LLMClient(default_config, "GPT_SECRET_KEY.txt", "IMAGE_SECRET_KEY.txt")
+    assert ClientBase.replace_braille_blank is True
+
+    default_config.replace_braille_blank = False
+    llm_client.hot_swap_settings(default_config, "GPT_SECRET_KEY.txt", "IMAGE_SECRET_KEY.txt")
+    assert ClientBase.replace_braille_blank is False

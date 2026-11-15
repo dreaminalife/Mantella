@@ -1,0 +1,1 @@
+{name} joins the scene and speaks next: someone in the scene addressed {name} by name, asked {name} something, or clearly drew {name} in, or it is reasonable for {name} to chip in. Never {name} otherwise.

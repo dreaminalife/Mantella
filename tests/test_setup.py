@@ -3,6 +3,7 @@ import pytest
 import os
 import sys
 import logging
+from logging.handlers import RotatingFileHandler
 import configparser
 from pathlib import Path
 from unittest.mock import patch
@@ -123,6 +124,11 @@ def test_setup_logging(mantella_setup: MantellaSetup, tmp_path: Path):
     # Verify logger configuration
     assert root_logger.level == logging.INFO
     assert len(root_logger.handlers) == 2  # Console and file handler
+    file_handler = next(h for h in root_logger.handlers if isinstance(h, RotatingFileHandler))
+    assert file_handler.maxBytes == 10 * 1024 * 1024
+    assert file_handler.backupCount == 1
+    # The full LLM requests / responses (level 15) are only logged in debug mode
+    assert not root_logger.isEnabledFor(15)
     
     # Test with advanced_logs=True
     root_logger.handlers = []  # Clear handlers
@@ -131,6 +137,8 @@ def test_setup_logging(mantella_setup: MantellaSetup, tmp_path: Path):
     # Verify logger configuration
     assert root_logger.level == logging.DEBUG
     assert len(root_logger.handlers) == 2
+    console_handler = next(h for h in root_logger.handlers if type(h) is logging.StreamHandler)
+    assert console_handler.level == 15
 
 
 def test_get_language_info_valid(mantella_setup: MantellaSetup, languages_csv_file: str):

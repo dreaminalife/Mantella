@@ -1,0 +1,1 @@
+{player_name} reacts first: what just happened is aimed at {player_name} alone, so nobody else would react to it before {player_name}.

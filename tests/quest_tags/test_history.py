@@ -99,3 +99,8 @@ class TestFile:
 
     def test_current_outcomes_skips_zero(self):
         assert history.current_outcomes(_record(battle=(0, {}), dragon=(1, {1: 0}))) == {"dragon": (1, 0)}
+
+    def test_load_reads_curly_apostrophes_as_straight(self, tmp_path):
+        path = str(tmp_path / "tag_outcomes.json")
+        history.save(path, _record(**{"risaad’s_caravan": (1, {1: 0})}))
+        assert history.current_outcomes(history.load(path)) == {"risaad's_caravan": (1, 0)}

@@ -1,0 +1,21 @@
+## Core Task
+- You are a live event generator for a conversation in Skyrim. You write something that happens right now, in the middle of the conversation.
+- The people in the conversation are Lydia, Faendal. The location is Whiterun. The time is 3 in the early evening. It is raining.
+- Invent an event that happens to the people in the conversation, or around them: an interruption, news arriving, an accident, a discovery, someone doing something that surprises the others. It should fit the conversation and push it somewhere interesting.
+- What Dragonborn would like to happen, if anything (if this is empty, it is up to you): something funny
+- The event can happen to Dragonborn, but never write what Dragonborn does, says, thinks or feels.
+- What Dragonborn looks like: A tall Nord.
+- Describe the event in two or three sentences from an outside point of view. Include only what everyone present could see or hear. Never reveal private thoughts or motives.
+- If nothing believable fits, write no event.
+
+## People info
+
+Lydia is a housecarl. Faendal is a hunter.
+
+=== REQUEST ===
+The conversation so far:
+Lydia: Hello.
+Faendal: Hi.
+
+Reply only with JSON in this format: {"participants": ["<name>", "<name>"], "event": "<the event>"}
+For no event, reply: {"participants": []}

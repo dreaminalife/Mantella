@@ -1,0 +1,5 @@
+{
+  "skyrim_game_master_decision_instructions": "Who speaks next in this conversation? Follow the game master's rules in the scene.",
+  "skyrim_game_master_decision_npc_criteria": "{name} speaks next: {name} was named, challenged, or asked something, or has an in-character reason to interject/react. Not {name} if they spoke last.",
+  "skyrim_game_master_decision_player_criteria": "{player_name} gets the turn: someone asked {player_name} something or addressed them, and no one wants to react to the events that just happened, if any"
+}

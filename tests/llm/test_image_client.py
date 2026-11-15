@@ -1,4 +1,6 @@
-from src.llm.image_client import ImageClient
+from src.llm.image_client import ImageClient, VisionCapture
+from copy import deepcopy
+from unittest.mock import MagicMock
 import pytest
 import base64
 from pathlib import Path
@@ -183,3 +185,88 @@ def test_add_image_appends_new_message_if_needed_custom(image_client_custom_llm:
     assert last_message['content'][0]['text'].startswith("*")
     assert last_message['content'][0]['text'].endswith("*")
     assert len(last_message['content'][0]['text']) > 2 # Should contain more than just "**"
+
+
+def test_format_vision_prompt_supports_skyrim_variables(image_client_custom_llm: ImageClient):
+    """Vision prompt should accept the same variables as the game prompts."""
+    image_client_custom_llm._ImageClient__vision_prompt_template = (
+        "Scene in {game} at {location} {time_group} with {player_name} and {name}."
+    )
+    formatted = image_client_custom_llm._format_vision_prompt({
+        "location": "Whiterun",
+        "time_group": "in the morning",
+        "player_name": "Dovahkiin",
+        "name": "Lydia",
+    })
+
+    assert "Whiterun" in formatted
+    assert "in the morning" in formatted
+    assert "Dovahkiin" in formatted
+    assert "Lydia" in formatted
+    assert "{" not in formatted
+
+
+def test_format_vision_prompt_defaults_missing_variables(image_client_custom_llm: ImageClient):
+    """Missing variables should become empty strings instead of raising."""
+    image_client_custom_llm._ImageClient__vision_prompt_template = (
+        "Looking around {location} near {name}."
+    )
+    formatted = image_client_custom_llm._format_vision_prompt(None)
+
+    assert formatted == "Looking around  near ."
+
+
+class CountingImageManager(FakeImageManager):
+    """A FakeImageManager that counts the screenshots taken"""
+    def __init__(self, base64_image_data: str | None):
+        super().__init__(base64_image_data)
+        self.calls = 0
+
+    def get_image(self) -> str | None:
+        self.calls += 1
+        return super().get_image()
+
+
+def test_add_image_takes_a_new_screenshot_without_a_capture(image_client_default_llm: ImageClient, sample_openai_messages: list):
+    manager = CountingImageManager("image")
+    image_client_default_llm._ImageClient__image_manager = manager
+    image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "")
+    image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "")
+    assert manager.calls == 2
+
+
+def test_add_image_reuses_the_screenshot_of_the_capture(image_client_default_llm: ImageClient, sample_openai_messages: list):
+    manager = CountingImageManager("first")
+    image_client_default_llm._ImageClient__image_manager = manager
+    capture = VisionCapture()
+    first = image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    manager._image_data = "second"
+    second = image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    assert manager.calls == 1
+    assert first == second
+    assert "first" in second[-1]['content'][1]['image_url']['url']
+
+
+def test_add_image_retries_the_screenshot_when_the_capture_failed(image_client_default_llm: ImageClient, sample_openai_messages: list):
+    manager = CountingImageManager(None)
+    image_client_default_llm._ImageClient__image_manager = manager
+    capture = VisionCapture()
+    image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    manager._image_data = "image"
+    image_client_default_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    assert manager.calls == 2
+    assert capture.image == "image"
+
+
+def test_add_image_custom_mode_reuses_the_transcription_of_the_capture(image_client_custom_llm: ImageClient, sample_openai_messages: list):
+    manager = CountingImageManager("image")
+    image_client_custom_llm._ImageClient__image_manager = manager
+    image_client_custom_llm._ImageClient__vision_prompt = "Describe the image."
+    image_client_custom_llm.request_call = MagicMock(return_value="A dragon flies overhead.")
+    capture = VisionCapture()
+    first = image_client_custom_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    second = image_client_custom_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", capture)
+    assert manager.calls == 1
+    assert image_client_custom_llm.request_call.call_count == 1
+    assert first == second
+    assert second[-1]['content'][0]['text'].startswith("*A dragon flies overhead.*")

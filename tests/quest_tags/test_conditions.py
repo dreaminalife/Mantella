@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 from src.quest_tags.conditions import (
-    ANSWER_MISSING, ANSWER_NOT_LOADED, Check, CheckList, build_ref_to_base_map, normalize_local_id,
+    ANSWER_MISSING, ANSWER_NOT_LOADED, ANSWER_UNREADABLE, Check, CheckList, build_ref_to_base_map, normalize_local_id,
 )
 
 
@@ -10,59 +10,75 @@ def _answers(check_list: CheckList, values: dict[Check, float], default: float =
     return [values.get(check, default) for check in check_list.checks]
 
 
-STAGE_100 = Check("getstagedone", "CWObj", "100")
+STAGE_100 = Check("getstagedone", "", "CWObj", "100")
 SAADIA_DEAD = Check("getdead", "Skyrim.esm|0D7505")
-SAADIA_GONE = Check("getstagedone", "MS08", "201")
+SAADIA_GONE = Check("getstagedone", "", "MS08", "201")
 
 
 class TestReading:
     def test_multi_line_condition_with_and(self):
         check_list = CheckList({"battle": {2: "getstagedone CWObj 100=1\nAND\ngetquestcompleted MQ104=1"}})
-        assert check_list.checks == [STAGE_100, Check("getquestcompleted", "MQ104")]
+        assert check_list.checks == [STAGE_100, Check("getquestcompleted", "", "MQ104")]
         assert check_list.unreadable == []
 
     def test_brackets_and_or(self):
         code = 'getstagedone T01 60=0\nAND\n("1E766".ishostiletoactor player=1\nOR\n"1E766".getdead=1)'
         check_list = CheckList({"dibella": {2: code}})
         assert check_list.checks == [
-            Check("getstagedone", "T01", "60"),
+            Check("getstagedone", "", "T01", "60"),
             Check("ishostiletoactor", "Skyrim.esm|01E766", "player"),
             Check("getdead", "Skyrim.esm|01E766"),
         ]
 
     def test_missing_comparison_means_equals_one(self):
         check_list = CheckList({"letter": {1: "getstagedone FreeformRiverwood01 240"}})
-        check = Check("getstagedone", "FreeformRiverwood01", "240")
+        check = Check("getstagedone", "", "FreeformRiverwood01", "240")
         assert check_list.evaluate(_answers(check_list, {check: 1})) == {"letter": 1}
         assert check_list.evaluate(_answers(check_list, {check: 0})) == {"letter": 0}
 
-    def test_forms_and_player(self):
+    def test_reference_is_read_and_values_are_passed_on(self):
         check_list = CheckList({
             "trainer": {1: '"14".getav archery>=100'},
             "spell": {1: '"14".hasspell 0201462A=0'},
             "faction": {1: "getinfaction 28186=1"},
             "liked": {1: '"01A66A".getrelationshiprank 14>=1'},
+            "vampire": {1: '"14".haskeyword A82BB=1'},
+            "battle": {2: '"FC90B".getdisabled=1'},
+            "werewolf": {1: "show PlayerIsWerewolf=0"},
         })
+        assert check_list.unreadable == []
         assert check_list.checks == [
-            Check("getav", "player", "Marksman"),
-            Check("hasspell", "player", "Dawnguard.esm|01462A"),
-            Check("getinfaction", "player", "Skyrim.esm|028186"),
-            Check("getrelationshiprank", "Skyrim.esm|01A66A", "player"),
+            Check("getbaseactorvalue", "player", "archery"),  # getav: potions and enchantments don't count
+            Check("hasspell", "player", "0201462A"),
+            Check("getinfaction", "", "28186"),
+            Check("getrelationshiprank", "Skyrim.esm|01A66A", "14"),
+            Check("haskeyword", "player", "A82BB"),
+            Check("getdisabled", "Skyrim.esm|0FC90B"),
+            Check("getglobalvalue", "", "PlayerIsWerewolf"),  # show: the console command for a global's value
         ]
+
+    def test_function_names_can_have_digits(self):
+        assert CheckList({"tag": {1: "IsPC1stPerson=1"}}).checks == [Check("ispc1stperson")]
+
+    @pytest.mark.parametrize("code, check", [
+        ("getstagecompleted DA08=50", Check("getstagecompleted", "", "DA08")),        # misspelled command
+        ("getstage DLC2TT1b 100=1", Check("getstage", "", "DLC2TT1b", "100")),        # getstage with a step number
+        ("GetKeywordDataForLocation 16772 CWOwner=2", Check("getkeyworddataforlocation", "", "16772", "CWOwner")),  # keyword by name
+    ])
+    def test_mistakes_in_values_are_left_to_the_game(self, code, check):
+        # The game knows what each function takes, and answers that it can't run the check
+        assert CheckList({"tag": {1: code}}).checks == [check]
 
     def test_shared_checks_are_listed_once(self):
         check_list = CheckList({"a": {1: "getstagedone CWObj 100=1"}, "b": {1: "getstagedone CWObj 100=1 AND getstage MQ101>=10"}})
-        assert check_list.checks == [STAGE_100, Check("getstage", "MQ101")]
+        assert check_list.checks == [STAGE_100, Check("getstage", "", "MQ101")]
 
     @pytest.mark.parametrize("code", [
-        "getstagecompleted DA08=50",                # misspelled command
         '"\'065AB3".getdead=1',                     # stray quote
         '"01B08E\t".getdead=1',                     # tab inside the number
-        "getstagedone Favor 256 25=1",              # space in the quest name
-        "getstage DLC2TT1b 100=1",                  # getstage with a step number
-        "GetKeywordDataForLocation 16772 CWOwner=2",  # keyword by name
-        "show PlayerIsVampire=1",                   # global by name
+        "getstagedone Favor 256 25=1",              # space in the quest name: three values
         '"Mod.esp|00ABCD".getdead=1',               # mod forms aren't supported yet
+        "getstagedone CWObj 100 = = 1",             # not a condition
     ])
     def test_unreadable_conditions_never_happen(self, code):
         check_list = CheckList({"tag": {1: code}})
@@ -71,7 +87,7 @@ class TestReading:
         assert check_list.tags == {}
 
     def test_unreadable_outcome_leaves_others(self):
-        check_list = CheckList({"whiterun": {1: "GetKeywordDataForLocation 16772 CWOwner=2", 2: "getstagedone CWObj 100=1"}})
+        check_list = CheckList({"whiterun": {1: '"\'065AB3".getdead=1', 2: "getstagedone CWObj 100=1"}})
         assert check_list.checks == [STAGE_100]
         assert list(check_list.tags["whiterun"].outcomes) == [2]
 
@@ -87,7 +103,7 @@ class TestDeathCount:
     def test_getdead_uses_the_base_npc(self):
         ref_to_base = build_ref_to_base_map(pd.DataFrame({"ref_id": ["0D7505"], "base_id": ["0D7503"]}))
         check_list = CheckList({"saadia_status": {1: '"0D7505".getdead=1'}}, ref_to_base)
-        assert check_list.checks == [Check("getdeadcount", "Skyrim.esm|0D7503")]
+        assert check_list.checks == [Check("getdeadcount", "", "Skyrim.esm|0D7503")]
         assert check_list.tags["saadia_status"].death_only == {1}
 
     @pytest.mark.parametrize("count, expected", [(0, 0), (1, 1), (3, 1)])
@@ -124,6 +140,10 @@ class TestEvaluating:
     def test_missing_is_not_true(self):
         answers = _answers(self.check_list, {SAADIA_DEAD: ANSWER_MISSING, SAADIA_GONE: 0})
         assert self.check_list.evaluate(answers) == {"saadia_status": 0}
+
+    def test_a_check_the_game_cant_run_is_not_true(self):
+        answers = _answers(self.check_list, {SAADIA_DEAD: 1, SAADIA_GONE: ANSWER_UNREADABLE})
+        assert self.check_list.evaluate(answers) == {"saadia_status": 1}
 
     def test_not_loaded_below_a_true_outcome_doesnt_matter(self):
         answers = _answers(self.check_list, {SAADIA_DEAD: ANSWER_NOT_LOADED, SAADIA_GONE: 1})

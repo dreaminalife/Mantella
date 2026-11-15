@@ -25,7 +25,11 @@ from src.games.equipment import Equipment, EquipmentItem
 @pytest.fixture
 def default_config(tmp_path: Path) -> ConfigLoader:
     # Set up default config by passing path without a config.ini file already present
-    default_config = ConfigLoader(mygame_folder_path=str(tmp_path), game_override=GameEnum.SKYRIM)
+    default_config = ConfigLoader(
+        mygame_folder_path=str(tmp_path),
+        game_override=GameEnum.SKYRIM,
+        prompt_profiles_path=str(tmp_path / "prompt_profiles.json"),
+    )
 
     # Load the actual config file
     # NOTE: This does not work with user-defined save folder paths
@@ -216,7 +220,7 @@ def example_skyrim_npc_character() -> Character:
         advanced_voice_model = 'MaleEvenToned',
         voice_accent = 'en',
         equipment = None,
-        custom_character_values = None,
+        custom_character_values = {},
     )
 
 @pytest.fixture

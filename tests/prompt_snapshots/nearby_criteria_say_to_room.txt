@@ -1,0 +1,36 @@
+{
+  "model": "decider",
+  "questions": {
+    "addressed_1": {
+      "criteria": {
+        "false": "Dragonborn's latest line was spoken to someone else or to nobody in particular, Ysolda was only mentioned or talked about, or Ysolda was explicitly left out.",
+        "true": "Dragonborn's latest line was spoken to Ysolda: by name, by what Ysolda is (a guard, a merchant, a priest...), by where Ysolda is (you two by the fire...), or as part of a group Dragonborn spoke to (everyone, guys, all of you), or it answers or follows up on something Ysolda just said."
+      },
+      "instructions": "Was Dragonborn's latest line addressed to Ysolda?",
+      "type": "noul"
+    },
+    "addressed_2": {
+      "criteria": {
+        "false": "Dragonborn's latest line was spoken to someone else or to nobody in particular, Belethor was only mentioned or talked about, or Belethor was explicitly left out.",
+        "true": "Dragonborn's latest line was spoken to Belethor: by name, by what Belethor is (a guard, a merchant, a priest...), by where Belethor is (you two by the fire...), or as part of a group Dragonborn spoke to (everyone, guys, all of you), or it answers or follows up on something Belethor just said."
+      },
+      "instructions": "Was Dragonborn's latest line addressed to Belethor?",
+      "type": "noul"
+    },
+    "next_speaker": {
+      "criteria": {
+        "Belethor": "Belethor joins the conversation and speaks next: Belethor was addressed by name or by what they are (a guard, a merchant, a priest...), was asked something, was part of what just happened, or it makes clear sense for Belethor to answer or jump in. Never Belethor otherwise.",
+        "Nobody": "Nobody answers: Dragonborn did not address anyone nearby, ask them anything, or say something they would clearly react to.",
+        "Ysolda": "Ysolda joins the conversation and speaks next: Ysolda was addressed by name or by what they are (a guard, a merchant, a priest...), was asked something, was part of what just happened, or it makes clear sense for Ysolda to answer or jump in. Never Ysolda otherwise."
+      },
+      "instructions": "Who speaks next in this conversation? Follow the game master's rules in the scene.",
+      "type": "choice"
+    }
+  },
+  "state": {
+    "conversation": [
+      "Dragonborn: Hello there, Ysolda!"
+    ],
+    "scene": "You are the game master."
+  }
+}

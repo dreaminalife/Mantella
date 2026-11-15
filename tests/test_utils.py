@@ -57,6 +57,22 @@ def test_remove_trailing_number(raw_text, cleaned_text):
     assert utils.remove_trailing_number(raw_text) == cleaned_text
 
 
+@pytest.mark.parametrize(
+    "text, player_name, expected",
+    [
+        ("Serves {player_name}.", "Dragonborn", "Serves Dragonborn."),
+        ("Serves {player_name}.", "", "Serves the player."),
+        ("Serves {player_name}.", None, "Serves the player."),
+        ("No placeholder.", "Dragonborn", "No placeholder."),
+        (None, "Dragonborn", None),
+        ("{player_name} and {player_name}", "Lydia", "Lydia and Lydia"),
+        ("{Player_Name}", "Dragonborn", "{Player_Name}"),
+    ],
+)
+def test_resolve_player_name_placeholder(text, player_name, expected):
+    assert utils.resolve_player_name_placeholder(text, player_name) == expected
+
+
 def test_resolve_path_not_frozen():
     resolved = utils.resolve_path()
 

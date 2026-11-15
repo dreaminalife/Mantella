@@ -1,0 +1,1 @@
+{name} joins the conversation and speaks next: {name} was addressed by name or by what they are (a guard, a merchant, a priest...), was asked something, was part of what just happened, or it makes clear sense for {name} to answer or jump in. Never {name} otherwise.

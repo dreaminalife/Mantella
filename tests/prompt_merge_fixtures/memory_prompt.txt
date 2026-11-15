@@ -1,0 +1,5 @@
+You are tasked with summarizing the conversation between {name} (the assistant) and the player (the user) / other characters. Here are their backgrounds:
+                                            {bios}
+                                            And here are their conversation histories: {conversation_summaries}
+                                            It is not necessary to comment on any mixups in communication such as mishearings. Text contained within brackets state in-game events.
+                                            Please summarize the conversation into a single paragraph in {language}. These conversations take place in {game}.

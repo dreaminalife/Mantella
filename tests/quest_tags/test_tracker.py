@@ -6,7 +6,7 @@ from src.quest_tags.conditions import ANSWER_NOT_LOADED, Check, CheckList
 from src.quest_tags.history import OutcomeChange
 from src.quest_tags.tracker import QuestTagTracker
 
-BATTLE_DONE = Check("getstagedone", "CWObj", "100")
+BATTLE_DONE = Check("getstagedone", "", "CWObj", "100")
 SAADIA_DEAD = Check("getdead", "Skyrim.esm|0D7505")
 
 
@@ -121,5 +121,6 @@ class TestCheckListDelivery:
         payload = tracker.get_check_list_payload(game)
         assert payload[comm_consts.KEY_QUESTCHECKS_VERSION] == game.quest_check_list.version
         assert payload[comm_consts.KEY_QUESTCHECKS_FUNCTIONS] == ["getstagedone", "getdead"]
-        assert payload[comm_consts.KEY_QUESTCHECKS_SUBJECTS] == ["CWObj", "Skyrim.esm|0D7505"]
-        assert payload[comm_consts.KEY_QUESTCHECKS_ARGUMENTS] == ["100", ""]
+        assert payload[comm_consts.KEY_QUESTCHECKS_REFERENCES] == ["", "Skyrim.esm|0D7505"]
+        assert payload[comm_consts.KEY_QUESTCHECKS_PARAMS1] == ["CWObj", ""]
+        assert payload[comm_consts.KEY_QUESTCHECKS_PARAMS2] == ["100", ""]

@@ -17,6 +17,7 @@ def game_manager(skyrim, default_chat_manager, default_config, english_language_
     talk = MagicMock()
     talk.context.world_id = "Player1"
     talk.context.npcs_in_conversation.get_player_character.return_value.name = "Dovahkiin"
+    talk.hides_player.return_value = False
     manager._GameStateManager__talk = talk
     return manager
 
@@ -29,18 +30,37 @@ def _player_input(results: list[float], events: list[str]) -> dict:
     }}
 
 
+def _send(game_manager: GameStateManager, request: dict) -> list[str] | None:
+    """What the player's input request passes on as in-game events, as __handle_player_input does"""
+    quest_events = game_manager._GameStateManager__get_quest_tag_announcements(request)
+    game_manager._GameStateManager__update_context(request, quest_events)
+    return game_manager._GameStateManager__talk.update_context.call_args.args[2]
+
+
 def test_announcement_is_added_after_the_game_events(game_manager: GameStateManager):
-    add_announcements = game_manager._GameStateManager__add_quest_tag_announcements
-    add_announcements(_player_input([0.0], []))  # The first check: background, nothing announced
-    request = _player_input([1.0], ["The location is now Whiterun."])
-    add_announcements(request)
-    assert request[comm_consts.KEY_CONTEXT][comm_consts.KEY_CONTEXT_INGAMEEVENTS] == ["The location is now Whiterun.", "Dovahkiin won the battle."]
+    _send(game_manager, _player_input([0.0], []))  # The first check: background, nothing announced
+    events = _send(game_manager, _player_input([1.0], ["The location is now Whiterun.", "Dovahkiin picked up / took Iron Sword"]))
+    assert events == ["The location is now Whiterun.", "Dovahkiin picked up / took Iron Sword", "Dovahkiin won the battle."]
 
 
 def test_first_check_announces_nothing(game_manager: GameStateManager):
-    request = _player_input([1.0], [])
-    game_manager._GameStateManager__add_quest_tag_announcements(request)
-    assert request[comm_consts.KEY_CONTEXT][comm_consts.KEY_CONTEXT_INGAMEEVENTS] == []
+    assert _send(game_manager, _player_input([1.0], [])) == []
+
+
+def test_director_mode_leaves_out_the_events_about_the_player_but_keeps_the_quest_events(game_manager: GameStateManager):
+    game_manager._GameStateManager__talk.hides_player.return_value = True
+    _send(game_manager, _player_input([0.0], []))
+    events = _send(game_manager, _player_input([1.0], ["The location is now Whiterun.", "Dovahkiin picked up / took Iron Sword"]))
+    assert events == ["The location is now Whiterun.", "Dovahkiin won the battle."]
+
+
+def test_watching_an_npc_event_in_director_mode_leaves_out_the_events_about_the_player(game_manager: GameStateManager):
+    talk = game_manager._GameStateManager__talk
+    talk.hides_player.return_value = True
+    talk.context.npcs_in_conversation.get_player_character.return_value = None # Watching: the player is not in the conversation
+    talk.context.npc_event.player.name = "Dovahkiin"
+    game_manager._GameStateManager__update_context(_player_input([], ["Dovahkiin casted the spell / consumed Healing", "The player took damage.", "Lydia drew her sword."]))
+    assert talk.update_context.call_args.args[2] == ["Lydia drew her sword."]
 
 
 def test_check_list_reply(game_manager: GameStateManager):

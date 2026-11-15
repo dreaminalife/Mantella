@@ -12,17 +12,19 @@ from src.ui.tag_editor_files import (
     choose_target_file,
     clean_event_text,
     current_source,
-    event_timestamps,
+    event_timestamp,
     format_event_date,
     has_base_or_mod_rows,
     join_description,
     npcs_by_tag,
     parse_event_date,
+    parse_timestamp,
     personal_files,
     personal_files_with_value,
     remove_tag_rows,
     search_tags,
     source_underneath,
+    sync_event_rows,
     split_description,
     write_cells,
 )
@@ -75,22 +77,44 @@ def test_a_year_or_short_number_is_not_taken_as_seconds():
     assert parse_event_date("1739270400") == 1739270400
 
 
-def test_untouched_events_keep_their_exact_timestamp():
-    # Two different moments can show as the same local time (the hour repeated when clocks go back)
-    loaded = [("2026-11-01 01:30:00", "first", 1793514600), ("2026-11-01 01:30:00", "second", 1793518200)]
-    rows = [["2026-11-01 01:30:00", "second"], ["2026-11-01 01:30:00", "first"]]
+def test_the_timestamp_is_saved_as_it_is():
+    # 01:30 local time in the hour repeated when clocks go back: the shown date reads back as a different moment
+    timestamp = 1793518200
+    assert event_timestamp(format_event_date(timestamp), str(timestamp)) == timestamp
+    assert event_timestamp("", str(timestamp)) == timestamp
 
-    assert event_timestamps(rows, loaded) == [(1793518200, "second"), (1793514600, "first")]
+
+def test_a_date_alone_is_read_and_a_mismatch_is_refused():
+    assert event_timestamp("2026-11-06 14:30", "") == int(datetime(2026, 11, 6, 14, 30).timestamp())
+    assert event_timestamp("2026-11-06 14:30", str(int(datetime(2026, 11, 6, 14, 30).timestamp()))) == int(datetime(2026, 11, 6, 14, 30).timestamp())
+    with pytest.raises(ValueError, match="different moments"):
+        event_timestamp("2026-11-06 14:30", "1739270400")
+    with pytest.raises(ValueError, match="needs a date or a timestamp"):
+        event_timestamp("", "")
+    with pytest.raises(ValueError, match="isn't a timestamp"):
+        parse_timestamp("17392.5")
 
 
-def test_edited_event_text_keeps_its_timestamp_and_a_new_date_is_read():
-    loaded = [("2026-11-01 01:30:00", "old text", 1793518200)]
-    rows = [["2026-11-01 01:30:00", "new text"], ["2026-11-06 14:30", "added"]]
+def test_editing_a_date_fills_in_the_timestamp_and_the_other_way_round():
+    first, second = 1793518200, 1739270400
+    shown = [[format_event_date(first), str(first), "first"], [format_event_date(second), str(second), "second"]]
+    new_moment = int(datetime(2026, 11, 6, 14, 30).timestamp())
 
-    assert event_timestamps(rows, loaded) == [
-        (1793518200, "new text"),
-        (int(datetime(2026, 11, 6, 14, 30).timestamp()), "added"),
-    ]
+    # Date of the first row changed, timestamp of the second row changed, rows shown in the other order (re-sorted)
+    rows = [[format_event_date(second), str(new_moment), "second"], ["2026-11-06 14:30", str(first), "first"]]
+    synced, problem = sync_event_rows(rows, shown)
+
+    assert problem == ""
+    assert synced == [[format_event_date(new_moment), str(new_moment), "second"], [format_event_date(new_moment), str(new_moment), "first"]]
+
+
+def test_an_unreadable_edit_is_kept_as_typed_and_reported():
+    shown = [[format_event_date(1739270400), "1739270400", "event"]]
+
+    synced, problem = sync_event_rows([["next tuesday", "1739270400", "event"]], shown)
+
+    assert synced == [["next tuesday", "1739270400", "event"]]
+    assert "isn't a date" in problem
 
 
 def test_event_dates_accept_minutes_or_a_bare_date():
@@ -170,6 +194,36 @@ def test_write_cells_changes_only_the_given_cells_and_keeps_the_rest(tmp_path):
         {"tag": "whiterun_hold", "description": "New text.", "code_1": "1", "my_column": "keep me", "announce": "no"},
         {"tag": "other", "description": "NA", "code_1": "", "my_column": "", "announce": ""},
     ]
+
+
+def test_write_cells_puts_added_columns_in_their_usual_place(tmp_path):
+    path = str(tmp_path / "my_tags.csv")
+    with open(path, "w", encoding="utf-8", newline="") as file:
+        file.write("tag,description,potential_paste_1,code_1,my_column,potential_paste_2,potential_paste_4,notes\n"
+                   "t,Text.,a,b,keep me,c,d,n\n")
+
+    write_cells(path, "t", {"potential_paste_3": "e", "code_2": "f"})
+
+    df = _read(path)
+    assert list(df.columns) == ["tag", "description", "potential_paste_1", "code_1", "my_column", "potential_paste_2",
+                                "code_2", "potential_paste_3", "potential_paste_4", "notes"]
+    assert df.to_dict("records")[0]["my_column"] == "keep me"
+
+
+def test_write_cells_puts_columns_already_out_of_order_back_in_order(tmp_path):
+    path = str(tmp_path / "my_tags.csv")
+    with open(path, "w", encoding="utf-8", newline="") as file:
+        file.write("tag,description,potential_paste_1,code_1,potential_paste_2,potential_paste_4,potential_paste_5,potential_paste_3,code_2\n"
+                   "t,Text.,a,b,c,d,e,f,g\n")
+
+    write_cells(path, "t", {"notes": "n"})
+
+    df = _read(path)
+    assert list(df.columns) == ["tag", "description", "potential_paste_1", "code_1", "potential_paste_2", "code_2",
+                                "potential_paste_3", "potential_paste_4", "potential_paste_5", "notes"]
+    assert df.to_dict("records")[0] == {"tag": "t", "description": "Text.", "potential_paste_1": "a", "code_1": "b",
+                                        "potential_paste_2": "c", "code_2": "g", "potential_paste_3": "f",
+                                        "potential_paste_4": "d", "potential_paste_5": "e", "notes": "n"}
 
 
 def test_write_cells_keeps_a_backup_of_the_file_before_the_change(tmp_path):
@@ -292,6 +346,7 @@ SEARCH_SOURCES = {
         "description": [(LAYER_BASE, "base.csv", "Old thane text."), (LAYER_PERSONAL, "mine.csv", "Knows the Dragonborn.\n- 1739270400: {player_name} became Thane of Whiterun")],
         "code_2": [(LAYER_MOD, "mod.csv", "getstagedone Favor250 20=1")],
         "notes": [(LAYER_PERSONAL, "mine.csv", "check the THANE quests")],
+        "source": [(LAYER_PERSONAL, "mine.csv", "Thane Overhaul")],
     },
     "thane_of_riften": {
         "potential_paste_1": [(LAYER_MOD, "mod.csv", "The player is now a Thane.")],
@@ -308,10 +363,11 @@ def test_search_finds_every_field_ignoring_case():
 
     found = [(result["tag"], result["where"]) for result in results]
     assert found == [
-        ("thane_of_riften", "Tag name"),
-        ("thane_of_riften", "Outcome 1 text"),
-        ("whiterun_hold", f"Event {format_event_date(1739270400)}"),
-        ("whiterun_hold", "Notes"),
+        ("thane_of_riften", "tag"),
+        ("thane_of_riften", "potential_paste_1"),
+        ("whiterun_hold", "description"),
+        ("whiterun_hold", "notes"),
+        ("whiterun_hold", "source"),
     ]
     riften_text = results[1]
     assert riften_text["snippet"] == "The player is now a Thane."
@@ -320,11 +376,11 @@ def test_search_finds_every_field_ignoring_case():
 
 def test_search_only_looks_at_current_values():
     # "Old thane text." is overridden by the personal description, so the game never uses it
-    assert all(result["where"] != "Tag text" for result in search_tags(SEARCH_SOURCES, SEARCH_FILES, "old thane"))
+    assert all(result["where"] != "description" for result in search_tags(SEARCH_SOURCES, SEARCH_FILES, "old thane"))
 
 
 def test_search_finds_conditions_and_trims_long_text():
-    assert [r["where"] for r in search_tags(SEARCH_SOURCES, SEARCH_FILES, "favor250")] == ["Condition 2"]
+    assert [r["where"] for r in search_tags(SEARCH_SOURCES, SEARCH_FILES, "favor250")] == ["code_2"]
     long_sources = {"long": {"description": [(LAYER_BASE, "b.csv", "a" * 100 + " needle " + "b" * 100)]}}
     snippet = search_tags(long_sources, {"long": [(LAYER_BASE, "b.csv")]}, "NEEDLE")[0]["snippet"]
     assert snippet.startswith("…") and snippet.endswith("…") and "needle" in snippet and len(snippet) < 100

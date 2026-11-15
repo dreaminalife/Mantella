@@ -1,0 +1,54 @@
+{
+  "model": "decider",
+  "questions": {
+    "addressed_1": {
+      "criteria": {
+        "false": "Lydia's latest line was spoken to someone else or to nobody in particular, Faendal was only mentioned or talked about, or Faendal was explicitly left out.",
+        "true": "Lydia's latest line was spoken to Faendal: by name, by what Faendal is (a guard, a merchant, a priest...), by where Faendal is (you two by the fire...), or as part of a group Lydia spoke to (everyone, guys, all of you), or it answers or follows up on something Faendal just said."
+      },
+      "instructions": "Was Lydia's latest line addressed to Faendal?",
+      "type": "noul"
+    },
+    "addressed_2": {
+      "criteria": {
+        "false": "Lydia's latest line was spoken to someone else or to nobody in particular, Ysolda was only mentioned or talked about, or Ysolda was explicitly left out.",
+        "true": "Lydia's latest line was spoken to Ysolda: by name, by what Ysolda is (a guard, a merchant, a priest...), by where Ysolda is (you two by the fire...), or as part of a group Lydia spoke to (everyone, guys, all of you), or it answers or follows up on something Ysolda just said."
+      },
+      "instructions": "Was Lydia's latest line addressed to Ysolda?",
+      "type": "noul"
+    },
+    "addressed_3": {
+      "criteria": {
+        "false": "Lydia's latest line was spoken to someone else or to nobody in particular, Belethor was only mentioned or talked about, or Belethor was explicitly left out.",
+        "true": "Lydia's latest line was spoken to Belethor: by name, by what Belethor is (a guard, a merchant, a priest...), by where Belethor is (you two by the fire...), or as part of a group Lydia spoke to (everyone, guys, all of you), or it answers or follows up on something Belethor just said."
+      },
+      "instructions": "Was Lydia's latest line addressed to Belethor?",
+      "type": "noul"
+    },
+    "addressed_4": {
+      "criteria": {
+        "false": "Lydia's latest line was spoken to someone else or to nobody in particular, Dragonborn was only mentioned or talked about, or Dragonborn was explicitly left out.",
+        "true": "Lydia's latest line was spoken to Dragonborn: by name, by what Dragonborn is (a guard, a merchant, a priest...), by where Dragonborn is (you two by the fire...), or as part of a group Lydia spoke to (everyone, guys, all of you), or it answers or follows up on something Dragonborn just said."
+      },
+      "instructions": "Was Lydia's latest line addressed to Dragonborn?",
+      "type": "noul"
+    },
+    "next_speaker": {
+      "criteria": {
+        "Belethor": "Belethor joins the scene and speaks next: someone in the scene addressed Belethor by name, asked Belethor something, or clearly drew Belethor in, or it is reasonable for Belethor to chip in. Never Belethor otherwise.",
+        "Dragonborn": "Dragonborn joins the scene and speaks next: someone in the scene addressed Dragonborn by name, asked Dragonborn something, or clearly drew Dragonborn in, or it is reasonable for Dragonborn to chip in. Never Dragonborn otherwise.",
+        "Faendal": "Faendal speaks next: Faendal was named, challenged, or asked something, or has an in-character reason to interject/react. Not Faendal if they spoke last.",
+        "Lydia": "Lydia speaks next: Lydia was named, challenged, or asked something, or has an in-character reason to interject/react. Not Lydia if they spoke last.",
+        "Ysolda": "Ysolda joins the scene and speaks next: someone in the scene addressed Ysolda by name, asked Ysolda something, or clearly drew Ysolda in, or it is reasonable for Ysolda to chip in. Never Ysolda otherwise."
+      },
+      "instructions": "Who speaks next in this conversation? Follow the game master's rules in the scene.",
+      "type": "choice"
+    }
+  },
+  "state": {
+    "conversation": [
+      "Lydia: Ysolda, tell him!"
+    ],
+    "scene": "You are the game master."
+  }
+}
