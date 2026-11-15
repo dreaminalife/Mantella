@@ -122,7 +122,7 @@ async def test_process_response_actions(output_manager: ChatManager, example_sky
     sentence = output_sentences[0]
     assert sentence.content.text.strip() == "See you later."
     assert sentence.content.actions # Should have actions
-    assert "wave" in sentence.content.actions # Check if the specific action identifier is present
+    assert {"identifier": "wave"} in sentence.content.actions # Check if the specific action identifier is present
 
 
 @pytest.mark.asyncio

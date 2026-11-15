@@ -68,7 +68,7 @@ def test_mantella_end_conversation_endpoint(
     # Respond back to the NPC talk interim step
     response = production_like_client.post("/mantella", json=example_continue_conversation_request.model_dump(by_alias=True, exclude_none=True))
     assert response.json()[comm_consts.KEY_REPLYTYPE_NPCTALK][comm_consts.KEY_ACTOR_LINETOSPEAK] == "Safe travels"
-    assert comm_consts.ACTION_ENDCONVERSATION in response.json()[comm_consts.KEY_REPLYTYPE_NPCTALK][comm_consts.KEY_ACTOR_ACTIONS]
+    assert {"identifier": comm_consts.ACTION_ENDCONVERSATION} in response.json()[comm_consts.KEY_REPLYTYPE_NPCTALK][comm_consts.KEY_ACTOR_ACTIONS]
 
     # End comversation
     end_conversation_request = models.EndConversationRequest(request_type=comm_consts.KEY_REQUESTTYPE_ENDCONVERSATION).model_dump(by_alias=True)

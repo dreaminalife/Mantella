@@ -4,9 +4,11 @@ script checks Mantella's log for what the game sent and what Mantella did with i
 See docs/conversation_wheel.md, "Automated tests", for the steps. In short:
 
     python tests/ingame/conversation_events/conversation_events_ingame.py setup --game "<Skyrim folder>"
-    (Mantella running with Show HTTP Debug Messages on. Load a save, `bat mwe`, watch until "Event test: done")
-    python tests/ingame/conversation_events/conversation_events_ingame.py check
-    python tests/ingame/conversation_events/conversation_events_ingame.py cleanup --game "<Skyrim folder>"
+    (restart Mantella. Load a save, `bat mwe`, watch until "Event test: done", then press Enter in setup's window)
+
+Setup saves your config.ini, turns on Show HTTP Debug Messages (the check reads what the game sent from Mantella's log) and voices the NPCs' lines with a moment of silence (tests/ingame/silent_voice.py), which it runs until you
+press Enter, so the lines take no time to voice and say. Then it checks Mantella's log and puts your config.ini back.
+If it stops halfway, "cleanup" puts your config.ini back; "check" checks again.
 
 What the models decide (whether something happens, who reacts, who joins) changes from run to run, so it is shown as INFO.
 What the game sends and what Mantella does with it is checked: PASS or FAIL.
@@ -15,6 +17,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +25,8 @@ from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 from src.http.communication_constants import communication_constants as comm_consts  # noqa: E402
+from tests.ingame.silent_voice import start_silent_voice, voice_settings  # noqa: E402
+from tests.ingame.talk_settings.talk_settings_ingame import game_npc_event_notes, write_settings  # noqa: E402
 
 BATCH = "mwe"
 BATCH_LINES = [
@@ -30,6 +35,7 @@ BATCH_LINES = [
     "setpqv MantellaQuest eventTestRun 1",  # MantellaListenerScript starts MantellaEventTest on its next tick
 ]
 START_FILE = "event_test_start.txt"  # In Mantella's folder: when setup ran. The check reads the log from then on
+BACKUP_FILE = "config.ini.bak-event-test"  # In Mantella's folder: your config.ini before setup
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ENTRY = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d{3} ([^:\n]+): ", re.MULTILINE)
 
@@ -39,19 +45,42 @@ def default_mantella_folder() -> str:
 
 
 def setup(game_folder: str, mantella_folder: str):
+    config_path = os.path.join(mantella_folder, "config.ini")
+    backup_path = os.path.join(mantella_folder, BACKUP_FILE)
+    if os.path.exists(backup_path):
+        print(f"{backup_path} already exists: run cleanup first, so your own config.ini is put back")
+        sys.exit(1)
+    try:
+        voice = start_silent_voice()
+    except OSError as e:
+        print(f"Can't start the silent voice ({e}). Is another in-game test still running?")
+        sys.exit(1)
+    shutil.copyfile(config_path, backup_path)
+    missing = write_settings(config_path, {**voice_settings(), "show_http_debug_messages": "True"})
+    if missing:
+        shutil.copyfile(backup_path, config_path)
+        os.remove(backup_path)
+        print(f"These settings are not in config.ini, so nothing was changed. Start Mantella once so it writes them, then run setup again: {missing}")
+        sys.exit(1)
     with open(os.path.join(game_folder, f"{BATCH}.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write("\n".join(BATCH_LINES) + "\n")
     with open(os.path.join(mantella_folder, START_FILE), "w", encoding="utf-8") as f:
         f.write(datetime.now().strftime(TIME_FORMAT))
-    print(f"Wrote {BATCH}.txt in {game_folder}.")
+    print(f"Saved your config.ini as {BACKUP_FILE} and turned on Show HTTP Debug Messages and the silent voice, which is now running. Wrote {BATCH}.txt in {game_folder}.")
     print(f"""Now:
-  1. In Mantella's settings, turn on Show HTTP Debug Messages (Other tab, under Advanced) and restart Mantella, if it isn't on yet.
+  1. Start Mantella, or restart it if it is running, so it reads the test's settings. Don't change Mantella's settings during the test.
      Use text input (microphone off): with the microphone, each step waits 90 seconds.
   2. Load a save where you can go to Whiterun (not during a quest scene). Don't save during or after the test.
   3. Console: bat {BATCH} (moves you to the Bannered Mare at 8 pm and starts the test)
   4. Watch the notes "Event test: ...". If a menu asks about Private, pick Yes. If a text box asks for a hint, leave it empty.
-     It takes a few minutes, until "Event test: done".
-  5. python {os.path.relpath(__file__)} check""")
+     The NPCs' lines are silent, only their subtitles flash. Wait until "Event test: done".
+  5. Press Enter here. It checks the results and puts your config.ini back. Then restart Mantella.""")
+    try:
+        input()
+        check(mantella_folder)
+    finally:
+        voice.shutdown()
+        cleanup(game_folder, mantella_folder)
 
 
 @dataclass
@@ -294,8 +323,8 @@ def check(mantella_folder: str) -> bool:
     entries = read_log(mantella_folder, since)
     all_exchanges = exchanges(entries)
     if not all_exchanges:
-        print(f"No requests from the game in Mantella's log since {since}. Turn on Show HTTP Debug Messages in Mantella's settings, "
-              "restart Mantella and run the test again")
+        print(f"No requests from the game in Mantella's log since {since}. Did Mantella restart after setup, so it read the test's settings "
+              "(Show HTTP Debug Messages on)? Run the test again")
         return False
     all_conversations = conversations(all_exchanges)
     report = Report()
@@ -309,6 +338,8 @@ def check(mantella_folder: str) -> bool:
         else:
             report.check(False, f"No {name} conversation in the log since setup")
     check_npc_event(report, all_exchanges, all_conversations)
+    for text in game_npc_event_notes("Event test"):
+        report.info(f"game: {text}")
 
     errors = [text.splitlines()[0] for level, text in entries if level == "ERROR"]
     if errors:
@@ -320,6 +351,11 @@ def check(mantella_folder: str) -> bool:
 
 
 def cleanup(game_folder: str | None, mantella_folder: str):
+    backup_path = os.path.join(mantella_folder, BACKUP_FILE)
+    if os.path.exists(backup_path):
+        shutil.copyfile(backup_path, os.path.join(mantella_folder, "config.ini"))
+        os.remove(backup_path)
+        print("Put your config.ini back. Restart Mantella so it reads it.")
     paths = [os.path.join(mantella_folder, START_FILE)]
     if game_folder:
         paths.append(os.path.join(game_folder, f"{BATCH}.txt"))
@@ -327,7 +363,6 @@ def cleanup(game_folder: str | None, mantella_folder: str):
         if os.path.exists(path):
             os.remove(path)
             print(f"Removed {path}")
-    print("Turn Show HTTP Debug Messages off again if you don't need it.")
 
 
 def main():

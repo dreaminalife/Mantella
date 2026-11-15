@@ -179,7 +179,8 @@ def deserialize_persistent_messages(
                 )
                 stype_str = str(sdata.get("sentence_type", "SPEECH")).upper()
                 stype = SentenceTypeEnum[stype_str] if stype_str in SentenceTypeEnum.__members__ else SentenceTypeEnum.SPEECH
-                actions = list(sdata.get("actions", [])) if sdata.get("actions") else []
+                # Conversations saved before actions carried arguments stored just the identifier
+                actions = [a if isinstance(a, dict) else {"identifier": str(a)} for a in (sdata.get("actions") or [])]
                 content = SentenceContent(
                     speaker=speaker,
                     text=str(sdata.get("text", "")),

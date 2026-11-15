@@ -8,6 +8,7 @@ from src.games.equipment import Equipment, EquipmentItem
 from src.games.external_character_info import external_character_info
 from src.games.gameable import Gameable
 from src.llm.sentence import Sentence
+from src.llm.sentence_content import has_action
 from src.output_manager import ChatManager
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
@@ -652,7 +653,7 @@ class GameStateManager:
                 reply[comm_consts.KEY_REPLYTYPE_NPCTALK] = self.sentence_to_json(sentence_to_play, topicInfoID)
                 self.__first_line = False
 
-                if comm_consts.ACTION_RELOADCONVERSATION in sentence_to_play.actions:
+                if has_action(sentence_to_play.actions, comm_consts.ACTION_RELOADCONVERSATION):
                     # Reload on next continue, but first inform the player that a reload will happen with the "gather thoughts" voiceline
                     self.__should_reload = True
             else:
@@ -781,7 +782,7 @@ class GameStateManager:
                     return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCACTION,
                             comm_consts.KEY_REPLYTYPE_NPCACTION: {
                                 'mantella_actor_speaker': npcs_in_conversation.last_added_character.name,
-                                'mantella_actor_actions': [action.identifier],
+                                'mantella_actor_actions': [{'identifier': action.identifier}],
                                 }
                             }
         

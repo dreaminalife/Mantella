@@ -5,11 +5,11 @@ It runs twice: once as it is, and once in Director Mode (setup --director), as o
 See docs/conversation_wheel.md, "Automated tests", for the steps. In short, for each of the two runs:
 
     python tests/ingame/talk_settings/talk_settings_ingame.py setup --game "<Skyrim folder>"   (the second time: add --director)
-    (start or restart Mantella. Load a save, `bat mts`, watch until "Talk test: done")
-    python tests/ingame/talk_settings/talk_settings_ingame.py check
-    python tests/ingame/talk_settings/talk_settings_ingame.py cleanup --game "<Skyrim folder>"
+    (start or restart Mantella. Load a save, `bat mts`, watch until "Talk test: done", then press Enter in setup's window)
 
-Setup saves your config.ini and writes the test's talk settings into it; cleanup puts your config.ini back.
+Setup saves your config.ini and writes the test's talk settings into it. The NPCs' lines are voiced with a moment of silence
+(tests/ingame/silent_voice.py), which setup runs until you press Enter, so the lines take no time to voice and say. Then it checks
+Mantella's log and puts your config.ini back. If it stops halfway, "cleanup" puts your config.ini back; "check" checks again.
 After each NPC reply, Mantella logs a "Turn state:" line (GameMasterTurns): who spoke, who speaks next, whose talk settings apply,
 who still has to speak, who is due to answer first, and the extra rounds after the reply limit. Who the models pick changes from run
 to run, so it is shown as INFO. What Mantella does with their picks follows from the settings, so it is checked: PASS or FAIL.
@@ -22,6 +22,9 @@ import shutil
 import sys
 from datetime import datetime
 from typing import Any
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+from tests.ingame.silent_voice import start_silent_voice, voice_settings  # noqa: E402
 
 BATCH = "mts"
 BATCH_LINES = [
@@ -143,8 +146,13 @@ def setup(game_folder: str, mantella_folder: str, test_run: str = NORMAL):
     if os.path.exists(backup_path):
         print(f"{backup_path} already exists: run cleanup first, so your own config.ini is put back")
         sys.exit(1)
+    try:
+        voice = start_silent_voice()
+    except OSError as e:
+        print(f"Can't start the silent voice ({e}). Is another in-game test still running?")
+        sys.exit(1)
     shutil.copyfile(config_path, backup_path)
-    missing = write_settings(config_path, settings_for(test_run))
+    missing = write_settings(config_path, {**settings_for(test_run), **voice_settings()})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
@@ -154,17 +162,40 @@ def setup(game_folder: str, mantella_folder: str, test_run: str = NORMAL):
         f.write("\n".join(BATCH_LINES) + "\n")
     with open(os.path.join(mantella_folder, START_FILE), "w", encoding="utf-8") as f:
         f.write(datetime.now().strftime(TIME_FORMAT) + "\n" + test_run) # The check reads which run it was
-    print(f"Saved your config.ini as {BACKUP_FILE} and wrote the test's talk settings{' (Director Mode on)' if test_run == DIRECTOR else ''}. "
-          f"Wrote {BATCH}.txt in {game_folder}.")
+    print(f"Saved your config.ini as {BACKUP_FILE} and wrote the test's talk settings{' (Director Mode on)' if test_run == DIRECTOR else ''} "
+          f"and the silent voice, which is now running. Wrote {BATCH}.txt in {game_folder}.")
     print(f"""Now:
   1. Start Mantella, or restart it if it is running, so it reads the test's settings. Use text input (microphone off).
   2. Load a save where you can go to Whiterun (not during a quest scene). Don't save during or after the test.
   3. Console: bat {BATCH} (moves you to the Bannered Mare at 8 pm and starts the test)
-  4. Watch the notes "Talk test: ...". It says your lines itself. It takes a few minutes, until "Talk test: done".
-  5. python {os.path.relpath(__file__)} check
-  6. python {os.path.relpath(__file__)} cleanup --game "{game_folder}" (puts your config.ini back), then restart Mantella""")
+  4. Watch the notes "Talk test: ...". It says your lines itself. The NPCs' lines are silent, only their subtitles flash.
+     Wait until "Talk test: done".
+  5. Press Enter here. It checks the results and puts your config.ini back. Then restart Mantella.""")
+    try:
+        input()
+        check(mantella_folder)
+    finally:
+        voice.shutdown()
+        cleanup(game_folder, mantella_folder)
     if test_run == NORMAL:
         print(f"Then the same again in Director Mode: python {os.path.relpath(__file__)} setup --game \"{game_folder}\" --director")
+
+
+PAPYRUS_LOG = os.path.join(os.path.expanduser("~"), "Documents", "My Games", "Skyrim Special Edition", "Logs", "Script", "Papyrus.0.log")
+
+
+def game_npc_event_notes(test_name: str, papyrus_log: str = PAPYRUS_LOG) -> list[str]:
+    """What the game noted about NPC Events in its latest run of the test ("Talk test" or "Event test"), e.g. why the scene didn't start.
+    Empty without Papyrus logging (bEnableLogging=1 and bEnableTrace=1 in Skyrim.ini)"""
+    if not os.path.exists(papyrus_log):
+        return []
+    with open(papyrus_log, encoding="utf-8", errors="replace") as f:
+        lines = [line.split("] ", 1)[-1].strip() for line in f]
+    starts = [i for i, line in enumerate(lines) if line.lower() == f"{test_name}: starting".lower()]
+    if not starts:
+        return []
+    wanted = ("mantella npc event:", f"{test_name}: no npc event".lower(), f"{test_name}: npc event".lower())
+    return [line for line in lines[starts[-1]:] if line.lower().startswith(wanted)]
 
 
 def read_log(mantella_folder: str, since: datetime) -> list[tuple[str, str]]:
@@ -296,6 +327,8 @@ def check(mantella_folder: str) -> bool:
     spoken_to = [text for _level, text in entries if text.startswith("Game Master: the latest line was spoken to ")]
     for text in spoken_to[:20]:
         report.info(text)
+    for text in game_npc_event_notes("Talk test"):
+        report.info(f"game: {text}")
     scene_ended = any(text.startswith("NPC Event: ") and "The scene ends." in text for _level, text in entries)
     if any(state.get("situation") == "npc_event" for state in turn_states(entries)):
         report.check(scene_ended, "npc_event: the watched scene ends instead of giving the player the turn")

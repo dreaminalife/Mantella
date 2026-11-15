@@ -4,7 +4,7 @@ from threading import Thread, Lock
 import time
 from typing import Any
 from src.llm.ai_client import AIClient
-from src.llm.sentence_content import SentenceTypeEnum, SentenceContent
+from src.llm.sentence_content import SentenceTypeEnum, SentenceContent, has_action
 from src.characters_manager import Characters
 from src.conversation.conversation_log import conversation_log
 from src.conversation.conversation_serializer import serialize_persistent_messages, deserialize_persistent_messages
@@ -422,7 +422,7 @@ class Conversation:
             return comm_consts.KEY_REPLYTYPE_PLAYERTALK, None
 
         if next_sentence and len(next_sentence.text) > 0:
-            if comm_consts.ACTION_REMOVECHARACTER in next_sentence.actions:
+            if has_action(next_sentence.actions, comm_consts.ACTION_REMOVECHARACTER):
                 self.__context.remove_character(next_sentence.speaker)
             #if there is a next sentence and it actually has content, return it as something for an NPC to say
             if self.last_sentence_audio_length > 0:
@@ -835,7 +835,7 @@ class Conversation:
             if npc:
                 goodbye_sentence = self.__output_manager.generate_sentence(SentenceContent(npc, config.goodbye_npc_response, SentenceTypeEnum.SPEECH, True))
                 if goodbye_sentence:
-                    goodbye_sentence.actions.append(comm_consts.ACTION_ENDCONVERSATION)
+                    goodbye_sentence.actions.append({'identifier': comm_consts.ACTION_ENDCONVERSATION})
                     self.__sentences.put(goodbye_sentence)
                     
     @utils.time_it
@@ -976,7 +976,7 @@ class Conversation:
             # say goodbye
             goodbye_sentence = self.__output_manager.generate_sentence(SentenceContent(npc, self.__context.config.goodbye_npc_response, SentenceTypeEnum.SPEECH, False))
             if goodbye_sentence:
-                goodbye_sentence.actions.append(comm_consts.ACTION_REMOVECHARACTER)
+                goodbye_sentence.actions.append({'identifier': comm_consts.ACTION_REMOVECHARACTER})
                 self.__sentences.put(goodbye_sentence)        
 
     @utils.time_it
@@ -1232,7 +1232,7 @@ class Conversation:
         collecting_thoughts_text = self.__context.config.collecting_thoughts_npc_response
         collecting_thoughts_sentence = self.__output_manager.generate_sentence(SentenceContent(latest_npc, collecting_thoughts_text, SentenceTypeEnum.SPEECH, True))
         if collecting_thoughts_sentence:
-            collecting_thoughts_sentence.actions.append(comm_consts.ACTION_RELOADCONVERSATION)
+            collecting_thoughts_sentence.actions.append({'identifier': comm_consts.ACTION_RELOADCONVERSATION})
             self.__sentences.put_at_front(collecting_thoughts_sentence)
     
     @utils.time_it

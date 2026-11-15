@@ -17,7 +17,7 @@ class actions_parser(output_parser):
                 keyword = action.keyword + ":"
                 if keyword in cut_content.text:
                     cut_content.text = cut_content.text.replace(keyword,"").strip()
-                    cut_content.actions.append(action.identifier)
+                    cut_content.actions.append({'identifier': action.identifier})
                     logging.log(28, action.info_text)
                     # TODO: Add back this functionality while keeping the first delivered sentence intact
                     # ie "Inventory: Here you go." instead of just "Inventory:" with no further response

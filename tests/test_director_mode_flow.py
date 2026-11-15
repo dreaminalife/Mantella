@@ -55,13 +55,13 @@ class DirectorGame(FakeGame):
         self.player_in_combat = False
         self.voice_player = False # The MCM's Voice Player Input
         self.relationship_rank: dict[str, int] = {} # By name: the NPC's relationship rank with the player, when it isn't 0
-        self.actions: list[str] = [] # The actions the NPCs' lines asked the game to do
+        self.actions: list[str] = [] # The identifiers of the actions the NPCs' lines asked the game to do
 
     def send(self, request: dict[str, Any]) -> dict[str, Any]:
         reply = super().send(request)
         talk = reply.get(comm_consts.KEY_REPLYTYPE_NPCTALK) if reply.get(comm_consts.KEY_REPLYTYPE) == comm_consts.KEY_REPLYTYPE_NPCTALK else None
         if talk:
-            self.actions += [str(action) for action in talk.get(comm_consts.KEY_ACTOR_ACTIONS) or []]
+            self.actions += [action["identifier"] for action in talk.get(comm_consts.KEY_ACTOR_ACTIONS) or []]
         return reply
 
     def context(self) -> dict[str, Any]:
