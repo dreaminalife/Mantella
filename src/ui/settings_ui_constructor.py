@@ -127,6 +127,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 "dependent_config": "fallback_llm_api",
                 "model_list_getter": ClientBase.get_model_list,
             },
+            "advanced_actions_model": {
+                "dependent_config": "advanced_actions_llm_api",
+                "model_list_getter": ClientBase.get_model_list,
+            },
             "profile_selected_model": {
                 "dependent_config": "profile_selected_service",
                 "model_list_getter": ClientBase.get_model_list,
@@ -1705,6 +1709,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
             },
             "fallback_model": {
                 "dependent_config": "fallback_llm_api",
+                "model_list_getter": ClientBase.get_model_list,
+            },
+            "advanced_actions_model": {
+                "dependent_config": "advanced_actions_llm_api",
                 "model_list_getter": ClientBase.get_model_list,
             },
             "profile_selected_model": {

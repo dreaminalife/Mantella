@@ -1,6 +1,7 @@
 """The Actions section of the Conversation page: which actions NPCs can use in each kind of conversation (see src/actions/action_rules.py)"""
 from src.config.config_value_constraint import ConfigValueConstraintResult
 from src.config.types.config_value import ConfigValue, ConfigValueTag
+from src.config.types.config_value_bool import ConfigValueBool
 from src.config.types.config_value_multi_selection import ConfigValueMultiSelection
 from src.conversation.action import Action
 
@@ -20,9 +21,10 @@ WITHOUT_PLAYER = {NPC_EVENT, DIRECTOR, RADIANT} # The NPCs don't know the player
 OFF_BY_DEFAULT = {"AbsolveCrime", "AddToConversation", "Brawl", "CancelTravel", "CastSpell", "CheckDirections", "CollectIngredients", "Emote", "Follow",
                   "LeadTo", "Look", "Loot", "ReportCrime", "ShareConversation", "Teleport", "TravelTo", "Unfollow", "Wait"}
 # Loaded, but never offered to NPCs:
-# - Look needs Mantella to take a screenshot only when an NPC asks for one, which it can't do yet
 # - EndConversation: only the player ends a conversation (the end conversation keyword, or in game), so an NPC never ends a scene on them
-NOT_OFFERED = {"mantella_npc_vision", "mantella_end_conversation"}
+NOT_OFFERED = {"mantella_end_conversation"}
+# Separate Model for Advanced Actions: it must be able to pick actions (call tools), which the other tasks' default model can't
+ADVANCED_ACTIONS_DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
 
 
 def actions_key(kind: str) -> str:
@@ -95,6 +97,32 @@ class ActionDefinitions:
                            "walks over because someone else said so.\n\n"
                            "Follow, Inventory, Attack and StandDown also need Allow Follow, Allow Inventory and Allow Aggro on in the in-game menu (NPC Actions).")
 
+    @staticmethod
+    def section_description(actions: list[Action]) -> str:
+        advanced = sorted(a.name for a in actions if not a.is_basic)
+        if not advanced:
+            return ActionDefinitions.SECTION_DESCRIPTION
+        return ActionDefinitions.SECTION_DESCRIPTION + ("\n\n" + ", ".join(advanced) + " only work with Advanced Actions on: ticking them does nothing "
+                                                        "while it is off.")
+
+    @staticmethod
+    def get_advanced_actions_enabled_config_value() -> ConfigValue:
+        description = ("Lets the AI model use the actions that need it (CastSpell, TravelTo, Emote...), and aim the others at someone: \"attack the "
+                       "drunk\" instead of always you. The model picks the action and its details separately from what the NPC says, which only some "
+                       "models can do (on OpenRouter, models that can call tools). Mantella doesn't check: an NPC whose model can't may fail to "
+                       "answer, so keep such models out of the random model pool while this is on. "
+                       "While it is on, the actions are no longer listed in the prompts' {actions}: the model gets them separately. "
+                       "To have a separate model pick the actions, see Separate Model for Advanced Actions on the LLM tab.")
+        return ConfigValueBool("advanced_actions_enabled", "Advanced Actions", description, False)
+
+    @staticmethod
+    def get_advanced_actions_own_model_config_value() -> ConfigValue:
+        description = ("With Advanced Actions on (Conversation page, Actions): a separate model picks the NPCs' actions, set with the Advanced Actions "
+                       "service and model below, so each NPC keeps its own model for speaking, even one that can't pick actions. Off: each NPC's own "
+                       "model picks its actions too. That model must be able to pick actions (on OpenRouter, models that can call tools): with one "
+                       "that can't, no action happens, and the log says why. Its instructions are the Advanced Actions Prompt on the Prompts tab.")
+        return ConfigValueBool("advanced_actions_own_model", "Separate Model for Advanced Actions", description, False, tags=[ConfigValueTag.share_row])
+
     KIND_DESCRIPTIONS = {
         ONE_ON_ONE: "A conversation with one NPC, also one the NPC started (NPC Initiative).",
         GROUP: "A conversation with several NPCs, not shouting. Also an NPC Event you stepped into while not shouting.",
@@ -104,7 +132,8 @@ class ActionDefinitions:
         RADIANT: "Skyrim's own small talk between two NPCs.",
     }
     WITHOUT_PLAYER_NOTE = (" The NPCs don't know you're there, so actions that would involve you are left out, whatever is ticked: Attack, Brawl, Flee, "
-                           "Teleport, Inventory, Barter, Follow, Unfollow and MoveTo.")
+                           "Teleport, Inventory, Barter, Follow, Unfollow and MoveTo. With Advanced Actions on, Attack, Flee, Teleport and MoveTo stay, "
+                           "aimed only at NPCs, and so do the advanced actions, except AbsolveCrime and ReportCrime.")
 
     @staticmethod
     def get_actions_config_value(actions: list[Action], kind: str) -> ConfigValue:

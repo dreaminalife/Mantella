@@ -64,6 +64,16 @@ class Remembering(ABC):
         """
         pass
 
+    def share_conversation(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, pending_shares: list[tuple[str, str, str]],
+                           saved_summaries: dict[str, str], conversation_start_ts: int | None = None, was_directed: bool = False):
+        """ShareConversation (Advanced Actions): when the conversation ends, each NPC it was shared with remembers it, told by the NPC who shared it
+
+        Args:
+            pending_shares (list[tuple[str, str, str]]): (who shares it, with whom, their ref id)
+            saved_summaries (dict[str, str]): the summaries just saved, by NPC name. Empty with summaries off: the sharer's is written for the share only
+        """
+        pass
+
     @abstractmethod
     def save_thoughts_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None, conversation_start_ts: int | None = None):
         """Generate and save private thoughts without writing a new conversation summary."""

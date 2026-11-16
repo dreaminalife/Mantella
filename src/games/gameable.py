@@ -52,6 +52,21 @@ class Gameable(ABC):
     @property
     def character_df(self) -> pd.DataFrame:
         return self.__character_df
+
+    def resolve_npc_refid_by_name(self, name: str) -> str | None:
+        """ShareConversation: the ref id of the NPC with this name in the character list. Only if exactly one has it, so guards and other
+        shared names can't be mixed up"""
+        matching_rows = self.__character_df.loc[self.__character_df['name'].astype(str).str.lower() == name.lower()]
+        if matching_rows.shape[0] == 1:
+            ref_id = str(matching_rows.iloc[0].get('ref_id', '') or '')
+            if ref_id and ref_id.lower() != 'nan':
+                return ref_id
+            logging.warning(f"NPC '{name}' found but has no ref_id in the character list")
+        elif matching_rows.shape[0] > 1:
+            logging.warning(f"Several NPCs are called '{name}' ({matching_rows.shape[0]}): can't tell which one")
+        else:
+            logging.warning(f"No NPC called '{name}' in the character list")
+        return None
     
     @property
     def is_vr(self) -> bool:

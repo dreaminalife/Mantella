@@ -10,6 +10,7 @@ from src.games.gameable import Gameable
 from src.llm.sentence import Sentence
 from src.llm.sentence_content import has_action
 from src.actions.action_rules import LISTEN
+from src.actions.function_manager import FunctionManager
 from src.output_manager import ChatManager
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
@@ -616,6 +617,8 @@ class GameStateManager:
             self.__update_context(input_json)
         finally:
             self.__reload_present_npcs = False
+        # The game's answer to an action that answers back came with this request's events: the NPC goes on with it
+        self.__talk.resume_after_action()
 
         while True:
             replyType, sentence_to_play = self.__talk.continue_conversation()
@@ -648,9 +651,18 @@ class GameStateManager:
             self.__talk = None
             return reply
 
+        if replyType == comm_consts.KEY_REPLYTYPE_NPCACTION and sentence_to_play:
+            # Actions without a line. The game does them for the speaker, then asks to continue: with its answer if one of them answers back
+            reply[comm_consts.KEY_REPLYTYPE_NPCACTION] = {
+                comm_consts.KEY_ACTOR_SPEAKER: sentence_to_play.speaker.name,
+                comm_consts.KEY_ACTOR_ACTIONS: sentence_to_play.actions,
+                comm_consts.KEY_ACTOR_ACTIONS_REQUIRE_RESPONSE: FunctionManager.any_action_requires_response(sentence_to_play.actions),
+            }
+            reply[comm_consts.KEY_GAMEMASTERMODE] = multi_npc_game_master.is_enabled(self.__config)
+            return reply
         if sentence_to_play:
             if not sentence_to_play.error_message:
-                self.__game.prepare_sentence_for_game(sentence_to_play, self.__talk.context, self.__config, topicInfoID, self.__first_line)            
+                self.__game.prepare_sentence_for_game(sentence_to_play, self.__talk.context, self.__config, topicInfoID, self.__first_line)                        
                 reply[comm_consts.KEY_REPLYTYPE_NPCTALK] = self.sentence_to_json(sentence_to_play, topicInfoID)
                 self.__first_line = False
 
@@ -765,9 +777,11 @@ class GameStateManager:
         self.__first_line = True
         
         player_text: str = input_json.get(comm_consts.KEY_REQUESTTYPE_PLAYERINPUT, '')
-        quest_events = self.__get_quest_tag_announcements(input_json)
-        self.__update_context(input_json, quest_events)
-        updated_player_text, update_events, player_spoken_sentence = self.__talk.process_player_input(player_text)
+        details_follow = bool(input_json.get(comm_consts.KEY_PLAYERINPUT_DETAILSFOLLOW, False))
+        if not details_follow:
+            quest_events = self.__get_quest_tag_announcements(input_json)
+            self.__update_context(input_json, quest_events)
+        updated_player_text, update_events, player_spoken_sentence = self.__talk.process_player_input(player_text, details_follow)
         if updated_player_text is None:
             # The player picked an event on the Conversation Wheel instead of speaking. Still their turn: the game sends the event now
             return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_PLAYERTALK}
@@ -1430,6 +1444,9 @@ class GameStateManager:
             weather = ""
             custom_context_values: dict[str, Any] = {}
             if json.__contains__(comm_consts.KEY_CONTEXT):
+                if comm_consts.KEY_CONTEXT_NPCS_NEARBY in json[comm_consts.KEY_CONTEXT]:
+                    # Who Advanced Actions can name besides the people in the conversation (AddToConversation, Attack...)
+                    self.__talk.context.npcs_in_conversation.set_nearby_npcs(json[comm_consts.KEY_CONTEXT][comm_consts.KEY_CONTEXT_NPCS_NEARBY])
                 if json[comm_consts.KEY_CONTEXT].__contains__(comm_consts.KEY_CONTEXT_LOCATION):
                     location: str = json[comm_consts.KEY_CONTEXT].get(comm_consts.KEY_CONTEXT_LOCATION, None)
                 

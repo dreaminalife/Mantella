@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.actions.action_rules import INVOLVE_PLAYER, actions_for
+from src.actions.action_rules import INVOLVE_PLAYER, actions_for, offers_look, tool_actions_for
 from src.config.config_loader import ConfigLoader
-from src.config.definitions.action_definitions import (ACTION_KINDS, DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, ORIGINAL_ACTIONS, RADIANT, SHOUT,
+from src.config.definitions.action_definitions import (ACTION_KINDS, ADVANCED_ACTIONS_DEFAULT_MODEL, DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, ORIGINAL_ACTIONS, RADIANT, SHOUT,
                                                        WITHOUT_PLAYER, actions_key, carried_over_ticks, default_ticks)
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.language_definitions import LanguageDefinitions
@@ -24,13 +24,15 @@ ACTIONS_FOLDER = os.path.join(utils.resolve_path(), "data", "actions")
 # The basic actions whose game script acts on the player
 INVOLVE_PLAYER_NAMES = {"Attack", "Brawl", "Flee", "Teleport", "Inventory", "Barter", "Follow", "Unfollow", "MoveTo"}
 BASIC = ["Attack", "Barter", "Brawl", "CollectIngredients", "Flee", "Follow", "Inventory", "Listen", "Loot", "MoveTo",
-         "StandDown", "Teleport", "Unfollow", "Wait"] # Look and EndConversation are loaded too, but never offered
+         "StandDown", "Teleport", "Unfollow", "Wait"] # Look (needs Vision) and EndConversation (never offered) are loaded too
+ADVANCED = ["AbsolveCrime", "AddToConversation", "CancelTravel", "CastSpell", "CheckDirections", "Emote", "LeadTo", "ReportCrime",
+            "ShareConversation", "TravelTo"] # Only with Advanced Actions on
 
 
 @pytest.fixture(scope="module")
 def loaded() -> list[Action]:
     """The original Mantella's basic actions, as loaded (without other mods' files)"""
-    return [a for a in ConfigLoader.load_actions_from_json(ACTIONS_FOLDER) if a.name in ORIGINAL_ACTIONS and a.name not in ("Look", "EndConversation")]
+    return [a for a in ConfigLoader.load_actions_from_json(ACTIONS_FOLDER) if a.name in ORIGINAL_ACTIONS and a.is_basic and a.name not in ("Look", "EndConversation")]
 
 
 def config_with(actions: list[Action], **ticked: list[str]) -> SimpleNamespace:
@@ -100,17 +102,69 @@ def test_switching_an_action_off_for_one_kind_hides_it_there_and_only_there(load
         assert ("Wait" in names(actions_for(config, kind))) == (kind != off_in), kind
 
 
-@pytest.mark.parametrize("name", ["Look", "EndConversation"]) # Look: until Mantella can take a screenshot when asked. EndConversation: only the player ends a conversation
-def test_some_actions_are_never_offered_to_npcs(name: str):
+def test_end_conversation_is_never_offered_to_npcs():
+    """Only the player ends a conversation"""
     actions = ConfigLoader.load_actions_from_json(ACTIONS_FOLDER)
-    assert [a for a in actions if a.name == name] # Loaded with the others
-    config = config_with(actions, **{kind: [name] for kind in ACTION_KINDS})
-    assert all(actions_for(config, kind) == [] for kind in ACTION_KINDS)
+    assert [a for a in actions if a.name == "EndConversation"] # Loaded with the others
+    config = config_with(actions, **{kind: ["EndConversation"] for kind in ACTION_KINDS})
+    config.advanced_actions_enabled = True
+    assert all(actions_for(config, kind) == [] and tool_actions_for(config, kind) == [] for kind in ACTION_KINDS)
 
 
-def test_the_settings_dont_list_the_actions_never_offered_to_npcs(tmp_path):
+@pytest.mark.parametrize("vision", [True, False])
+def test_look_is_only_offered_with_vision_on(vision: bool):
+    actions = ConfigLoader.load_actions_from_json(ACTIONS_FOLDER)
+    config = config_with(actions, **{kind: ["Look"] for kind in ACTION_KINDS})
+    config.vision_enabled = vision
+    assert all(names(actions_for(config, kind)) == (["Look"] if vision else []) for kind in ACTION_KINDS)
+    assert all(offers_look(config, kind) == vision for kind in ACTION_KINDS)
+
+
+def test_the_settings_list_every_action_but_end_conversation(tmp_path):
     names = [a.name for a in ConfigLoader(str(tmp_path)).all_actions]
-    assert "Look" not in names and "EndConversation" not in names
+    assert "EndConversation" not in names
+    assert set(ADVANCED + BASIC + ["Look"]) <= set(names)
+
+
+def test_the_advanced_actions_are_loaded_without_a_prompt():
+    actions = [a for a in ConfigLoader.load_actions_from_json(ACTIONS_FOLDER) if a.name in ORIGINAL_ACTIONS and not a.is_basic]
+    assert names(actions) == sorted(ADVANCED)
+
+
+# Advanced Actions: the actions the AI model can pick with their details
+
+def advanced_config(loaded_all: list[Action], **ticked: list[str]) -> SimpleNamespace:
+    config = config_with(loaded_all, **ticked)
+    config.advanced_actions_enabled = True
+    return config
+
+
+@pytest.fixture(scope="module")
+def loaded_all() -> list[Action]:
+    """The original Mantella's actions, basic and advanced, as loaded"""
+    return [a for a in ConfigLoader.load_actions_from_json(ACTIONS_FOLDER) if a.name in ORIGINAL_ACTIONS and a.name not in ("Look", "EndConversation")]
+
+
+@pytest.mark.parametrize("kind", ACTION_KINDS)
+def test_with_advanced_actions_off_the_model_gets_no_tools(loaded_all: list[Action], kind: str):
+    config = config_with(loaded_all, **{kind: ADVANCED + BASIC})
+    assert tool_actions_for(config, kind) == []
+    assert not any(a.name in ADVANCED for a in actions_for(config, kind)) # Never in the prompt either
+
+
+@pytest.mark.parametrize("kind", ACTION_KINDS)
+def test_with_advanced_actions_on_the_ticked_actions_are_tools(loaded_all: list[Action], kind: str):
+    tools = names(tool_actions_for(advanced_config(loaded_all, **{kind: ADVANCED + BASIC}), kind))
+    if kind in WITHOUT_PLAYER:
+        # What acts on the player whoever is named is left out. Attack, Flee, Teleport and MoveTo stay, aimed at NPCs only
+        left_out = {"Barter", "Brawl", "Follow", "Inventory", "Unfollow", "AbsolveCrime", "ReportCrime"}
+    else:
+        left_out = set()
+    assert tools == sorted(set(ADVANCED + BASIC) - left_out - {"Listen"}) # Listen is the player's
+
+
+def test_an_unticked_action_is_no_tool(loaded_all: list[Action]):
+    assert names(tool_actions_for(advanced_config(loaded_all, **{ONE_ON_ONE: ["CastSpell"]}), ONE_ON_ONE)) == ["CastSpell"]
 
 
 def test_each_action_instruction_ends_with_a_full_stop(default_context):
@@ -229,6 +283,13 @@ def test_a_fresh_install_starts_from_the_original_defaults(tmp_path):
         assert sorted(n for n in getattr(config, actions_key(kind)) if n in ORIGINAL_ACTIONS) == sorted(default_ticks(original, kind)), kind
 
 
+def test_a_fresh_install_has_advanced_actions_off_and_a_separate_model_that_can_pick_actions(tmp_path):
+    config = ConfigLoader(str(tmp_path))
+    assert config.advanced_actions_enabled is False
+    assert config.advanced_actions_own_model is False
+    # The other tasks' default model can't pick actions: with it, turning on the separate model would make no action happen
+    assert config.advanced_actions_llm == ADVANCED_ACTIONS_DEFAULT_MODEL
+
 def test_an_action_whose_file_is_gone_is_dropped_without_failing_the_settings(tmp_path):
     write_config(tmp_path, "[Conversation]\nactions_one_on_one = Wait, Juggle\n")
     config = ConfigLoader(str(tmp_path))
@@ -294,3 +355,26 @@ def test_the_game_master_npc_prompt_has_the_actions_once_in_every_situation(cond
     text = PromptDefinitions.apply_prompt_conditions("skyrim_game_master_npc_prompt",
                                                      PromptDefinitions.get_skyrim_game_master_npc_prompt_config_value().default_value, conditions)
     assert text.count("{actions}") == 1, conditions
+
+
+# Advanced Actions: reading the model's picks
+
+def test_share_conversation_remembers_who_to_share_it_with_once_it_is_sent(loaded_all: list[Action]):
+    from src.actions.function_manager import FunctionManager
+    from src.characters_manager import Characters
+    import json
+    speaker = MagicMock(is_player_character=False)
+    speaker.name = "Lydia"
+    characters = Characters()
+    characters.add_or_update_character(speaker)
+    game = MagicMock()
+    game.resolve_npc_refid_by_name.return_value = "01A66E"
+    share = [a for a in loaded_all if a.name == "ShareConversation"]
+    call = {"id": "1", "type": "function", "function": {"name": "ShareConversation", "arguments": json.dumps({"source": "Someone", "recipient": "Hulda"})}}
+    parsed = FunctionManager.parse_tool_calls([call], speaker, characters, game, share, True)
+    assert parsed[0]["arguments"]["source"] == "Lydia" # Only the speaker shares
+    assert characters.get_pending_shares() == [] # Not when read: an interrupted reply never sends it
+    for _ in range(2):
+        FunctionManager.record_shares(parsed, characters) # Sent to the game
+    assert characters.get_pending_shares() == [("Lydia", "Hulda", "01A66E")]
+    assert "already" in FunctionManager.parse_tool_calls([call], speaker, characters, game, share, True)[0]["arguments"]["debug_message"]

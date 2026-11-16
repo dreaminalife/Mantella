@@ -3,6 +3,7 @@ switches still guard the actions they did in 0.13.1, and Mantella.esp holds what
 Mistakes here compile and load without an error, and only show in the game as an action that does nothing.
 Needs the Mantella-Spell repository next to this one, or its path in MANTELLA_SPELL_PATH. Skipped without it"""
 import glob
+import json
 import os
 import re
 import struct
@@ -73,7 +74,7 @@ def builtin_action_identifiers() -> list[str]:
     """The actions MantellaSoftware sends without arguments that belong to Mantella itself (not another mod, like Actions For Mantella)"""
     game_values = set(game_constants().values())
     actions = ConfigLoader.load_actions_from_json(os.path.join(utils.resolve_path(), "data", "actions"))
-    sent = [a.identifier for a in actions] + [comm_consts.ACTION_ENDCONVERSATION, comm_consts.ACTION_REMOVECHARACTER, comm_consts.ACTION_RELOADCONVERSATION]
+    sent = [a.identifier for a in actions if a.is_basic] + [comm_consts.ACTION_ENDCONVERSATION, comm_consts.ACTION_REMOVECHARACTER, comm_consts.ACTION_RELOADCONVERSATION]
     return [identifier for identifier in sent if identifier in game_values]
 
 
@@ -215,3 +216,71 @@ def test_the_packages_the_plugin_writer_gets_wrong_are_the_originals_bytes():
     ours, theirs = plugin_records(data), plugin_records(original)
     different = [f"{form_id:08X}" for form_id in PACKAGES_FROM_ORIGINAL if ours.get(form_id) != theirs.get(form_id)]
     assert not different, f"Rebuilt with Spriggit without copying these packages back from the original: {different}"
+
+
+# The actions' details: what the game reads from the arguments Mantella sends with an action the model picked (Advanced Actions)
+
+ARGUMENT_READ = re.compile(r'SKSE_HTTP\.get(\w+)\(\s*argumentsHandle\s*,\s*(?:mConsts\.(\w+)|"([^"]+)")', re.IGNORECASE)
+GETTER_KIND = {"stringarray": "array", "string": "string", "int": "integer", "bool": "boolean", "float": "number", "intarray": "array"}
+NEVER_SENT = {"mantella_npc_listen", "mantella_npc_vision", "mantella_end_conversation"} # The player's, a screenshot, never offered
+
+
+def action_definitions() -> list[dict]:
+    definitions = []
+    for path in sorted(glob.glob(os.path.join(utils.resolve_path(), "data", "actions", "*.json"))):
+        with open(path, encoding="utf-8") as f:
+            definitions.append(json.load(f))
+    return definitions
+
+
+def arguments_sent(definition: dict) -> dict[str, str]:
+    """The arguments Mantella sends with the action, and their kind: its parameters, and what function_manager adds once it has looked
+    a name up (an animation's or an NPC's id, and whether it found it)"""
+    sent = {}
+    for key, parameter in definition.get("parameters", {}).items():
+        sent[key] = parameter.get("type", "string")
+        resolve = parameter.get("resolve_to_id")
+        if resolve:
+            sent[f"{key}_id"] = "integer" if resolve == "idle" else "string"
+            sent[f"{key}_succeeded"] = "boolean"
+    if definition["identifier"] == "mantella_npc_shareconversation":
+        sent["debug_message"] = "string" # Whether it will be shared, for the notification
+    return sent
+
+
+def mantellas_actions() -> list[dict]:
+    """The actions in data/actions that are Mantella's own (the game knows them) and that NPCs can be given"""
+    game_values = set(game_constants().values())
+    return [d for d in action_definitions() if d["identifier"] in game_values and d["identifier"] not in NEVER_SENT]
+
+
+def test_every_action_the_model_can_pick_has_a_script_for_how_mantella_sends_it():
+    """With details, the game sends the action to its advanced script. Without any (an action without parameters), to the basic one"""
+    constants = game_constants()
+    by_prefix = {LEGACY: set(), ADVANCED: set()}
+    for prefix, constant, handler, text in registrations():
+        if handler_body(text, handler):
+            by_prefix[prefix].add(constants.get(constant))
+    missing = [f"{d['name']} ({'with' if d.get('parameters') else 'without'} details)" for d in mantellas_actions()
+               if d["identifier"] not in by_prefix[ADVANCED if d.get("parameters") else LEGACY]]
+    assert not missing, f"Nothing in the game does these actions as Advanced Actions sends them: {missing}"
+
+
+def test_every_detail_the_game_reads_is_one_mantella_sends():
+    """A detail read under another name or as another kind (a list read as one name) is empty in the game, and the action does nothing"""
+    constants = game_constants()
+    definitions = {d["identifier"]: d for d in mantellas_actions()}
+    wrong = []
+    for prefix, constant, handler, text in registrations():
+        identifier = constants.get(constant)
+        if prefix != ADVANCED or identifier not in definitions:
+            continue
+        sent = arguments_sent(definitions[identifier])
+        for getter, key_constant, key_text in ARGUMENT_READ.findall(handler_body(text, handler)):
+            key = constants.get(key_constant, key_constant) if key_constant else key_text
+            kind = GETTER_KIND.get(getter.lower(), getter)
+            if key not in sent:
+                wrong.append(f"{definitions[identifier]['name']} reads {key}, which Mantella doesn't send")
+            elif sent[key] != kind:
+                wrong.append(f"{definitions[identifier]['name']} reads {key} as {kind}, but Mantella sends {sent[key]}")
+    assert not wrong, "; ".join(wrong)

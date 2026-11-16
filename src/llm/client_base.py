@@ -22,6 +22,11 @@ class FirstTokenTimeout(Exception):
     """The first spoken token did not arrive within the response timeout."""
 
 
+class ToolCalls(list):
+    """What streaming_call yields when the AI model picks actions (Advanced Actions): its tool calls,
+    {"id", "type": "function", "function": {"name", "arguments"}} with the arguments as JSON text. The text comes as plain strings"""
+
+
 class ProviderError(Exception):
     """The LLM service returned an error before any text (e.g. a content block). Another model may still answer."""
 
@@ -254,7 +259,9 @@ class ClientBase(AIClient):
         
 
     @utils.time_it
-    async def streaming_call(self, messages: Message | message_thread, is_multi_npc: bool, response_started_at: float | None = None) -> AsyncGenerator[str | None, None]:
+    async def streaming_call(self, messages: Message | message_thread, is_multi_npc: bool, response_started_at: float | None = None,
+                             tools: list[dict] | None = None) -> AsyncGenerator[str | ToolCalls | None, None]:
+        """Streams the reply's text. With tools (Advanced Actions), the model can also pick actions: their calls come last, as one ToolCalls"""
         with self._generation_lock:
             started_at = time.time() if response_started_at is None else response_started_at
             deadline = started_at + float(self._response_timeout)
@@ -268,6 +275,9 @@ class ClientBase(AIClient):
                 async_client = self.generate_async_client()
 
             request_params = self._completion_request_params(self._request_params)
+            if tools:
+                request_params["tools"] = tools
+            tool_calls: dict[int, dict] = {} # By index: the calls arrive in pieces
             if is_multi_npc: # override max_tokens to be at least 250 in radiant / multi-NPC conversations
                 original_max_tokens = request_params.get("max_tokens", self.max_tokens_param)
                 request_params["max_tokens"] = max(self.max_tokens_param, 250)
@@ -352,9 +362,23 @@ class ClientBase(AIClient):
                         if chunk and chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                             received_content = True
                             yield self.clean_response_text(chunk.choices[0].delta.content)
+                        if chunk and chunk.choices and chunk.choices[0].delta and getattr(chunk.choices[0].delta, 'tool_calls', None):
+                            received_content = True
+                            for piece in chunk.choices[0].delta.tool_calls:
+                                call = tool_calls.setdefault(piece.index or 0, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                                if piece.id:
+                                    call["id"] = piece.id
+                                if piece.function and piece.function.name:
+                                    call["function"]["name"] += piece.function.name
+                                if piece.function and piece.function.arguments:
+                                    call["function"]["arguments"] += piece.function.arguments
                     except Exception as e:
                         logging.error(f"LLM API Connection Error: {e}")
                         break
+                if tool_calls:
+                    picked = ToolCalls(tool_calls[i] for i in sorted(tool_calls))
+                    logging.log(15, f"LLM tool calls from {self.model_name}: {list(picked)}")
+                    yield picked
             except FirstTokenTimeout:
                 logging.error(f"LLM did not respond within {self._response_timeout} seconds")
                 raise
@@ -388,6 +412,32 @@ class ClientBase(AIClient):
             finally:
                 self._response_deadline = None
                 await async_client.close()
+
+
+    @utils.time_it
+    def request_tool_calls(self, messages: message_thread, tools: list[dict]) -> ToolCalls:
+        """Advanced Actions with a separate model: asks it which actions to take, without a reply text. Empty if none, or if it failed"""
+        with self._generation_lock:
+            sync_client = self.generate_sync_client()
+            openai_messages = messages.get_openai_messages()
+            request_params = self._completion_request_params(self._request_params)
+            request_params["tools"] = tools
+            logging.info(f"LLM Request Parameters: model='{self.model_name}', base_url='{self._base_url}', params={ {k: v for k, v in request_params.items() if k != 'tools'} }")
+            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}")
+            try:
+                chat_completion = sync_client.chat.completions.create(model=self.model_name, messages=openai_messages, timeout=self._http_timeout(),
+                                                                      **request_params)
+            except Exception as e:
+                logging.error(f"The Advanced Actions model could not pick actions: {e}")
+                return ToolCalls()
+            finally:
+                sync_client.close()
+            if not chat_completion or not chat_completion.choices:
+                return ToolCalls()
+            picked = ToolCalls({"id": call.id, "type": "function", "function": {"name": call.function.name, "arguments": call.function.arguments or ""}}
+                               for call in (getattr(chat_completion.choices[0].message, 'tool_calls', None) or []))
+            logging.log(15, f"LLM tool calls from {self.model_name}: {list(picked)}")
+            return picked
 
 
     @utils.time_it
@@ -685,6 +735,14 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
         return num_tokens
     
     @staticmethod
+    def _reads_images(architecture: dict) -> bool:
+        """Whether a model takes images among what it is given. Many also take files, audio or video (Gemini: text+image+file+audio+video->text)"""
+        inputs = architecture.get("input_modalities")
+        if not inputs:
+            inputs = architecture.get("modality", "").split("->")[0].split("+")
+        return "image" in inputs
+
+    @staticmethod
     def get_model_list(service: str, secret_key_file: str, default_model: str = "google/gemma-2-9b-it:free", is_vision: bool = False) -> LLMModelList:
         if service not in ['OpenAI', 'OpenRouter', 'NanoGPT']:
             return LLMModelList([("Custom model","Custom model")], "Custom model", allows_manual_model_input=True)
@@ -790,7 +848,7 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
                             context_size: int = model.model_extra["context_length"]
                             prompt_cost: float = float(model.model_extra["pricing"]["prompt"]) * multiplier
                             completion_cost: float = float(model.model_extra["pricing"]["completion"]) * multiplier
-                            vision_available: str = ' | Vision Available' if model.model_extra["architecture"]["modality"] == 'text+image->text' else ''
+                            vision_available: str = ' | Vision Available' if ClientBase._reads_images(model.model_extra["architecture"]) else ''
                             model_display_name = f"{model.id} | Context: {utils.format_context_size(context_size)} | Cost per 1M tokens: Prompt: {utils.format_price(prompt_cost)}. Completion: {utils.format_price(completion_cost)}{vision_available}"
                             
                             ClientBase.api_token_limits[model.id.split('/')[-1]] = context_size

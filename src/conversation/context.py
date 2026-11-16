@@ -661,19 +661,23 @@ class context:
         """
         equipment_descriptions = []
         for character in self.get_characters_excluding_player().get_all_characters():
-                equipment_descriptions.append(character.equipment.get_equipment_description(character.name))
+                equipment_descriptions.append(character.equipment.get_equipment_description(character.name, getattr(self.__config, "advanced_actions_enabled", False) is True))
         return " ".join(equipment_descriptions)
     
     @utils.time_it
-    def __get_action_texts(self, actions: list[Action]) -> str:
+    def __get_action_texts(self, actions: list[Action], tools_offered: bool = False) -> str:
         """Generates the prompt text for the available actions
 
         Args:
             actions (list[Action]): the list of possible actions. Already filtered for conversation type and config choices
+            tools_offered (bool): Advanced Actions: the AI model gets actions as tools with this prompt. Without any here, the basic ones are listed
 
         Returns:
             str: the text for the {actions} variable
         """
+        if tools_offered and getattr(self.__config, "advanced_actions_enabled", False) is True:
+            # The AI model gets the actions as tools instead. With a separate model picking them, the NPC's model only speaks
+            return "" if getattr(self.__config, "advanced_actions_own_model", False) is True else "Use tools to perform actions where appropriate."
         result = ""
         for a in actions:
             if a.prompt_text:
@@ -749,7 +753,7 @@ class context:
 
     @utils.time_it
     def generate_system_message(self, prompt: str, actions_for_prompt: list[Action], should_log: bool = False, messages_for_lorebook = None, prompt_type: str | None = None,
-                                focus_character: Character | None = None, conditions: set[str] | None = None) -> str:
+                                focus_character: Character | None = None, conditions: set[str] | None = None, tools_offered: bool = False) -> str:
         """Fills the variables in the prompt with the values calculated from the context
 
         Args:
@@ -760,6 +764,7 @@ class context:
             focus_character (Character | None): If set, name, names, bios, trust, summaries and private thoughts only cover this NPC.
                 all_names_without_player, names_w_player and equipment still cover everyone in the conversation.
             conditions (set[str] | None): for a merged prompt, the conditions of its conditional blocks that are true now ({if shout}, ...)
+            tools_offered (bool): Advanced Actions: the AI model gets actions as tools with this prompt, so {actions} says to use them
 
         Returns:
             str: the filled prompt
@@ -812,7 +817,7 @@ class context:
                 private_thoughts = self.__rememberer.get_private_thoughts_text(prompt_characters, self.__world_id)
                 if private_thoughts:
                     private_thoughts = self._resolve_bio_player_name(private_thoughts)
-        actions = self.__get_action_texts(actions_for_prompt)
+        actions = self.__get_action_texts(actions_for_prompt, tools_offered)
         event = self.npc_event.text if self.npc_event else ""
         nearby = self.__get_nearby_text()
         variable_values = {

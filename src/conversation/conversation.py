@@ -11,6 +11,7 @@ from src.conversation.conversation_serializer import serialize_persistent_messag
 from src.conversation.action import Action
 from src.actions.action_rules import LISTEN
 from src.actions.function_manager import FunctionManager
+from src.actions.tool_request import tool_request_for
 from src.llm.sentence_queue import SentenceQueue
 from src.llm.sentence import Sentence
 from src.remember.remembering import Remembering
@@ -54,6 +55,8 @@ class Conversation:
         self.__allow_interruption: bool = context_for_conversation.config.allow_interruption # allow mic interruption
         self.__is_player_interrupting = False
         self.__is_interrupt_requested: bool = False # Set by the interrupt hotkey, from the thread of another request
+        self.__awaiting_action_answer: bool = False # An action the NPC picked answers back (Advanced Actions): the game sends its answer next
+        self.__action_asker: Character | None = None # The NPC whose action answers back
         self.__is_ending: bool = False
         self.__stt: Transcriber | None = stt
         self.__events_refresh_time: float = context_for_conversation.config.events_refresh_time  # Time in seconds before events are considered stale
@@ -434,12 +437,21 @@ class Conversation:
         if next_sentence is None and self.__interrupt_for_player():
             return comm_consts.KEY_REPLYTYPE_PLAYERTALK, None
 
+        if next_sentence and has_action(next_sentence.actions, LISTEN): # Not sent to the game
+            next_sentence.content.actions = [a for a in next_sentence.actions if a.get('identifier') != LISTEN]
+            self.listen_longer()
+        if next_sentence and not next_sentence.text.strip() and next_sentence.actions:
+            # Actions without a line, e.g. the ones the AI model picked (Advanced Actions): sent to the game right away
+            FunctionManager.record_shares(next_sentence.actions, self.__context.npcs_in_conversation) # Not before: an interrupted reply shares nothing
+            if FunctionManager.any_action_requires_response(next_sentence.actions):
+                self.__awaiting_action_answer = True # The game answers with its next request, then the NPC goes on (resume_after_action)
+                self.__action_asker = next_sentence.speaker
+                if isinstance(self.__conversation_type, multi_npc_game_master):
+                    self.__game_master_turns.action_sent() # The reply waits for the answer from now on
+            return comm_consts.KEY_REPLYTYPE_NPCACTION, next_sentence
         if next_sentence and len(next_sentence.text) > 0:
             if has_action(next_sentence.actions, comm_consts.ACTION_REMOVECHARACTER):
                 self.__context.remove_character(next_sentence.speaker)
-            if has_action(next_sentence.actions, LISTEN): # Not sent to the game
-                next_sentence.content.actions = [a for a in next_sentence.actions if a.get('identifier') != LISTEN]
-                self.listen_longer()
             #if there is a next sentence and it actually has content, return it as something for an NPC to say
             if self.last_sentence_audio_length > 0:
                 logging.debug(f'Waiting {round(self.last_sentence_audio_length, 1)} seconds for last voiceline to play')
@@ -565,11 +577,13 @@ class Conversation:
             self.__is_event_picked = False
 
     @utils.time_it
-    def process_player_input(self, player_text: str) -> tuple[str | None, bool, Sentence|None]:
+    def process_player_input(self, player_text: str, details_follow: bool = False) -> tuple[str | None, bool, Sentence|None]:
         """Submit the input of the player to the conversation
 
         Args:
             player_text (str): The input text / voice transcribe of what the player character is supposed to say. Can be empty if mic input has not yet been parsed
+            details_follow (bool): the game sent no in-game events with the empty text, so the mic starts listening right away. Once the
+                player has spoken, the events always need updating
 
         Returns:
             tuple[str | None, bool]: Returns a tuple consisting of updated player text (if using mic input) and whether or not in-game events need to be refreshed (depending on how much time has passed).
@@ -613,16 +627,16 @@ class Conversation:
                     # The player picked an event instead of speaking. It is still their turn
                     self.__stt.stop_listening()
                     return None, False, None
-                if time.time() - input_wait_start_time >= self.__events_refresh_time:
-                    # If too much time has passed, in-game events need to be updated
+                # Stop listening once input has been detected to give the NPC a chance to speak
+                # This also needs to apply when interruptions are allowed,
+                # otherwise the player could constantly speak over the NPC and never hear a response
+                self.__stt.stop_listening()
+
+                if details_follow or time.time() - input_wait_start_time >= self.__events_refresh_time:
+                    # The game sent no events, or too much time has passed: the game sends the text again with its events
                     events_need_updating = True
                     logging.debug('Updating game events...')
                     return player_text, events_need_updating, None
-                
-                # Stop listening once input has been detected to give the NPC a chance to speak
-                # This also needs to apply when interruptions are allowed, 
-                # otherwise the player could constantly speak over the NPC and never hear a response
-                self.__stt.stop_listening()
             
             self.__is_interrupt_requested = False # Pressing the interrupt hotkey during the player's turn has nothing to interrupt
             is_director = self.__conversation_type.is_director_mode()
@@ -938,15 +952,52 @@ class Conversation:
         return multi_npc(config, can_direct)
 
     @utils.time_it
-    def __start_generating_npc_sentences(self, allow_player_first: bool = False):
+    def resume_after_action(self) -> bool:
+        """An action the NPC picked answers back (Advanced Actions, e.g. CheckDirections), and the game has sent its answer with this request:
+        it is added to the conversation as in-game events, and the NPC goes on with it. Looking it up and the line after count as one reply,
+        so in Game Master Mode nobody else speaks in between. The line after can't pick another action that answers back
+
+        Returns:
+            bool: True if the conversation was waiting for an answer
+        """
+        if not self.__awaiting_action_answer:
+            return False
+        self.__awaiting_action_answer = False
+        player = self.__context.npcs_in_conversation.get_player_character()
+        message = UserMessage(self.__context.config, "", player.name if player else "", True)
+        message.is_multi_npc_message = self.__context.npcs_in_conversation.contains_multiple_npcs()
+        message.is_director_message = True # Only the events, without the player's name
+        message = self.update_game_events(message)
+        if message.count_ingame_events() == 0:
+            message.add_event(["Nothing came of it."]) # The game sent no answer in time
+        logging.log(23, f"The game answered the action: {message.get_ingame_events_text().strip()}")
+        asker = self.__action_asker
+        if asker and message.is_multi_npc_message and not isinstance(self.__conversation_type, multi_npc_game_master):
+            # One reply speaks for every NPC here: the one who found it out speaks first
+            message.add_event([f"{asker.name} speaks first, with what came of it."])
+        self.__messages.add_message(message)
+        if isinstance(self.__conversation_type, multi_npc_game_master):
+            if not self.__game_master_turns.answer_arrived(message):
+                # The reply that picked the action was stopped as the conversation changed while the game worked out its answer, e.g.
+                # ReportCrime called a guard over: a new NPC turn goes on with the answer
+                logging.log(23, "The reply that picked the action was stopped. The NPCs go on with the game's answer in a new turn")
+                self.__start_generating_npc_sentences(allow_tools=False)
+        else:
+            self.__start_generating_npc_sentences(allow_tools=False)
+        return True
+
+    def __start_generating_npc_sentences(self, allow_player_first: bool = False, allow_tools: bool = True):
         """Starts a background Thread to generate sentences into the SentenceQueue
 
         Args:
             allow_player_first (bool): Game Master Mode: the Game Master may give the player the turn right away, e.g. who reacts first to an event
+            allow_tools (bool): Advanced Actions: the NPC can pick actions. Not right after the game answered one, so it can't loop
         """
+        if allow_tools:
+            self.__awaiting_action_answer = False # A new reply: an answer still expected for the last one is too late now
         if isinstance(self.__conversation_type, multi_npc_game_master):
             with self.__generation_start_lock:
-                turn_id = self.__game_master_turns.start_turn(allow_player_first)
+                turn_id = self.__game_master_turns.start_turn(allow_player_first, allow_tools)
                 self.__sentences.is_more_to_come = True
                 Thread(None, self.__game_master_turns.run_turn, None, [turn_id, lambda: self.__conversation_type, lambda: self.__output_manager, self.__messages]).start()
             return
@@ -972,7 +1023,11 @@ class Conversation:
                 except Exception as e:
                     logging.debug(f"Could not refresh system prompt before generation: {e}")
                 self.__sentences.is_more_to_come = True
-                self.__generation_thread = Thread(None, self.__output_manager.generate_response, None, [self.__messages, self.__context.npcs_in_conversation, self.__sentences, self.npc_actions()]).start()   
+                # Without Game Master Mode, one reply speaks for every NPC in the conversation
+                tool_request = tool_request_for(self.__conversation_type, self.__context, self.__output_manager.game,
+                                                self.__context.npcs_in_conversation.contains_multiple_npcs()) if allow_tools else None
+                self.__generation_thread = Thread(None, self.__output_manager.generate_response, None, [self.__messages, self.__context.npcs_in_conversation, self.__sentences, self.npc_actions()],
+                                                  {"tool_request": tool_request}).start()   
 
     @utils.time_it
     def __stop_generation(self):
@@ -998,10 +1053,20 @@ class Conversation:
     @utils.time_it
     def __save_summary(self):
         """Saves conversation log and state for each NPC in the conversation"""
-        self.__save_summary_for_characters(
+        npcs = self.__context.npcs_in_conversation
+        pending_shares = npcs.get_pending_shares()
+        npcs.clear_pending_shares()
+        saved_summaries = self.__save_summary_for_characters(
             self.__messages,
-            self.__context.npcs_in_conversation.get_all_characters()
+            npcs.get_all_characters()
         )
+        if pending_shares:
+            # ShareConversation: also with summaries off
+            try:
+                self.__rememberer.share_conversation(self.__messages, npcs, self.__context.world_id, pending_shares, saved_summaries or {},
+                                                     self.__conversation_start_ts, self.__was_directed)
+            except Exception as e:
+                logging.error(f"Could not share the conversation: {e}")
 
     @utils.time_it
     def save_summary_only(self, is_reload: bool = False) -> None:
@@ -1221,7 +1286,7 @@ class Conversation:
         if force or self.__context.config.conversation_summary_enabled:
             # Save the summary
             save_timestamp = int(time.time())
-            self.__rememberer.save_conversation_state(
+            saved_summaries = self.__rememberer.save_conversation_state(
                 messages_to_summarize,
                 characters_object,
                 self.__context.world_id,
@@ -1235,6 +1300,8 @@ class Conversation:
             # Save the log
             if save_log:
                 self.__save_conversation_log_for_characters(characters_to_save_for)
+            return saved_summaries if isinstance(saved_summaries, dict) else {}
+        return {}
 
     @utils.time_it
     def __initiate_reload_conversation(self):

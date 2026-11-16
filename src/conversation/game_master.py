@@ -15,6 +15,7 @@ from src.config.definitions.conversation_definitions import DIRECTOR, GROUP, MAX
 from src.conversation.answer_rules import AnswerOrder, TurnRules, turn_rules
 from src.conversation.conversation_type import multi_npc_game_master, shout
 from src.conversation.npc_event import NpcEvent, wind_down_text
+from src.actions.tool_request import tool_request_for
 from src.llm.ai_client import AIClient
 from src.llm.client_base import ClientBase
 from src.llm.image_client import VisionCapture
@@ -932,6 +933,7 @@ class GameMasterTurns:
         self.__lock: threading.Lock = threading.Lock() # Keeps the turn id check and the update that follows it together
         self.__output_manager = None # The ChatManager the latest reply was generated with. After a settings change, it is not the conversation's ChatManager
         self.__allow_player_first: bool = False # See start_turn
+        self.__first_reply_without_tools: bool = False # See start_turn
         self.__answers_without_shout: TurnAnswers = TurnAnswers() # Who still has to answer while Shout is off (Shout keeps its own)
         self.__event_kind: str = "" # "conversation", "nearby" or "random" while the NPCs react to a Conversation Wheel event
         self.__replies_by_npc: dict[str, int] = {} # By ref id: how often each NPC has replied since the player's last line (Most Replies per Person)
@@ -940,6 +942,10 @@ class GameMasterTurns:
         self.__past_limit: bool = False # The NPCs have reached the reply limit since the player's last line: the extra rounds run
         self.__rounds_done: int = 0 # Extra rounds started since the reply limit
         self.__free_picks_left: int = 0 # Replies in between left in the running round
+        self.__action_answer: Message | None = None # Advanced Actions: the game's answer to an action that answers back (answer_arrived)
+        self.__action_answer_arrived: threading.Event = threading.Event()
+        self.__action_sent: threading.Event = threading.Event() # The action that answers back has reached the game (action_sent)
+        self.__action_turn_id: int | None = None # The turn whose reply sent that action
 
     def on_player_input(self, event_kind: str = ""):
         """The player spoke, or an event happened: the NPCs' replies are counted from here
@@ -1002,6 +1008,56 @@ class GameMasterTurns:
             if npcs:
                 logging.log(26, f"Game Master: everyone gets to speak: {', '.join(npc.name for npc in npcs)}")
 
+    # Seconds the reply waits for the game's answer to an action, once the action has reached the game. The game waits up to 5 seconds for it
+    ACTION_ANSWER_TIMEOUT = 20.0
+    # Seconds the reply waits for its action to reach the game: the lines before it, and the replies before this one, are played first.
+    # Only a safeguard: a turn thrown away (the player spoke, the conversation ended) stops the wait right away
+    ACTION_SEND_TIMEOUT = 600.0
+
+    def action_sent(self):
+        """The action that answers back has reached the game: its answer is waited for from now on"""
+        with self.__lock:
+            self.__action_turn_id = self.__turn_id
+            self.__action_sent.set()
+
+    def answer_arrived(self, message: Message) -> bool:
+        """The game's answer to an action that answers back (Advanced Actions): the reply that picked it goes on with it
+
+        Returns:
+            bool: False if no NPC turn is running to go on with it: the turn was thrown away as the conversation changed while the game
+                worked out its answer (ReportCrime calling a guard over), or the conversation only now uses Game Master Mode. The caller
+                starts a new one
+        """
+        with self.__lock:
+            self.__action_answer = message
+            self.__action_answer_arrived.set()
+            waiting = self.__playing is not None and self.__action_turn_id == self.__turn_id
+            self.__action_turn_id = None
+            return waiting
+
+    def __wait_for_answer(self, turn_id: int) -> Message | None:
+        """Waits for the game's answer to the action the reply picked. None if the turn was thrown away or the answer didn't come"""
+        # The action only reaches the game once everything said before it has been played, which can take a while
+        give_up_at = time.time() + self.ACTION_SEND_TIMEOUT
+        while not self.__action_sent.wait(0.05):
+            if turn_id != self.__turn_id:
+                return None
+            if time.time() >= give_up_at:
+                logging.warning("The action never reached the game. The reply ends without its answer.")
+                return None
+        deadline = time.time() + self.ACTION_ANSWER_TIMEOUT
+        while not self.__action_answer_arrived.wait(0.05):
+            if turn_id != self.__turn_id:
+                return None
+            if time.time() >= deadline:
+                logging.warning("The game did not answer the action in time. The reply ends without it.")
+                return None
+        with self.__lock:
+            answer = self.__action_answer
+            self.__action_answer = None
+            self.__action_answer_arrived.clear()
+            return answer if turn_id == self.__turn_id else None
+
     def cancel(self):
         """Throws away the running NPC turn and its replies, so the player gets the next turn.
         Call before stopping generation, so the turn sees it was discarded as soon as its reply stops."""
@@ -1053,13 +1109,16 @@ class GameMasterTurns:
         self.__replies = []
         self.__playing = None
 
-    def start_turn(self, allow_player_first: bool = False) -> int:
+    def start_turn(self, allow_player_first: bool = False, allow_tools: bool = True) -> int:
         """Call before starting the thread for run_turn. Returns the id to pass to run_turn
 
         Args:
             allow_player_first (bool): the Game Master may give the player the turn right away, e.g. who reacts first to an event
+            allow_tools (bool): Advanced Actions: False when the turn's first reply goes on with the game's answer to an action, so it
+                can't pick another one (see Conversation.resume_after_action)
         """
         with self.__lock:
+            self.__first_reply_without_tools = not allow_tools
             first_reply = ReplyQueue(self.__sentences, True)
             self.__replies = [first_reply]
             self.__playing = first_reply
@@ -1442,8 +1501,38 @@ class GameMasterTurns:
             if turn_id != self.__turn_id:
                 return None, None
             self.__output_manager = output_manager
-        output_manager.generate_response(npc_request, characters, reply, conversation_type.npc_actions(self.__context), single_speaker=speaker)
-        add_reply_to_history(history, reply.sentences, config, characters.contains_multiple_npcs())
+        with self.__lock:
+            without_tools = self.__first_reply_without_tools
+            self.__first_reply_without_tools = False
+        tool_request = None if without_tools else tool_request_for(conversation_type, self.__context, getattr(output_manager, "game", None))
+        with self.__lock:
+            self.__action_answer = None
+            self.__action_answer_arrived.clear()
+            self.__action_sent.clear()
+        awaits_answer = output_manager.generate_response(npc_request, characters, reply, conversation_type.npc_actions(self.__context), single_speaker=speaker,
+                                                         tool_request=tool_request) if tool_request else \
+            output_manager.generate_response(npc_request, characters, reply, conversation_type.npc_actions(self.__context), single_speaker=speaker)
+        if awaits_answer:
+            # An action that answers back (e.g. CheckDirections): the NPC goes on once the game's answer has arrived. Looking it up and the line
+            # after count as one reply, so the next speaker is only picked after it
+            said_before = list(reply.sentences)
+            answer = self.__wait_for_answer(turn_id)
+            if turn_id != self.__turn_id:
+                return None, None
+            add_reply_to_history(history, said_before, config, characters.contains_multiple_npcs())
+            if answer is None:
+                reply.end(speaker)
+            else:
+                history.append(deepcopy(answer))
+                said = []
+                add_reply_to_history(said, said_before, config, characters.contains_multiple_npcs())
+                for message in said + [answer]:
+                    npc_request.add_message(message)
+                # No tools: the line after can't pick another action that answers back
+                output_manager.generate_response(npc_request, characters, reply, conversation_type.npc_actions(self.__context), single_speaker=speaker)
+            add_reply_to_history(history, reply.sentences[len(said_before):], config, characters.contains_multiple_npcs())
+        else:
+            add_reply_to_history(history, reply.sentences, config, characters.contains_multiple_npcs())
         with self.__lock:
             if turn_id != self.__turn_id:
                 return None, None

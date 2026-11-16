@@ -88,6 +88,9 @@ class communication_constants:
     KEY_REQUESTTYPE_TTS: str = PREFIX + "tts"
     KEY_INPUT_NAMESINCONVERSATION: str = PREFIX + "names_in_conversation"
     KEY_TRANSCRIBE: str = PREFIX + "transcribe"
+    # Microphone: the game sent no details (events, who is nearby, quests), so the mic starts listening without waiting for them.
+    # Once the player has spoken, the reply is KEY_REQUESTTYPE_TTS, and the game sends what was said again with the details
+    KEY_PLAYERINPUT_DETAILSFOLLOW: str = PREFIX + "player_input_details_follow"
 
     #Actors
     KEY_ACTORS: str = PREFIX + "actors"

@@ -901,6 +901,24 @@ def test_the_event_request_forgets_a_pick_no_wait_used():
     assert conversation.process_player_input("") == ("Hello.", True, None) # The next player turn waits for speech again
 
 
+def test_without_the_game_details_what_was_said_goes_back_to_the_game():
+    conversation = mic_conversation()
+    conversation._Conversation__stt.get_latest_transcription.return_value = "Hello."
+    conversation._Conversation__events_refresh_time = 9999 # Said quickly: only the missing details send it back
+    assert conversation.process_player_input("", details_follow=True) == ("Hello.", True, None)
+    conversation._Conversation__stt.stop_listening.assert_called_once() # So the NPC gets to answer
+
+
+def test_the_game_details_are_left_alone_when_they_follow():
+    manager = conversation_event_manager([], None, {})
+    talk = manager._GameStateManager__talk
+    talk.process_player_input.return_value = ("Hello.", True, None)
+    reply = manager.player_input({comm_consts.KEY_REQUESTTYPE_PLAYERINPUT: "", comm_consts.KEY_PLAYERINPUT_DETAILSFOLLOW: True})
+    assert reply == {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REQUESTTYPE_TTS, comm_consts.KEY_TRANSCRIBE: "Hello."}
+    talk.process_player_input.assert_called_once_with("", True)
+    manager._GameStateManager__update_context.assert_not_called() # The details come with the next request
+
+
 def conversation_event_manager(members: list, player, loaded: dict[int, SimpleNamespace]):
     """A GameStateManager with a running conversation, and only what conversation_event uses"""
     from src.game_manager import GameStateManager

@@ -55,6 +55,15 @@ class Skyrim(Gameable):
             logging.error(f'Unable to read / open "data/Skyrim/skyrim_weather.csv". If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters, or saving the CSV in an incompatible format.')
             input("Press Enter to exit.")
 
+        try:
+            # The animations the Emote action (Advanced Actions) can play: the ones marked with x in the enabled column
+            idles_file = 'data/Skyrim/skyrim_idles.csv'
+            encoding = utils.get_file_encoding(idles_file)
+            self.__idles_table: pd.DataFrame = pd.read_csv(idles_file, engine='python', encoding=encoding)
+        except Exception:
+            logging.warning(f'Unable to read / open "data/Skyrim/skyrim_idles.csv". The Emote action will not be available.')
+            self.__idles_table = pd.DataFrame()
+
     @property
     def extender_name(self) -> str:
         return 'SKSE'
@@ -336,6 +345,33 @@ class Skyrim(Gameable):
             return False
         return True
     
+    def __playable_idles(self) -> pd.DataFrame:
+        """The rows of data/Skyrim/skyrim_idles.csv Emote can play: marked with x in the enabled column, with a form ID of Skyrim.esm. An ID
+        starting with xx belongs to another plugin, which the game script can't load"""
+        if self.__idles_table.empty:
+            return self.__idles_table
+        table = self.__idles_table
+        enabled = table['enabled'].astype(str).str.lower().str.strip() == 'x'
+        readable = table['id'].astype(str).str.strip().str.fullmatch(r'[0-9a-fA-F]{1,8}')
+        return table.loc[enabled & readable]
+
+    def get_enabled_idle_names(self) -> list[str]:
+        """The animations Emote can play: the idle names with at least one playable row (see __playable_idles)"""
+        playable = self.__playable_idles()
+        return [] if playable.empty else playable['idle_name'].unique().tolist()
+
+    def resolve_idle_id(self, idle_name: str) -> int | None:
+        """The form ID of an idle name's animation, a random one of its playable rows if there are several. None if there is none"""
+        playable = self.__playable_idles()
+        if playable.empty:
+            return None
+        matched = playable.loc[playable['idle_name'].astype(str).str.lower() == idle_name.lower()]
+        if matched.shape[0] < 1:
+            return None
+        idle_id = int(str(matched.sample(n=1).iloc[0]['id']).strip(), 16)
+        logging.log(23, f"Resolved idle name '{idle_name}' to ID {idle_id}")
+        return idle_id
+
     @utils.time_it
     def get_weather_description(self, weather_attributes: dict[str, Any]) -> str:
         if weather_attributes.__contains__(self.KEY_CONTEXT_WEATHER_ID):

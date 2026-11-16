@@ -8,6 +8,7 @@ from src.conversation.action import Action
 from src import utils
 if TYPE_CHECKING: # Only for type hints: the config loads the actions, and these import the config
     from openai.types.chat import ChatCompletionMessageToolCall
+    from src.character_manager import Character
     from src.characters_manager import Characters
     from src.games.gameable import Gameable
 
@@ -20,13 +21,16 @@ class FunctionManager:
     _disabled_action_names: list[str] = []  # Track disabled actions for logger
 
     @staticmethod
-    def parse_function_calls(tools_called: list[ChatCompletionMessageToolCall], characters: Characters = None, game: Gameable | None = None) -> list[dict]:
+    def parse_function_calls(tools_called: list[ChatCompletionMessageToolCall], characters: Characters = None, game: Gameable | None = None,
+                             filter_repeats: bool = True, record_shares: bool = True) -> list[dict]:
         """Parse function calls from the LLM response and validate arguments
         
         Args:
             tools_called: The result from the LLM
             characters: Characters manager for NPC name validation (optional)
             game: Game instance for resolving game-specific parameters like idle IDs (optional)
+            filter_repeats: drop a call that repeats one of the last calls read (our conversations never do: see read_tool_calls)
+            record_shares: ShareConversation is remembered right away. Ours only once its action reaches the game (record_shares)
             
         Returns:
             List of parsed function call information with validated parameters
@@ -136,12 +140,12 @@ class FunctionManager:
                             parsed_tool['arguments'] = validated_args
                         
                         # Check for duplicate tool call from previous turn
-                        if FunctionManager._is_duplicate_call(parsed_tool, action_def):
+                        if filter_repeats and FunctionManager._is_duplicate_call(parsed_tool, action_def):
                             logger.log(23, f"Filtered duplicate tool call: {identifier} with args {parsed_tool.get('arguments', {})}")
                             continue
                         
                         # Handle action-specific side effects
-                        FunctionManager._handle_action_side_effects(parsed_tool, identifier, characters)
+                        FunctionManager._handle_action_side_effects(parsed_tool, identifier, characters, record_shares)
                         
                         parsed_tools.append(parsed_tool)
                 except Exception as e:
@@ -251,6 +255,20 @@ class FunctionManager:
 
 
     @staticmethod
+    def get_all_actions() -> list[Action]:
+        """Every loaded action as an Action: the basic ones (see get_legacy_actions) and the ones only Advanced Actions can use, whose
+        prompt text is empty"""
+        result = []
+        for action_data in FunctionManager._actions.values():
+            result.append(Action(action_data['identifier'], action_data.get('name', ''), action_data.get('key', ''), action_data.get('description', ''),
+                                 action_data.get('prompt') or '', bool(action_data.get('requires_response', False)),
+                                 bool(action_data.get('is-interrupting', action_data.get('is_interrupting', False))),
+                                 bool(action_data.get('one-on-one', action_data.get('one_on_one', False))),
+                                 bool(action_data.get('multi-npc', action_data.get('multi_npc', False))), bool(action_data.get('radiant', False))))
+        return result
+
+
+    @staticmethod
     def _load_action_file(file_path: Path, disabled_set: set[str] | None = None) -> None:
         """Load a single action file
 
@@ -346,6 +364,183 @@ class FunctionManager:
 
 
     @staticmethod
+    def generate_tools(actions: list[Action], characters: Characters, game: Gameable | None, base_game_name: str, include_player: bool,
+                       free_places: int | None = None, several_speakers: bool = False) -> list[dict]:
+        """The tools for the actions an NPC can use in this conversation (see action_rules.tool_actions_for)
+
+        Each NPC acts only for themselves: an action's source, who does it, is left out of its tool, and the speaker is put in when the call is
+        read (parse_tool_calls). AddToConversation keeps it, as it names who gets called over. When one reply speaks for several NPCs
+        (several_speakers), every tool names who does it instead, one of the NPCs in the conversation, never the player
+
+        Args:
+            actions (list[Action]): the actions the NPC can use
+            characters (Characters): the conversation, and who is nearby, for the names the tools list
+            base_game_name (str): for the actions that only work in some games
+            include_player (bool): False while the NPCs don't know the player is there: no tool can name the player
+            free_places (int | None): how many more people can join (Most People in Conversation). AddToConversation is left out at 0
+            several_speakers (bool): one reply speaks for several NPCs (a group conversation without Game Master Mode, a radiant conversation)
+        """
+        tools = []
+        for action in actions:
+            action_def = FunctionManager._actions.get(action.identifier)
+            if not action_def:
+                continue
+            if action_def.get('allowed_games'):
+                cleaned_allowed_games = [g.lower().replace(" ", "") for g in action_def['allowed_games']]
+                if base_game_name.lower().replace(" ", "") not in cleaned_allowed_games:
+                    continue
+            is_add = action.identifier == FunctionManager.ADD_TO_CONVERSATION
+            if is_add and free_places is not None and free_places <= 0:
+                continue
+            properties: dict = deepcopy(action_def.get('parameters', {}))
+            required: list[str] = list(action_def.get('required', []))
+            if not is_add and several_speakers:
+                # Who does it, one of the NPCs: also for the actions that are otherwise always done by the speaker
+                properties['source'] = {**properties.get('source', {'type': 'string'}), 'scope': 'conversation',
+                                        'description': FunctionManager.DOER_DESCRIPTION}
+                required = [r for r in required if r != 'source'] + ['source']
+            elif not is_add and 'source' in properties:
+                del properties['source']
+                required = [r for r in required if r != 'source']
+            for param_def in properties.values():
+                scope = param_def.get('scope')
+                if scope and not include_player and scope.endswith('_w_player'):
+                    param_def['scope'] = scope[:-len('_w_player')]
+            if is_add and free_places is not None:
+                properties['source']['description'] = (properties['source'].get('description', '') + f" At most {free_places} can join.").strip()
+            parameters: dict = {'type': 'object', 'properties': properties}
+            if required:
+                parameters['required'] = required
+            if not FunctionManager._populate_dynamic_enums(parameters, game, action.identifier):
+                continue
+            if not FunctionManager._add_names_to_parameters(parameters, characters):
+                continue
+            for param_def in properties.values():
+                param_def.pop('scope', None) # Only for Mantella: the names are in the description
+            tools.append({'type': 'function', 'function': {'name': action_def['name'], 'description': action_def.get('description', ''), 'parameters': parameters}})
+        return tools
+
+
+    ADD_TO_CONVERSATION = "mantella_npc_addtoconversation"
+    DOER_DESCRIPTION = "Who does it: the NPC in the conversation whose line goes with it."
+
+
+    @staticmethod
+    def parse_tool_calls(tool_calls: list[dict], speaker: Character, characters: Characters, game: Gameable | None, actions: list[Action],
+                         include_player: bool, free_places: int | None = None, several_speakers: bool = False) -> list[dict]:
+        """The actions of read_tool_calls, without who does each"""
+        return [action for _, action in FunctionManager.read_tool_calls(tool_calls, speaker, characters, game, actions, include_player, free_places,
+                                                                        several_speakers)]
+
+
+    @staticmethod
+    def read_tool_calls(tool_calls: list[dict], speaker: Character, characters: Characters, game: Gameable | None, actions: list[Action],
+                        include_player: bool, free_places: int | None = None, several_speakers: bool = False) -> list[tuple[Character, dict]]:
+        """Reads the AI model's tool calls for the speaker's reply into the actions sent to the game, each with the NPC who does it
+
+        Each NPC acts only for themselves: whoever the model names as the source, the speaker does it (AddToConversation names who to call
+        over instead). When one reply speaks for several NPCs (several_speakers), the model names who does it, one of the NPCs in the
+        conversation, and the speaker does it only if it names none of them. Only the actions the NPC can use here are kept (actions), never
+        one that names the player while the NPCs don't know the player is there, and AddToConversation calls over at most free_places people.
+        Repeated actions are kept here (see ChatManager.__send_picked_actions for the NPC's previous reply)
+
+        Args:
+            tool_calls (list[dict]): {"id", "type", "function": {"name", "arguments"}}, the arguments as JSON text
+        """
+        allowed = {a.identifier: a for a in actions}
+        npcs = {c.name: c for c in characters.get_all_characters() if not c.is_player_character}
+        npc_names = {name.lower(): name for name in npcs} # The model may write "hulda"
+        player_names = {"player"} | ({characters.get_player_name().lower()} if characters.get_player_name() else set())
+        result = []
+        for tool_call in tool_calls:
+            try:
+                name = tool_call['function']['name']
+                identifier = next((i for i, a in FunctionManager._actions.items() if a.get('name') == name), None)
+                if not identifier or identifier not in allowed:
+                    logger.log(23, f"{speaker.name} picked {name}, which NPCs can't use in this conversation. Nothing happens")
+                    continue
+                raw_arguments = tool_call['function'].get('arguments') or '{}'
+                try:
+                    arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else dict(raw_arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                source = FunctionManager._actions[identifier].get('parameters', {}).get('source')
+                doers = [speaker.name]
+                if identifier != FunctionManager.ADD_TO_CONVERSATION:
+                    named = arguments.pop('source', None)
+                    if several_speakers:
+                        named_npcs = [npc_names[n.strip().lower()] for n in (named if isinstance(named, list) else [named])
+                                      if isinstance(n, str) and n.strip().lower() in npc_names]
+                        doers = list(dict.fromkeys(named_npcs)) or doers
+                    if source:
+                        arguments['source'] = doers if source.get('type') == 'array' else doers[0]
+                call = {'id': tool_call.get('id', ''), 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(arguments)}}
+                parsed = FunctionManager.parse_function_calls([call], characters, game, filter_repeats=False, record_shares=False)
+            except Exception as e:
+                logger.error(f"Could not read the action {tool_call}: {e}")
+                continue
+            for action in parsed:
+                arguments = action.get('arguments', {})
+                if not include_player:
+                    named = [str(n).lower() for value in arguments.values() for n in (value if isinstance(value, list) else [value]) if isinstance(n, str)]
+                    if any(n in player_names for n in named):
+                        logger.log(23, f"{speaker.name}'s {action['identifier']} names the player, who isn't part of this conversation. Nothing happens")
+                        continue
+                if action['identifier'] == FunctionManager.ADD_TO_CONVERSATION and free_places is not None and isinstance(arguments.get('source'), list):
+                    if free_places <= 0:
+                        continue
+                    arguments['source'] = arguments['source'][:free_places]
+                result.append((npcs.get(doers[0], speaker), action))
+        return result
+
+
+    @staticmethod
+    def record_shares(actions: list[dict], characters: Characters) -> None:
+        """ShareConversation: once its action has reached the game, the recipient learns about this conversation when it ends"""
+        for action in actions:
+            if not isinstance(action, dict) or action.get('identifier') != 'mantella_npc_shareconversation':
+                continue
+            arguments = action.get('arguments', {})
+            if arguments.get('recipient_succeeded') and arguments.get('recipient_id'):
+                sharer = arguments.get('source', '')
+                sharer = sharer[0] if isinstance(sharer, list) and sharer else sharer
+                characters.add_pending_share(str(sharer), arguments.get('recipient', ''), arguments.get('recipient_id', ''))
+
+
+    @staticmethod
+    def _add_names_to_parameters(parameters: dict, characters: Characters) -> bool:
+        """_add_npc_context_to_parameters for our conversations: the names each scoped parameter can take go in its description, from the
+        conversation and the people nearby the game sent. False if no scoped parameter has anyone to name, so the tool is left out"""
+        scoped_params = 0
+        scoped_with_names = 0
+        has_unscoped_params = False
+        for param_def in parameters.get('properties', {}).values():
+            scope = param_def.get('scope')
+            if not scope:
+                has_unscoped_params = True
+                continue
+            scoped_params += 1
+            include_player = scope.endswith('_w_player')
+            if scope.startswith('conversation'):
+                names = characters.get_all_names_w_nearby(include_player=include_player)
+            elif scope.startswith('nearby'):
+                names = characters.get_all_names_w_nearby(include_player=include_player, nearby_only=True)
+            elif scope.startswith('all_npcs'):
+                names = characters.get_all_names_w_nearby(include_player=include_player, include_nearby=True)
+            else:
+                names = []
+            description = param_def.get('description', '')
+            if names:
+                param_def['description'] = f"{description} Available: {', '.join(names)}".strip()
+                scoped_with_names += 1
+            else:
+                param_def['description'] = f"{description} No entities available.".strip()
+        return scoped_params == 0 or scoped_with_names > 0 or has_unscoped_params
+
+
+    @staticmethod
     def any_action_requires_response(actions: list[dict]) -> bool:
         """Return True if any action in the list requires a response from the game
         
@@ -411,7 +606,7 @@ class FunctionManager:
         return action.get('pause_seconds', default_seconds)
 
     @staticmethod
-    def _handle_action_side_effects(parsed_tool: dict, identifier: str, characters: Characters | None) -> None:
+    def _handle_action_side_effects(parsed_tool: dict, identifier: str, characters: Characters | None, record_shares: bool = True) -> None:
         """Handle action-specific side effects after parsing
         
         Args:
@@ -426,7 +621,7 @@ class FunctionManager:
                 sharer_name = args.get('source', '')
                 recipient_name = args.get('recipient', '')
                 recipient_id = args.get('recipient_id', '')
-                was_added = characters.add_pending_share(sharer_name, recipient_name, recipient_id)
+                was_added = characters.add_pending_share(sharer_name, recipient_name, recipient_id) if record_shares                     else not characters.is_share_pending(recipient_id)
                 if was_added:
                     args['debug_message'] = f"{sharer_name} will share this conversation with {recipient_name}."
                 else:

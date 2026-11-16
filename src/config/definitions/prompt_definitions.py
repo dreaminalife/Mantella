@@ -1214,7 +1214,17 @@ Always use the most recent memory to determine the current relationship
         vision_prompt = """This image is to give context and is from the player's point of view in the game of {game}. 
                             Describe the details visible inside it without mentioning the game. Refer to it as a scene instead of an image."""
         return ConfigValueString("vision_prompt","Vision Prompt",vision_prompt_description,vision_prompt)
-    
+
+    @staticmethod
+    def get_advanced_actions_prompt_config_value() -> ConfigValue:
+        description = """The instructions for the Advanced Actions model, which picks the NPC's actions while the NPC's own model speaks
+                        (Separate Model for Advanced Actions on, on the LLM tab). It gets the conversation so far and the actions the NPC can use.
+                        Supports {game} = the selected game and {name} = the NPC who acts."""
+        prompt = """You are analyzing a conversation in {game} to decide whether {name} does something in the game right now.
+Based on the recent dialogue, call the functions for what {name} does. Only call one when {name} clearly decides to act.
+If {name} does nothing, do not call any functions."""
+        return ConfigValueString("advanced_actions_prompt","Advanced Actions Prompt",description,prompt,[PromptDefinitions.PromptChecker(["game", "name"])])
+
     @staticmethod
     def get_decensor_handshake_prompt_config_value() -> ConfigValue:
         description = """User message placed immediately after the system prompt when Enable Decensor Bypass is on and Decensor Assistant Placement is After system prompt.
@@ -1299,6 +1309,7 @@ Always use the most recent memory to determine the current relationship
             ("skyrim_shout_group_answer_note", "Skyrim Shout Group Answer Note", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_SHOUT_GROUP_ANSWER),
             ("resummarize_prompt", "Resummarize Prompt", ["name", "language", "game", "player_name", "lorebook"]),
             ("vision_prompt", "Vision Prompt", ["game"]),
+            ("advanced_actions_prompt", "Advanced Actions Prompt", ["game", "name"]),
             ("radiant_start_prompt", "Radiant Start Prompt", []),
             ("radiant_end_prompt", "Radiant End Prompt", []),
             ("decensor_handshake_prompt", "Decensor Handshake Prompt", []),
@@ -1423,6 +1434,10 @@ Always use the most recent memory to determine the current relationship
             "Asks a separate image AI to describe a screenshot of your game, so the NPCs know what is around them.",
             "With each of your lines, when a screenshot of your game is taken.",
             "Vision on and Custom Vision Model on."),
+        "advanced_actions_prompt": (
+            "Asks a separate AI model which actions the NPC does in the game (follow you, cast a spell, lead you somewhere...), while the NPC's own model writes what they say.",
+            "Before each NPC reply that can use actions.",
+            "Advanced Actions on (Conversation page → Actions) and Separate Model for Advanced Actions on (LLM tab)."),
         "decensor_handshake_prompt": (
             "A short message asking the AI to confirm it is ready to roleplay. It comes right before the Decensor Assistant Prompt so that one can be sent.",
             "With every NPC reply in any conversation.",

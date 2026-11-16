@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import time
+from types import SimpleNamespace
 from typing import Dict, List, Tuple
 from src.config.config_loader import ConfigLoader
 from src.config.definitions.prompt_definitions import PromptDefinitions
@@ -618,6 +619,33 @@ class Summaries(Remembering):
                 logging.error(f"Failed to save personal reflections: {e}", exc_info=True)
 
         return saved_summaries
+
+    @utils.time_it
+    def share_conversation(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, pending_shares: list[tuple[str, str, str]],
+                           saved_summaries: dict[str, str], conversation_start_ts: int | None = None, was_directed: bool = False):
+        """ShareConversation: see Remembering.share_conversation. As for summaries, a conversation under 5 lines shares nothing"""
+        if not pending_shares:
+            return
+        # Who was there from the start has no join message yet in a one-on-one conversation. Without it, nobody would have heard anything
+        self.may_add_missing_join_leave_messages(messages, npcs_in_conversation)
+        characters = self.get_character_lookup_dict(messages, npcs_in_conversation)
+        threads: Dict[str, CharacterSummaryParameters] | None = None
+        player_name = npcs_in_conversation.get_player_name()
+        for sharer_name, recipient_name, recipient_ref_id in pending_shares:
+            summary = saved_summaries.get(sharer_name, "")
+            if not summary and sharer_name not in saved_summaries:
+                # Summaries are off: the sharer's summary is written for the share only, the sharer keeps none
+                if threads is None:
+                    threads = self.get_threads_for_summarization(messages, characters)
+                if sharer_name in threads:
+                    summary = self.__create_new_conversation_summary(threads[sharer_name], world_id, conversation_start_ts, was_directed)
+            if not summary:
+                logging.info(f"{sharer_name} has nothing to share with {recipient_name}: the conversation was too short")
+                continue
+            others = [name for name in characters if name != sharer_name] + ([f"{player_name} (the player)"] if player_name else [])
+            shared = f"{sharer_name} told {recipient_name} about a conversation with {', '.join(others) or 'others'}: {summary.strip().lstrip('-').strip()}"
+            self.__append_new_conversation_summary(shared, SimpleNamespace(name=recipient_name, ref_id=recipient_ref_id), world_id)
+            logging.log(23, f"{sharer_name} shared the conversation with {recipient_name}")
 
     @utils.time_it
     def save_thoughts_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None, conversation_start_ts: int | None = None):

@@ -341,7 +341,8 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.goodbye_npc_response = self.__definitions.get_string_value("goodbye_npc_response")
             self.collecting_thoughts_npc_response = self.__definitions.get_string_value("collecting_thoughts_npc_response")
             for a in self.__actions:
-                a.keyword = self.__definitions.get_string_value(LanguageDefinitions.action_keyword_key(a))
+                if a.is_basic:
+                    a.keyword = self.__definitions.get_string_value(LanguageDefinitions.action_keyword_key(a))
 
             #TTS
             self.tts_service: TTSEnum = self.__definitions.get_enum_value("tts_service", TTSEnum)
@@ -493,6 +494,13 @@ Game Master LLM parameter list must follow the Python dictionary format: https:/
             (_, self.apply_profile_fallback, self.fallback_llm_api,
              self.fallback_llm, self.fallback_custom_token_count, self.fallback_llm_params) = \
                 self.__read_memory_task_llm_settings("fallback", "Fallback", has_summary_option=False)
+
+            # Advanced Actions: the AI model picks actions with their details (tool calling). By default each NPC's own model picks them
+            self.advanced_actions_enabled = self.__definitions.get_bool_value("advanced_actions_enabled")
+            self.advanced_actions_own_model = self.__definitions.get_bool_value("advanced_actions_own_model")
+            (_, self.apply_profile_advanced_actions, self.advanced_actions_llm_api,
+             self.advanced_actions_llm, self.advanced_actions_custom_token_count, self.advanced_actions_llm_params) = \
+                self.__read_memory_task_llm_settings("advanced_actions", "Advanced Actions", has_summary_option=False)
 
             # Multi-NPC prompt content toggles
             self.multi_npc_bios_only = self.__definitions.get_bool_value("multi_npc_bios_only")
@@ -689,6 +697,7 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
         self.inner_monologue_prompt = self.__overlay_prompt("inner_monologue_prompt", self.__definitions.get_string_value("inner_monologue_prompt"))
         self.personal_reflection_prompt = self.__overlay_prompt("personal_reflection_prompt", self.__definitions.get_string_value("personal_reflection_prompt"))
         self.vision_prompt = self.__overlay_prompt("vision_prompt", self.__definitions.get_string_value("vision_prompt"))
+        self.advanced_actions_prompt = self.__overlay_prompt("advanced_actions_prompt", self.__definitions.get_string_value("advanced_actions_prompt"))
         self.decensor_handshake_prompt = self.__overlay_prompt(
             "decensor_handshake_prompt",
             self.__definitions.get_string_value("decensor_handshake_prompt"),
@@ -700,10 +709,11 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
     
     @staticmethod
     def load_actions_from_json(actions_folder: str) -> list[Action]:
-        """The actions an NPC can start its line with (the ones with a prompt), from the action files in the folder"""
+        """The actions in the action files of the folder: the basic ones, which an NPC can start its line with (they have a prompt), and
+        the advanced ones, which only Advanced Actions can use"""
         os.makedirs(actions_folder, exist_ok=True)
         FunctionManager.load_all_actions(actions_dir=actions_folder)
-        return FunctionManager.get_legacy_actions()
+        return FunctionManager.get_all_actions()
     
     def get_narration_indicators(self) -> tuple[str, str]:
         if self.narration_indicators == NarrationIndicatorsEnum.BRACKETS:

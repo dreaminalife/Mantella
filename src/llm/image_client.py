@@ -118,6 +118,10 @@ class ImageClient(ClientBase):
                     logging.log(23, f"Image transcription: {image_transcription}")
                     if capture:
                         capture.transcription = image_transcription
+                else:
+                    logging.warning(f"The vision model {self.model_name} sent back no description of the screenshot, so the NPC answers without "
+                                    f"seeing it. The model may not be able to read images, or it ran out of room before writing one: try a "
+                                    f"higher max_tokens in Custom Vision Model Parameters, or another Custom Vision Model")
             if image_transcription:
                 # Add the image to the last user message or create a new message if needed
                 if openai_messages and openai_messages[-1]['role'] == 'user':

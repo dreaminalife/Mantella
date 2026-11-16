@@ -36,7 +36,11 @@ from src.random_llm_selector import RandomLLMSelector
 from src.random_llm_selector import LLMSelection
 from src.sequential_llm_selector import SequentialLLMSelector
 from src.model_profile_manager import ModelProfileManager
-from src.llm.client_base import ClientBase, FirstTokenTimeout, ProviderError
+from src.llm.client_base import ClientBase, FirstTokenTimeout, ProviderError, ToolCalls
+from src.llm.messages import AssistantMessage, Message, UserMessage
+from src.actions.function_manager import FunctionManager
+from src.actions.tool_request import ToolRequest
+from src.actions.action_rules import LOOK
 from src.llm.key_file_resolver import key_file_resolver
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.config.definitions.tts_definitions import TTSEnum
@@ -45,6 +49,66 @@ from src.tts.ttsable import TTSable
 from src.tts.piper import Piper
 from src.tts.xtts import XTTS
 from src.tts.xvasynth import xVASynth
+
+def describe_action(action: dict) -> str:
+    """An action the AI model picked, in the log and in the note for the NPC's line: its name and details, e.g. MoveTo (target: Hulda)"""
+    action_def = FunctionManager._actions.get(action.get('identifier', ''), {})
+    name = action_def.get('name', action.get('identifier', ''))
+    details = [f"{key}: {', '.join(map(str, value)) if isinstance(value, list) else value}" for key, value in action.get('arguments', {}).items()
+               if key != 'source' and not key.endswith(('_id', '_succeeded')) and key != 'debug_message']
+    return f"{name} ({'; '.join(details)})" if details else name
+
+
+def join_names(names: list[str], word: str = "and") -> str:
+    """Hulda, Mikael and Ysolda"""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {word} {names[-1]}"
+
+
+def action_note(config: ConfigLoader, picks: list[tuple[Character, dict]]) -> UserMessage:
+    """Sent with the request for the line when the model picked actions without writing one, or a separate model picked them: what each NPC
+    does, so the line fits. Never added to the conversation"""
+    done_by: dict[str, list[str]] = {}
+    for doer, action in picks:
+        done_by.setdefault(doer.name, []).append(describe_action(action))
+    done = " ".join(f"{name} does this now: {', '.join(actions)}." for name, actions in done_by.items())
+    names = list(done_by)
+    note = UserMessage(config, f"{done} Write what {join_names(names)} {'says' if len(names) == 1 else 'say'}.", "", True)
+    note.is_director_message = True # Shown as narration, without the player's name
+    return note
+
+
+def look_messages(config: ConfigLoader, looker: Character, said: list[Sentence], is_multi_npc: bool) -> list[Message]:
+    """Look: sent with the request asked again with the screenshot when the reply had already said something, so it goes on from there
+    instead of saying it again. Never added to the conversation"""
+    said = [s for s in said if s.text.strip() and s.content.sentence_type != SentenceTypeEnum.THOUGHT]
+    if not said:
+        return []
+    reply_so_far = AssistantMessage(config)
+    reply_so_far.is_multi_npc_message = is_multi_npc
+    for sentence in said:
+        reply_so_far.add_sentence(sentence)
+    note = UserMessage(config, f"{looker.name} looks around. Go on from where the reply stopped, without saying again what was already said.", "", True)
+    note.is_director_message = True
+    return [reply_so_far, note]
+
+
+class _RecordingQueue:
+    """Passes the sentences on to the queue, and keeps the ones of this reply (Look: what the reply has already said)"""
+    def __init__(self, queue: Any):
+        object.__setattr__(self, "_queue", queue)
+        object.__setattr__(self, "sentences", [])
+
+    def put(self, sentence: Sentence):
+        if sentence is not None:
+            self.sentences.append(sentence)
+        self._queue.put(sentence)
+
+    def __getattr__(self, name: str):
+        return getattr(self._queue, name)
+
+    def __setattr__(self, name: str, value: Any):
+        setattr(self._queue, name, value)
+
 
 class ChatManager:
     def __init__(self, config: ConfigLoader, tts: TTSable, client: AIClient, multi_npc_client: AIClient | None = None, api_file: str = "secret_keys.json", game: Gameable | None = None):
@@ -331,6 +395,10 @@ class ChatManager:
     @property
     def tts(self) -> TTSable:
         return self.__tts
+
+    @property
+    def game(self) -> Gameable | None:
+        return self.__game
     
     @utils.time_it
     def hot_swap_settings(self, config: ConfigLoader, tts: TTSable, client: AIClient) -> bool:
@@ -543,21 +611,28 @@ class ChatManager:
                 break
         return pending_sentence, parsed_sentence, False
 
-    def generate_response(self, messages: message_thread, characters: Characters, blocking_queue: SentenceQueue, actions: list[Action], single_speaker: Character | None = None):
+    def generate_response(self, messages: message_thread, characters: Characters, blocking_queue: SentenceQueue, actions: list[Action], single_speaker: Character | None = None,
+                          tool_request: ToolRequest | None = None) -> bool:
         """Starts generating responses by the LLM for the current state of the input messages
 
         Args:
             messages (message_thread): _description_
             characters (Characters): _description_
             blocking_queue (SentenceQueue): _description_
-            actions (list[Action]): _description_
+            actions (list[Action]): the basic actions the NPC can start a line with
             single_speaker (Character | None): If set, only this character speaks. Generation stops when the LLM switches to another character.
+            tool_request (ToolRequest | None): Advanced Actions: the actions the AI model can pick with their details
+
+        Returns:
+            bool: True if the NPC picked an action that answers back (e.g. CheckDirections): the reply has not ended, and goes on once the game's
+                answer has arrived. Until then, nothing more is generated for it
         """
         if(not characters.last_added_character):
-            return
+            return False
         self.__is_generating = True
-        
-        asyncio.run(self.process_response(single_speaker or characters.last_added_character, blocking_queue, messages, characters, actions, single_speaker is not None))
+
+        return asyncio.run(self.process_response(single_speaker or characters.last_added_character, blocking_queue, messages, characters, actions, single_speaker is not None,
+                                                 tool_request))
     
     @utils.time_it
     def stop_generation(self):
@@ -569,26 +644,109 @@ class ChatManager:
         self.__stop_generation.clear()
         return
 
+    def __send_picked_actions(self, tool_calls: list[dict], speaker: Character, characters: Characters, tool_request: ToolRequest, blocking_queue: SentenceQueue,
+                              tools: list[dict]) -> tuple[list[tuple[Character, dict]], bool]:
+        """Advanced Actions: the actions the AI model picked go to the game, as a sentence without a line for each NPC who does some
+
+        Args:
+            speaker (Character): who does them, unless one reply speaks for several NPCs: then each action names who does it
+            tools (list[dict]): the tools sent: an action whose tool wasn't sent (Look without a working Vision) does nothing
+
+        Returns:
+            tuple[list[tuple[Character, dict]], bool]: the actions sent with who does each, and whether one of them answers back (the reply
+                waits for the game's answer)
+        """
+        sent_names = {t['function']['name'] for t in tools}
+        tool_calls = [c for c in tool_calls if c.get('function', {}).get('name') in sent_names]
+        picks = FunctionManager.read_tool_calls(tool_calls, speaker, characters, tool_request.game, tool_request.actions, tool_request.include_player,
+                                                tool_request.free_places, tool_request.several_speakers)
+        for doer, action in picks:
+            if action.get('identifier') == LOOK:
+                # Not sent to the game: the reply is asked for again with a screenshot (see process_response)
+                logging.log(23, f"{doer.name} looks around")
+                self.__look_requested = True
+                self.__looker = doer
+        picks = [(doer, action) for doer, action in picks if action.get('identifier') != LOOK and not self.__repeats_last_reply(doer, action, characters)]
+        if not picks:
+            return [], False
+        actions_by_doer: dict[str, tuple[Character, list[dict]]] = {}
+        for doer, action in picks:
+            logging.log(23, f"Action: {describe_action(action)} ({doer.name})")
+            actions_by_doer.setdefault(doer.name, (doer, []))[1].append(action)
+        for doer, actions in actions_by_doer.values():
+            blocking_queue.put(Sentence(SentenceContent(doer, "", SentenceTypeEnum.SPEECH, True, actions), "", 0))
+        return picks, FunctionManager.any_action_requires_response([action for _, action in picks])
+
+    @staticmethod
+    def __repeats_last_reply(doer: Character, action: dict, characters: Characters) -> bool:
+        """The NPC already did exactly this in their previous reply. The model doesn't see what it picked before, so it may pick the same
+        again with each reply (opening the trade menu again and again). Asked for again after another reply, it is done again"""
+        if FunctionManager._actions.get(action.get('identifier', ''), {}).get('allow_repeat', False):
+            return False # Emote, MoveTo
+        if action not in characters.get_last_reply_actions(doer.name):
+            return False
+        logging.log(23, f"{doer.name} already did {describe_action(action)} in their last reply. Not done again")
+        return True
+
+    def __pick_actions_with_own_model(self, messages: message_thread, speaker: Character, characters: Characters, tool_request: ToolRequest,
+                                      tools: list[dict]) -> list[dict]:
+        """Separate Model for Advanced Actions: that model picks the speaker's actions, before the speaker's own model writes the line. When
+        one reply speaks for several NPCs, it picks for each of them"""
+        client = self.__get_advanced_actions_client()
+        if client is None or not tools:
+            return []
+        name = speaker.name
+        if tool_request.several_speakers:
+            name = join_names([c.name for c in characters.get_all_characters() if not c.is_player_character] or [speaker.name], "or")
+        prompt = self.__config.advanced_actions_prompt.replace("{game}", self.__config.game.display_name).replace("{name}", name)
+        logging.log(23, f"The Advanced Actions model {client.model_name} picks {name}'s actions...")
+        return client.request_tool_calls(messages.copy_with_system_message(prompt), tools)
+
+    def __get_advanced_actions_client(self) -> AIClient | None:
+        config = self.__config
+        try:
+            profile = ModelProfileManager().select_profile(config.advanced_actions_llm_api, config.advanced_actions_llm, random_enabled=True) \
+                if config.apply_profile_advanced_actions else None
+            selection = LLMSelection(
+                service=config.advanced_actions_llm_api,
+                model=config.advanced_actions_llm,
+                parameters=profile.parameters.copy() if profile else (config.advanced_actions_llm_params or {}),
+                token_count=config.advanced_actions_custom_token_count,
+                from_profile=profile is not None
+            )
+            return self._get_or_create_random_client(selection)
+        except Exception as e:
+            logging.error(f"Could not use the Advanced Actions model {config.advanced_actions_llm_api}/{config.advanced_actions_llm}: {e}")
+            return None
+
     async def __until_stopped(self, stream: AsyncGenerator[str | None, None]) -> AsyncGenerator[str | None, None]:
-        """Passes the stream on until generation is stopped, also while still waiting for the LLM to answer"""
+        """Passes the stream on until generation is stopped, also while still waiting for the LLM to answer. Closes the stream when done"""
         iterator = stream.__aiter__()
-        while True:
-            next_content = asyncio.ensure_future(iterator.__anext__())
-            while not next_content.done():
-                if self.__stop_generation.is_set():
-                    next_content.cancel()
-                    await asyncio.wait({next_content}) # Lets the stream close its connection
+        try:
+            while True:
+                next_content = asyncio.ensure_future(iterator.__anext__())
+                while not next_content.done():
+                    if self.__stop_generation.is_set():
+                        next_content.cancel()
+                        await asyncio.wait({next_content}) # Lets the stream close its connection
+                        return
+                    await asyncio.wait({next_content}, timeout=0.05)
+                try:
+                    content = next_content.result()
+                except StopAsyncIteration:
                     return
-                await asyncio.wait({next_content}, timeout=0.05)
-            try:
-                content = next_content.result()
-            except StopAsyncIteration:
-                return
-            yield content
+                yield content
+        finally:
+            # A reply left before its end (the line was cut short, or the NPC used Look) still holds its client until its stream is
+            # closed. Left to the garbage collector, a Look asking the same client again right away would wait for it forever
+            close = getattr(stream, "aclose", None)
+            if close:
+                await close()
 
     @utils.time_it
-    async def process_response(self, active_character: Character, blocking_queue: SentenceQueue, messages : message_thread, characters: Characters, actions: list[Action], lock_speaker: bool = False):
-        """Stream response from LLM one sentence at a time"""
+    async def process_response(self, active_character: Character, blocking_queue: SentenceQueue, messages : message_thread, characters: Characters, actions: list[Action], lock_speaker: bool = False,
+                               tool_request: ToolRequest | None = None) -> bool:
+        """Stream response from LLM one sentence at a time. Returns True if the reply waits for the game's answer to an action (see generate_response)"""
 
         raw_response: str = ''  # Track the raw response
         first_token = True
@@ -601,6 +759,13 @@ class ChatManager:
         drop_buffer = drop_last_sentences_buffer(drop_last_count)
         max_retries = 5
         retries = 0
+        # Look needs Vision working. Without it, an NPC starting its line with "Look:" just says the line, and the model doesn't get the tool
+        can_see = bool(self.__config.vision_enabled and self.__vision_client)
+        look_tool = FunctionManager._actions.get(LOOK, {}).get('name', 'Look')
+        if not can_see and any(a.identifier == LOOK for a in actions):
+            actions = [a for a in actions if a.identifier != LOOK]
+        tools = [t for t in (tool_request.tools if tool_request else []) if can_see or t['function']['name'] != look_tool]
+        blocking_queue = _RecordingQueue(blocking_queue) # Look: what this reply has already said
 
         parser_chain: list[output_parser] = [
             thought_parser([active_character] if lock_speaker else characters.get_all_characters()),
@@ -630,6 +795,27 @@ class ChatManager:
         self.__logged_tts_characters.clear()
 
         settings: sentence_generation_settings = sentence_generation_settings(active_character)
+        awaits_answer = False # An action the NPC picked answers back: the reply goes on once the game's answer has arrived
+        request_messages = messages # Changes for the second request, when the model only picked actions
+        stream_tools: list[dict] | None = None # Advanced Actions: sent with the request, so the NPC's own model picks the actions
+        # The actions the model picked, with who does each. If it wrote no line, it is asked again for one, without the tools, told what they do
+        picked: list[tuple[Character, dict]] = []
+        # Look: where it is offered, the NPC only gets a screenshot once it uses Look. Then the reply is asked for again, with one
+        look_offered = can_see and (any(a.identifier == LOOK for a in actions) or any(t['function']['name'] == look_tool for t in tools))
+        looking = False
+        self.__look_requested = False
+        self.__looker = active_character
+        if tool_request:
+            if getattr(self.__config, "advanced_actions_own_model", False) is True:
+                own_model_picks = self.__pick_actions_with_own_model(messages, active_character, characters, tool_request, tools)
+                if own_model_picks:
+                    picked, awaits_answer = self.__send_picked_actions(own_model_picks, active_character, characters, tool_request, blocking_queue, tools)
+                    looking = self.__look_requested # The screenshot comes with the line's request right away
+                    settings.looked = looking
+                    if picked:
+                        request_messages = messages.copy_with([action_note(self.__config, picked)]) # The line fits what the NPCs do
+            else:
+                stream_tools = tools or None
         try:
             current_sentence: str = ''
             # llm_logged = False  # Track if we've logged the LLM model for this response
@@ -698,7 +884,7 @@ class ChatManager:
                         logging.error(f"Per-request random LLM selection for multi-NPC failed, falling back to multi-NPC configured/default client: {e}")
                         selected_multi_client_for_request = None
 
-            while retries < max_retries:
+            while retries < max_retries and not awaits_answer:
                 try:
                     start_time = time.time()
                     # Select client based on conversation type and per-request selections
@@ -742,9 +928,11 @@ class ChatManager:
                     # Ensure vision client is available and up to date on the selected client
                     if self.__config.vision_enabled and self.__vision_client:
                         try:
+                            # Where Look is offered, only once the NPC used it
+                            image_client = self.__vision_client if (looking or not look_offered) else None
                             existing_image_client = getattr(current_client, '_image_client', None)
-                            if (existing_image_client is None) or (existing_image_client is not self.__vision_client):
-                                current_client._image_client = self.__vision_client
+                            if existing_image_client is not image_client:
+                                current_client._image_client = image_client
                         except Exception as e:
                             logging.warning(f"Could not attach vision client to selected LLM client: {e}")
                     # Log which LLM model is being used
@@ -752,10 +940,23 @@ class ChatManager:
                         logging.info(f"[LLM: {current_client.model_name}]")
                     else:
                         logging.info(f"[LLM: {type(current_client).__name__}]")
-                    async for content in self.__until_stopped(current_client.streaming_call(messages=messages, is_multi_npc=is_multi_npc, response_started_at=start_time)):
+                    tool_argument = {"tools": stream_tools} if stream_tools else {} # Only when there are some: a client without them takes no tools
+                    # The model sends the actions it picked after its text. When the line is cut short (Max Sentences per Response, or the model
+                    # speaking for someone else), the rest is still read, without being said, so they aren't lost
+                    reading_for_actions = False
+                    reply_stream = self.__until_stopped(current_client.streaming_call(messages=request_messages, is_multi_npc=is_multi_npc, response_started_at=start_time, **tool_argument))
+                    async for content in reply_stream:
                         if self.__stop_generation.is_set():
                             break
                         if not content:
+                            continue
+                        if isinstance(content, ToolCalls):
+                            if tool_request:
+                                sent, awaits_answer = self.__send_picked_actions(content, settings.current_speaker or active_character, characters, tool_request,
+                                                                                 blocking_queue, stream_tools or [])
+                                picked.extend(sent)
+                            continue
+                        if reading_for_actions:
                             continue
 
                         if first_token:
@@ -772,7 +973,36 @@ class ChatManager:
                             if stopped:
                                 break
                         if settings.stop_generation:
-                                break
+                            if stream_tools and not settings.vision_requested:
+                                logging.log(23, "The line ends here. Reading the rest of the reply for the actions the model picked")
+                                reading_for_actions = True
+                                continue
+                            break
+                    await reply_stream.aclose() # Frees the client right away: a Look asks it again next
+                    # Not once the line was cut short: the reply is over
+                    if (settings.vision_requested or self.__look_requested) and look_offered and not looking and not awaits_answer and not self.__stop_generation.is_set() \
+                            and not reading_for_actions:
+                        # The NPC used Look: asked again, with a screenshot of what the player sees. What it wrote after "Look:" is thrown away.
+                        # What the reply said before goes with it, so it goes on from there
+                        looker = settings.current_speaker if settings.vision_requested and settings.current_speaker else self.__looker
+                        looking = True
+                        settings.looked = True
+                        settings.vision_requested = False
+                        settings.stop_generation = False
+                        accumulator = sentence_accumulator(list(cut_indicators))
+                        said = blocking_queue.sentences + ([Sentence(pending_sentence, "", 0)] if pending_sentence else [])
+                        request_messages = messages.copy_with(look_messages(self.__config, looker, said, is_multi_npc and not lock_speaker)
+                                                              + ([action_note(self.__config, picked)] if picked else []))
+                        stream_tools = None
+                        first_token = True
+                        continue
+                    if picked and stream_tools and not raw_response.strip() and not awaits_answer and not self.__stop_generation.is_set() and not settings.stop_generation:
+                        # Models tend to either write a line or pick actions, so it is asked again for the line, now knowing what the NPC does
+                        logging.log(23, f"The model only picked actions. Asking it again for {active_character.name}'s line")
+                        request_messages = messages.copy_with([action_note(self.__config, picked)])
+                        stream_tools = None
+                        first_token = True
+                        continue
                     break #if the streaming_call() completed without exception, break the while loop
                             
                 except FirstTokenTimeout as e:
@@ -872,8 +1102,24 @@ class ChatManager:
                 logging.log(23, f"Full raw response ({token_counter_client.get_count_tokens(raw_response)} tokens): {raw_response.strip()}")
             except Exception:
                 logging.log(23, f"Full raw response: {raw_response.strip()}")
-            blocking_queue.is_more_to_come = False
-            # This sentence is required to make sure there is one in case the game is already waiting for it
-            # before the ChatManager realises there is not another message coming from the LLM
-            blocking_queue.put(Sentence(SentenceContent(active_character,"",SentenceTypeEnum.SPEECH, True),"",0))
+            if tool_request:
+                # What each NPC who spoke or acted did in this reply, so the same isn't done again in their next one. Not for the line after
+                # an answer, which can't pick actions: it is part of the same reply
+                done: dict[str, list[dict]] = {}
+                for sentence in blocking_queue.sentences:
+                    if sentence and sentence.speaker and not sentence.speaker.is_player_character:
+                        done.setdefault(sentence.speaker.name, [])
+                for doer, action in picked:
+                    done.setdefault(doer.name, []).append(action)
+                characters.set_last_reply_actions(done)
+            if awaits_answer and not self.__stop_generation.is_set():
+                # The reply goes on with the game's answer: it has not ended yet
+                logging.log(23, f"{active_character.name}'s reply waits for the game's answer to the action")
+            else:
+                awaits_answer = False
+                blocking_queue.is_more_to_come = False
+                # This sentence is required to make sure there is one in case the game is already waiting for it
+                # before the ChatManager realises there is not another message coming from the LLM
+                blocking_queue.put(Sentence(SentenceContent(active_character,"",SentenceTypeEnum.SPEECH, True),"",0))
             self.__is_generating = False
+        return awaits_answer

@@ -2,6 +2,8 @@ import logging
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
 from src.llm.sentence_content import SentenceContent, has_action
 from src.conversation.action import Action
+
+LOOK = "mantella_npc_vision"
     
 class actions_parser(output_parser):
     def __init__(self, actions: list[Action], other_actions: list[Action] | None = None) -> None:
@@ -23,6 +25,20 @@ class actions_parser(output_parser):
         if ":" in cut_content.text:
             for action in self.__actions:
                 keyword = action.keyword + ":"
+                if action.identifier == LOOK:
+                    if cut_content.text.lstrip().startswith(keyword) and settings.looked:
+                        # Already looking: models often start with "Look:" again. It is taken out, and the line is said
+                        cut_content.text = cut_content.text.lstrip()[len(keyword):].strip()
+                        if not cut_content.text:
+                            return None, last_content
+                        continue
+                    if cut_content.text.lstrip().startswith(keyword):
+                        # The NPC wants to see first: the reply is asked for again with a screenshot, and this line is never said
+                        logging.log(23, f"{cut_content.speaker.name} looks around")
+                        settings.vision_requested = True
+                        settings.stop_generation = True
+                        return None, last_content
+                    continue
                 if keyword in cut_content.text:
                     cut_content.text = cut_content.text.replace(keyword,"").strip()
                     if not has_action(cut_content.actions, action.identifier): # Named twice, done once

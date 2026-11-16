@@ -7,7 +7,7 @@ from src.character_manager import Character
 from src.llm.message_thread import message_thread
 from src.conversation.context import context as Context
 from src.llm.messages import UserMessage
-from src.actions.action_rules import actions_for
+from src.actions.action_rules import actions_for, tool_actions_for
 from src.config.definitions.action_definitions import DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, RADIANT, SHOUT
 from src.conversation.action import Action
 from src import utils
@@ -77,8 +77,12 @@ class conversation_type(ABC):
         return ONE_ON_ONE
 
     def npc_actions(self, context_for_conversation: Context) -> list[Action]:
-        """The actions an NPC can take in this conversation. The prompt lists them, and only these are taken from an NPC's line"""
+        """The basic actions an NPC can take in this conversation. The prompt lists them, and only these are taken from an NPC's line"""
         return actions_for(self._config, self.action_kind())
+
+    def tool_actions(self, context_for_conversation: Context) -> list[Action]:
+        """With Advanced Actions on, the actions the AI model can pick with their details in this conversation. Empty while it is off"""
+        return tool_actions_for(self._config, self.action_kind())
 
 class pc_to_npc(conversation_type):
     """PC talks to a single NPC. The classic conversation"""
@@ -91,8 +95,10 @@ class pc_to_npc(conversation_type):
         if self._config.game.base_game == GameEnum.FALLOUT4:
             return context_for_conversation.generate_system_message(self._config.prompt, actions, should_log, messages_for_lorebook, None)
         if context_for_conversation.npc_initiative:
-            return context_for_conversation.generate_system_message(self._config.npc_initiative_prompt, actions, should_log, messages_for_lorebook, "skyrim_npc_initiative_prompt")
-        return context_for_conversation.generate_system_message(self._config.prompt, actions, should_log, messages_for_lorebook, "skyrim_prompt")
+            return context_for_conversation.generate_system_message(self._config.npc_initiative_prompt, actions, should_log, messages_for_lorebook, "skyrim_npc_initiative_prompt",
+                                                                    tools_offered=bool(self.tool_actions(context_for_conversation)))
+        return context_for_conversation.generate_system_message(self._config.prompt, actions, should_log, messages_for_lorebook, "skyrim_prompt",
+                                                                tools_offered=bool(self.tool_actions(context_for_conversation)))
     
     @utils.time_it
     def adjust_existing_message_thread(self, prompt: str, message_thread_to_adjust: message_thread):
@@ -160,9 +166,11 @@ class multi_npc(conversation_type):
     def generate_prompt(self, context_for_conversation: Context, should_log: bool = False, messages_for_lorebook: message_thread | None = None) -> str:
         actions = self.npc_actions(context_for_conversation)
         if self.is_director_mode():
-            return context_for_conversation.generate_system_message(self._config.multi_npc_director_prompt, actions, should_log, messages_for_lorebook, "skyrim_multi_npc_director_prompt")
+            return context_for_conversation.generate_system_message(self._config.multi_npc_director_prompt, actions, should_log, messages_for_lorebook, "skyrim_multi_npc_director_prompt",
+                                                                    tools_offered=bool(self.tool_actions(context_for_conversation)))
         prompt_type = None if self._config.game.base_game == GameEnum.FALLOUT4 else "skyrim_multi_npc_prompt"
-        return context_for_conversation.generate_system_message(self._config.multi_npc_prompt, actions, should_log, messages_for_lorebook, prompt_type)
+        return context_for_conversation.generate_system_message(self._config.multi_npc_prompt, actions, should_log, messages_for_lorebook, prompt_type,
+                                                                tools_offered=bool(self.tool_actions(context_for_conversation)))
     
     @utils.time_it
     def adjust_existing_message_thread(self, prompt: str, message_thread_to_adjust: message_thread):
@@ -214,7 +222,8 @@ class multi_npc_game_master(multi_npc):
         prompt_type = "skyrim_game_master_npc_prompt"
         return context_for_conversation.generate_system_message(self._config.game_master_npc_prompt, self.npc_actions(context_for_conversation), should_log,
                                                                 messages_for_lorebook, prompt_type, focus_character=speaker,
-                                                                conditions=self.prompt_conditions(context_for_conversation, prompt_type))
+                                                                conditions=self.prompt_conditions(context_for_conversation, prompt_type),
+                                                                tools_offered=bool(self.tool_actions(context_for_conversation)))
 
     @utils.time_it
     def generate_game_master_prompt(self, context_for_conversation: Context, messages_for_lorebook: message_thread | None = None, should_log: bool = False) -> str:
@@ -303,7 +312,8 @@ class radiant(conversation_type):
     def generate_prompt(self, context_for_conversation: Context, should_log: bool = False, messages_for_lorebook: message_thread | None = None) -> str:
         actions = self.npc_actions(context_for_conversation)
         prompt_type = None if self._config.game.base_game == GameEnum.FALLOUT4 else "skyrim_radiant_prompt"
-        return context_for_conversation.generate_system_message(self._config.radiant_prompt, actions, should_log, messages_for_lorebook, prompt_type)
+        return context_for_conversation.generate_system_message(self._config.radiant_prompt, actions, should_log, messages_for_lorebook, prompt_type,
+                                                                tools_offered=bool(self.tool_actions(context_for_conversation)))
     
     @utils.time_it
     def adjust_existing_message_thread(self, prompt: str, message_thread_to_adjust: message_thread):

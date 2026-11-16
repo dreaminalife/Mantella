@@ -131,6 +131,29 @@ def test_is_vision_filtering():
     assert all("Vision Available" in opt[0] for opt in result.available_models)
 
 
+def test_the_vision_list_keeps_every_model_that_reads_images_also_those_taking_more():
+    """Gemini models also take files, audio and video. They read images all the same, so they are in the Custom Vision Model list"""
+    def model(model_id, modality, inputs=None):
+        architecture = {"modality": modality}
+        if inputs is not None:
+            architecture["input_modalities"] = inputs
+        return type("Model", (), {"id": model_id, "model_extra": {"context_length": 1000, "pricing": {"prompt": "0", "completion": "0"},
+                                                                  "architecture": architecture}})()
+    models = type("Page", (), {"data": [
+        model("deepseek/deepseek-v4.1-flash", "text+image->text", ["text", "image"]),
+        model("google/gemini-3.1-flash-lite", "text+image+file+audio+video->text", ["text", "image", "video", "file", "audio"]),
+        model("old/listed-without-inputs", "text+image+audio->text"),
+        model("text/only", "text->text", ["text"]),
+        model("draws/pictures", "text->text+image", ["text"]),
+    ]})()
+    with patch("src.llm.client_base.ClientBase._get_api_key", return_value="sk-test"), \
+            patch("src.llm.client_base.OpenAI") as openai:
+        openai.return_value.models.list.return_value = models
+        result = ClientBase.get_model_list("OpenRouter", "key.txt", is_vision=True)
+    assert [model_id for _, model_id in result.available_models] == \
+        ["deepseek/deepseek-v4.1-flash", "google/gemini-3.1-flash-lite", "old/listed-without-inputs"]
+
+
 def test_response_timeout_keeps_five_second_connect_limit():
     client = ClientBase(
         "http://127.0.0.1:5001/v1",

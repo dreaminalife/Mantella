@@ -189,6 +189,19 @@ class message_thread():
     def add_message(self, new_message: UserMessage | AssistantMessage | ImageMessage | ImageDescriptionMessage | join_message | leave_message):
         self.__messages.append(new_message)
 
+    def copy_with(self, extra_messages: list[Message]) -> "message_thread":
+        """A copy for one request: the same messages, then the extra ones, which never reach this thread. The messages are shared, not copied"""
+        result = message_thread(self.__config, None, self.__include_decensor_bypass)
+        result.__messages = self.__messages + list(extra_messages)
+        result.vision_capture = self.vision_capture
+        return result
+
+    def copy_with_system_message(self, prompt: str) -> "message_thread":
+        """A copy for one request with another system prompt, e.g. for the Advanced Actions model"""
+        result = message_thread(self.__config, prompt)
+        result.__messages.extend(m for m in self.__messages if not isinstance(m, SystemMessage))
+        return result
+
     @utils.time_it
     def add_non_system_messages(self, new_messages: list[Message]):
         """Adds a list of messages to this message_thread. Omits system_messages 

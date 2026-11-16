@@ -1,3 +1,4 @@
+from typing import Any
 from src.character_manager import Character
 from src import utils
 
@@ -9,6 +10,9 @@ class Characters:
         self.__all_characters: dict[str, Character] = {} # Actives characters + those that were removed
         self.__last_added_character: Character | None = None
         self.__player_character: Character | None = None
+        self.__nearby_npcs: list[dict[str, Any]] = [] # Who the game says is near the player and not in the conversation: {"name", "distance"}
+        self.__pending_shares: list[tuple[str, str, str]] = [] # ShareConversation: (who shares, with whom, their ref id), written when the conversation ends
+        self.__last_reply_actions: dict[str, list[dict[str, Any]]] = {} # Advanced Actions: by NPC name, the actions of their last reply that could pick some
     
     def __len__(self) -> int:
         return len(self.__active_characters)
@@ -79,3 +83,53 @@ class Characters:
     @utils.time_it
     def contains_multiple_npcs(self) -> bool:
         return self.active_character_count() > 2 or (self.active_character_count() == 2 and not self.contains_player_character())
+
+    def get_player_name(self) -> str | None:
+        return self.__player_character.name if self.__player_character else None
+
+    def set_nearby_npcs(self, nearby_npcs: list[dict[str, Any]] | None):
+        """Who the game says is near the player and not in the conversation, sent with each update: [{"name", "distance"}]"""
+        self.__nearby_npcs = [npc for npc in (nearby_npcs or []) if isinstance(npc, dict) and npc.get('name')]
+
+    def get_nearby_npc_names(self) -> list[str]:
+        """The people nearby who are not in the conversation (Advanced Actions can name them)"""
+        return [npc['name'] for npc in self.__nearby_npcs if npc['name'] not in self.__active_characters]
+
+    def get_all_names_w_nearby(self, include_player: bool = True, include_nearby: bool = False, nearby_only: bool = False) -> list[str]:
+        """The names an advanced action can name, by its scope
+
+        Args:
+            include_player (bool): the player too
+            include_nearby (bool): the people nearby too
+            nearby_only (bool): only the people nearby
+        """
+        names = [] if nearby_only else [name for name, character in self.__active_characters.items() if include_player or not character.is_player_character]
+        if include_nearby or nearby_only:
+            names.extend(name for name in self.get_nearby_npc_names() if name not in names)
+            if include_player and nearby_only and self.__player_character and self.__player_character.name not in names:
+                names.append(self.__player_character.name)
+        return names
+
+    def add_pending_share(self, sharer_name: str, recipient_name: str, recipient_ref_id: str) -> bool:
+        """ShareConversation: the recipient learns about this conversation when it ends. False if they already will"""
+        if any(ref_id == recipient_ref_id for _, _, ref_id in self.__pending_shares):
+            return False
+        self.__pending_shares.append((sharer_name, recipient_name, recipient_ref_id))
+        return True
+
+    def get_last_reply_actions(self, name: str) -> list[dict[str, Any]]:
+        """Advanced Actions: what the NPC did in their last reply that could pick actions. Empty if nothing, or if they haven't had one"""
+        return self.__last_reply_actions.get(name, [])
+
+    def set_last_reply_actions(self, actions_by_name: dict[str, list[dict[str, Any]]]):
+        """Advanced Actions: what each NPC who spoke or acted in a reply did in it. The others keep what they did before"""
+        self.__last_reply_actions.update(actions_by_name)
+
+    def is_share_pending(self, recipient_ref_id: str) -> bool:
+        return any(ref_id == recipient_ref_id for _, _, ref_id in self.__pending_shares)
+
+    def get_pending_shares(self) -> list[tuple[str, str, str]]:
+        return self.__pending_shares.copy()
+
+    def clear_pending_shares(self):
+        self.__pending_shares.clear()

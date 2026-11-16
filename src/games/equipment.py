@@ -16,6 +16,7 @@ class Equipment:
     AMULET = "amulet"
     RIGHTHAND = "righthand"
     LEFTHAND = "lefthand"
+    SPELLS = "spells"
     DESCRIPTION_ORDER_ARMOR: list[str] = [BODY, HEAD, HANDS, FEET, AMULET]
 
     def __init__(self, slots_to_items: dict[str, EquipmentItem]) -> None:
@@ -27,7 +28,7 @@ class Equipment:
             return self.__slots_to_items[slot]
         
     @utils.time_it
-    def get_equipment_description(self, character_name: str) -> str:        
+    def get_equipment_description(self, character_name: str, include_spells: bool = False) -> str:        
         worn_armor_items: list[str] = []
         for slot in self.DESCRIPTION_ORDER_ARMOR:
             item = self.get_item(slot)
@@ -51,7 +52,17 @@ class Equipment:
             equipment_desc = f"{character_name} is naked now."
         else:
             equipment_desc = f"{character_name} wears {armor_text}. {character_name} uses {weapons_text}."
+        spells_text = self.format_listing(self.get_spells())
+        if spells_text and include_spells: # What CastSpell (Advanced Actions) can cast
+            equipment_desc += f" {character_name} knows the spells {spells_text}."
         return utils.remove_extra_whitespace(equipment_desc)
+
+    def get_spells(self) -> list[str]:
+        """The spells the NPC knows, as the game sends them (MantellaEquipmentDescriber): a list under "spells", in any case"""
+        for slot, item in self.__slots_to_items.items():
+            if str(slot).lower() == self.SPELLS and isinstance(item, EquipmentItem) and isinstance(item.name, list):
+                return [spell for spell in item.name if isinstance(spell, str) and spell.strip()]
+        return []
 
     @staticmethod
     @utils.time_it

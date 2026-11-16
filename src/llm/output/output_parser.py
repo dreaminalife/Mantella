@@ -20,6 +20,8 @@ class sentence_generation_settings:
         self.__stop_generation: bool = False
         self.speech_cap_reached: bool = False
         self.suppress_thought: bool = False
+        self.vision_requested: bool = False # The NPC used Look: the reply is asked for again, with a screenshot
+        self.looked: bool = False # The reply already comes with a screenshot: a "Look:" before the line is only taken out
         self.thought_speakers: set[str] = set()
     
     @property

@@ -37,6 +37,11 @@ class Action:
         return self.__prompt_text
     
     @property
+    def is_basic(self) -> bool:
+        """An NPC can use it by starting its line with the keyword. The others need Advanced Actions"""
+        return bool(self.__prompt_text)
+
+    @property
     def requires_response(self) -> bool:
         return self.__requires_response
     

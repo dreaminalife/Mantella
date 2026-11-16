@@ -5,7 +5,7 @@ from src.config.types.config_value_bool import ConfigValueBool
 from src.config.types.config_value import ConfigValue
 from src.config.types.config_value_group import ConfigValueGroup
 from src.config.definitions.game_definitions import GameDefinitions
-from src.config.definitions.action_definitions import ACTION_KINDS, ActionDefinitions
+from src.config.definitions.action_definitions import ACTION_KINDS, ADVANCED_ACTIONS_DEFAULT_MODEL, ActionDefinitions
 from src.config.definitions.language_definitions import LanguageDefinitions
 from src.config.definitions.llm_definitions import LLMDefinitions
 from src.config.definitions.conversation_definitions import (CONVERSATION_EVENT, CONVERSATION_PAGE, DIRECTOR, GROUP, NEARBY_EVENT, NPC_EVENT, RANDOM_EVENT, SHARED,
@@ -148,14 +148,19 @@ class MantellaConfigValueDefinitionsNew:
         llm_category.add_config_value(LLMDefinitions.get_summary_llm_api_config_value())
         llm_category.add_config_value(LLMDefinitions.get_summary_model_config_value())
         # (key, label, can use the Summary model instead). The NPC Event Generator and the Fallback always use their own model
-        memory_tasks = [("thoughts", "Private Thoughts", True), ("reflection", "Personal Reflection", True), ("npc_event", "NPC Event Generator", False), ("fallback", "Fallback", False)]
+        memory_tasks = [("thoughts", "Private Thoughts", True), ("reflection", "Personal Reflection", True), ("npc_event", "NPC Event Generator", False), ("fallback", "Fallback", False),
+                        ("advanced_actions", "Advanced Actions", False)]
         for key, label, has_summary_option in memory_tasks:
             if has_summary_option:
                 llm_category.add_config_value(LLMDefinitions.get_memory_task_use_summary_model_config_value(key, label))
         llm_category.add_config_value(LLMDefinitions.get_fallback_llm_enabled_config_value())
+        llm_category.add_config_value(ActionDefinitions.get_advanced_actions_own_model_config_value())
         for key, label, has_summary_option in memory_tasks:
             llm_category.add_config_value(LLMDefinitions.get_memory_task_llm_api_config_value(key, label, has_summary_option))
-            llm_category.add_config_value(LLMDefinitions.get_memory_task_model_config_value(key, label, has_summary_option))
+            if key == "advanced_actions": # The other tasks' default model can't pick actions
+                llm_category.add_config_value(LLMDefinitions.get_memory_task_model_config_value(key, label, has_summary_option, ADVANCED_ACTIONS_DEFAULT_MODEL))
+            else:
+                llm_category.add_config_value(LLMDefinitions.get_memory_task_model_config_value(key, label, has_summary_option))
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_single_config_value())
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_multi_config_value())
         llm_category.add_config_value(LLMDefinitions.get_llm_response_timeout_config_value())
@@ -311,7 +316,8 @@ class MantellaConfigValueDefinitionsNew:
         language_category.add_config_value(LanguageDefinitions.get_goodbye_npc_response())
         language_category.add_config_value(LanguageDefinitions.get_collecting_thoughts_npc_response())
         for action in actions:
-            language_category.add_config_value(LanguageDefinitions.get_action_keyword_override(action))
+            if action.is_basic: # An advanced action has no word the NPC says
+                language_category.add_config_value(LanguageDefinitions.get_action_keyword_override(action))
         result.add_base_group(language_category)
 
         prompts_category = ConfigValueGroup("Prompts", "Prompts", "Change the basic prompts used by Mantella.", on_value_change_callback)
@@ -347,6 +353,7 @@ class MantellaConfigValueDefinitionsNew:
         prompts_category.add_config_value(PromptDefinitions.get_inner_monologue_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_personal_reflection_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_vision_prompt_config_value())
+        prompts_category.add_config_value(PromptDefinitions.get_advanced_actions_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_start_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_end_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_decensor_handshake_prompt_config_value())
@@ -422,8 +429,9 @@ class MantellaConfigValueDefinitionsNew:
         for value in ConversationDefinitions.get_talk_config_values(SHARED):
             all_conversations.add_config_value(value)
 
-        actions_section = ConfigValueGroup("ConversationActions", "Actions", ActionDefinitions.SECTION_DESCRIPTION, on_value_change_callback,
+        actions_section = ConfigValueGroup("ConversationActions", "Actions", ActionDefinitions.section_description(actions), on_value_change_callback,
                                            page=CONVERSATION_PAGE)
+        actions_section.add_config_value(ActionDefinitions.get_advanced_actions_enabled_config_value())
         for kind in ACTION_KINDS:
             actions_section.add_config_value(ActionDefinitions.get_actions_config_value(actions, kind))
 
