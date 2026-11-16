@@ -17,6 +17,7 @@ from src.llm.sentence import Sentence
 from src.remember.remembering import Remembering
 from src.remember.summaries import Summaries
 from src.llm.client_base import ClientBase
+from src.llm.image_client import VisionCapture
 from src.llm.llm_client import LLMClient
 from src.output_manager import ChatManager
 from src.llm.messages import AssistantMessage, join_message, leave_message, nearby_join_message, overheard_message, SystemMessage, UserMessage
@@ -91,6 +92,7 @@ class Conversation:
         self.__is_waiting_for_speech: bool = False # A player input request waits for the player to speak into the mic
         self.__is_event_picked: bool = False # An event was picked on the Conversation Wheel and its request has not arrived yet. See stop_waiting_for_player
         self.__speech_wait_lock: Lock = Lock() # Keeps the two flags above together, as the event is picked from the thread of another request
+        self.__shown_picture: VisionCapture | None = None # Show: taken when the player pressed Show, sent with their next line
 
     def update_summary_client(self, summary_client: ClientBase | None, fallback_client: LLMClient, thoughts_client: ClientBase | None, reflection_client: ClientBase | None) -> None:
         """Update the summary, thoughts and reflection LLM clients on the active rememberer, if it supports it."""
@@ -333,6 +335,8 @@ class Conversation:
         event_message = self.__event_message(text)
         self.__event_count += 1
         setattr(event_message, self.EVENT_MARKER_ATTRIBUTE, self.__event_count)
+        # Show: the replies to the event don't get the picture shown with the line before it. One shown since then still waits for the next line
+        self.__messages.forget_shown_pictures()
         self.__messages.add_message(event_message)
         if self.__context.have_actors_changed: # Shout was switched on
             self.__update_conversation_type()
@@ -647,6 +651,14 @@ class Conversation:
             new_message.is_multi_npc_message = self.__context.npcs_in_conversation.contains_multiple_npcs()
             new_message.is_director_message = is_director or is_continue # A continue message only carries events, so no player name is shown
             new_message = self.update_game_events(new_message)
+            self.__messages.forget_shown_pictures() # A picture shown with an earlier line isn't sent again
+            picture, self.__shown_picture = self.__shown_picture, None
+            if picture:
+                new_message.shown_picture = picture
+                # Stays in the conversation after the picture is gone, so later lines still make sense. In Director Mode the player's
+                # character isn't part of the scene: it is the scene as it looks now
+                new_message.add_event(["This is how the scene looks right now." if is_director
+                                       else f"{player_character.name} shows you what they are looking at."])
             if not is_continue or new_message.count_ingame_events() > 0:
                 self.__messages.add_message(new_message)
             elif not isinstance(self.__conversation_type, multi_npc_game_master):
@@ -892,6 +904,19 @@ class Conversation:
         self.__sentences.clear()
         self.__save_summary()
     
+    def can_be_shown(self) -> bool:
+        """Show only works in a conversation the player is in"""
+        return not self.__has_already_ended and self.__context.npcs_in_conversation.contains_player_character()
+
+    def show_picture(self, picture: VisionCapture) -> bool:
+        """Show: the picture goes with the player's next line. A picture shown before and not sent yet is replaced.
+        Called from the thread of another request"""
+        if not self.can_be_shown():
+            return False
+        self.__shown_picture = picture
+        logging.log(23, "The player shows the NPCs what they see. The picture goes with their next line")
+        return True
+
     def request_interrupt(self):
         """Interrupt hotkey. The NPCs stop and the player gets the turn, like when the player interrupts with the mic.
         Called while a continue request may still be running, which picks the interruption up.

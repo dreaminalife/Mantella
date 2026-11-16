@@ -835,6 +835,16 @@ class GameStateManager:
             if input_json.get(comm_consts.KEY_EVENT_KIND):
                 talk.stop_waiting_for_player()
 
+    def show_picture(self) -> dict[str, Any]:
+        """Show hotkey or wheel option. Called while another request may still be running: takes a picture of the game right now,
+        which goes with the player's next line. Only in a conversation the player is in"""
+        talk = self.__talk # Can be set to None by a request that ends the conversation
+        taken = False
+        if talk and talk.can_be_shown():
+            picture = talk.output_manager.take_picture()
+            taken = picture is not None and talk.show_picture(picture)
+        return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_SHOWRECEIVED, comm_consts.KEY_SHOW_TAKEN: taken}
+
     @utils.time_it
     def end_conversation(self, input_json: dict[str, Any]) -> dict[str, Any]:
         if(self.__talk):

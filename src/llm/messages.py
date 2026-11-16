@@ -8,6 +8,9 @@ from src.character_manager import Character
 from src.llm.sentence import Sentence
 from src import utils
 import logging
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.llm.image_client import VisionCapture
 
 class Message(ABC):
     """Base class for messages 
@@ -335,6 +338,9 @@ class UserMessage(Message):
         self.__ingame_events: list[str] = []
         self.__time: tuple[str,str] | None = None
         self.is_director_message: bool = False # Director mode: the text is a scene direction, shown as narration without the player's name
+        # Show: the picture the player showed with this line (a VisionCapture). Sent with the replies to this line only (see
+        # message_thread.forget_shown_pictures). Never saved
+        self.shown_picture: "VisionCapture | None" = None
         
 
     @property

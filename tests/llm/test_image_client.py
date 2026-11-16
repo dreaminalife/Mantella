@@ -258,12 +258,15 @@ def test_add_image_retries_the_screenshot_when_the_capture_failed(image_client_d
     assert capture.image == "image"
 
 
-def test_a_vision_model_sending_back_nothing_is_warned_about(image_client_custom_llm: ImageClient, sample_openai_messages: list, caplog):
+def test_a_vision_model_sending_back_nothing_is_warned_about(image_client_custom_llm: ImageClient, sample_openai_messages: list, caplog, monkeypatch):
     image_client_custom_llm._ImageClient__image_manager = CountingImageManager("image")
     image_client_custom_llm._ImageClient__vision_prompt = "Describe the image."
     image_client_custom_llm.request_call = MagicMock(return_value=None)
+    error_sound = MagicMock()
+    monkeypatch.setattr("src.llm.image_client.utils.play_error_sound", error_sound)
     result = image_client_custom_llm.add_image_to_messages(deepcopy(sample_openai_messages), "", VisionCapture())
     assert result == sample_openai_messages # The NPC answers without the screenshot
+    error_sound.assert_called_once() # The player hears something went wrong
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert any(f"The vision model {image_client_custom_llm.model_name} sent back no description" in w for w in warnings), warnings
 

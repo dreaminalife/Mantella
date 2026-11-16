@@ -151,6 +151,9 @@ class mantella_route(routeable):
                 if self.__game:
                     self.__game.interrupt_conversation(received_json)
                 return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_INTERRUPTRECEIVED}
+            if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_SHOW:
+                # Handled right away, so the picture is of the moment the player pressed Show, even while the NPCs are talking
+                return await asyncio.to_thread(self.__process_show, received_json)
             if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_NPCINITIATIVE:
                 # Not queued with the other requests, so a slow check never delays a conversation the player starts
                 return await asyncio.to_thread(self.__process_npc_initiative_check, received_json)
@@ -159,6 +162,22 @@ class mantella_route(routeable):
                 return await asyncio.to_thread(self.__process_npc_event_check, received_json)
             # Handled in a worker thread, so the server stays free to receive an interruption
             return await asyncio.to_thread(self.__process_request, received_json)
+
+    def __process_show(self, received_json: dict[str, Any]) -> dict[str, Any]:
+        """Show: never replies with an error, which would end the conversation"""
+        if self._show_debug_messages:
+            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        game = self.__game
+        reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_SHOWRECEIVED, comm_consts.KEY_SHOW_TAKEN: False}
+        if game:
+            try:
+                reply = game.show_picture()
+            except Exception:
+                # The game ends the conversation on an error reply. Here it only says the picture couldn't be taken
+                logging.exception("Show failed")
+        if self._show_debug_messages:
+            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+        return reply
 
     def __process_npc_initiative_check(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """Never replies with an error: the game would end a conversation the player started meanwhile"""

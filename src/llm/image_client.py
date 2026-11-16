@@ -12,9 +12,26 @@ from src.llm.messages import ImageMessage
 class VisionCapture:
     '''One screenshot (and its transcription) shared by several requests, so only the first of them captures the game window
     '''
-    def __init__(self) -> None:
-        self.image: str | None = None
+    def __init__(self, image: str | None = None) -> None:
+        self.image: str | None = image
         self.transcription: str | None = None
+
+    def __deepcopy__(self, memo: dict) -> "VisionCapture":
+        # Messages are deep-copied for each NPC's request (Game Master Mode). They keep sharing one picture, so a Custom Vision
+        # Model describes it only once
+        return self
+
+def image_manager_for(config: ConfigLoader) -> ImageManager:
+    '''Takes the pictures of the game window, with the Vision settings'''
+    return ImageManager(config.game,
+                        config.save_folder,
+                        config.save_screenshot,
+                        config.image_quality,
+                        config.low_resolution_mode,
+                        config.resize_method,
+                        config.capture_offset,
+                        config.use_game_screenshots,
+                        config.game_path)
 
 class ImageClient(ClientBase):
     '''Image class to handle LLM vision
@@ -47,15 +64,7 @@ class ImageClient(ClientBase):
 
         self.__vision_prompt: str = self.__format_vision_prompt(config)
         self.__detail: str = "low" if config.low_resolution_mode else "high"
-        self.__image_manager: ImageManager | None = ImageManager(config.game, 
-                                                config.save_folder, 
-                                                config.save_screenshot, 
-                                                config.image_quality, 
-                                                config.low_resolution_mode, 
-                                                config.resize_method, 
-                                                config.capture_offset,
-                                                config.use_game_screenshots,
-                                                config.game_path)
+        self.__image_manager: ImageManager | None = image_manager_for(config)
     
     def __format_vision_prompt(self, config: ConfigLoader) -> str:
         try:
@@ -119,6 +128,7 @@ class ImageClient(ClientBase):
                     if capture:
                         capture.transcription = image_transcription
                 else:
+                    utils.play_error_sound()
                     logging.warning(f"The vision model {self.model_name} sent back no description of the screenshot, so the NPC answers without "
                                     f"seeing it. The model may not be able to read images, or it ran out of room before writing one: try a "
                                     f"higher max_tokens in Custom Vision Model Parameters, or another Custom Vision Model")
@@ -193,17 +203,7 @@ class ImageClient(ClientBase):
             self.__detail = "low" if config.low_resolution_mode else "high"
             
             # Update image manager with new settings
-            self.__image_manager = ImageManager(
-                config.game,
-                config.save_folder,
-                config.save_screenshot,
-                config.image_quality,
-                config.low_resolution_mode,
-                config.resize_method,
-                config.capture_offset,
-                config.use_game_screenshots,
-                config.game_path
-            )
+            self.__image_manager = image_manager_for(config)
             
             logging.info("ImageClient hot-swap completed successfully")
             return True

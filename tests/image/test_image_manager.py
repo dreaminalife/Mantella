@@ -203,25 +203,35 @@ def test_encode_image_to_jpeg(image_manager: ImageManager):
     assert buffer.tobytes().startswith(b'\xff\xd8')
 
 
-def test_save_screenshot_to_file(image_manager: ImageManager, tmp_path: Path):
-    """Tests saving the screenshot data to a file"""
+def test_only_the_newest_saved_picture_is_kept(image_manager: ImageManager, tmp_path: Path):
     image_manager._ImageManager__save_screenshot = True
-    image_manager._ImageManager__window_title = "TestWindow"
-    # Ensure the specific image path directory exists within tmp_path
     image_path_dir = tmp_path / 'data' / 'tmp' / 'images'
     image_manager._ImageManager__image_path = str(image_path_dir)
     os.makedirs(image_path_dir, exist_ok=True)
 
-    dummy_bytes = b'\xff\xd8\xff\xe0\x00\x10JFIF' # Minimal valid JPEG start
-    image_manager._save_screenshot_to_file(dummy_bytes)
+    image_manager._save_screenshot_to_file(b'\xff\xd8 first')
+    image_manager._save_screenshot_to_file(b'\xff\xd8 second')
 
-    # Check if a file was created in the expected directory
-    saved_files = list(image_path_dir.glob("TestWindow_*.jpg"))
-    assert len(saved_files) == 1
-    # Check content
-    with open(saved_files[0], 'rb') as f:
-        content = f.read()
-    assert content == dummy_bytes
+    assert [p.name for p in image_path_dir.iterdir()] == [ImageManager.LAST_PICTURE_FILE] # No temporary file left either
+    assert (image_path_dir / ImageManager.LAST_PICTURE_FILE).read_bytes() == b'\xff\xd8 second'
+
+
+def test_a_picture_that_cant_be_saved_is_only_a_warning(image_manager: ImageManager, tmp_path: Path, caplog):
+    image_manager._ImageManager__image_path = str(tmp_path / 'missing')
+    image_manager._save_screenshot_to_file(b'\xff\xd8')
+    assert "Could not save the picture" in caplog.text
+
+
+def test_the_screenshots_saved_before_are_removed(image_manager: ImageManager, tmp_path: Path):
+    # Each screenshot used to be saved under its own name, and they were never removed
+    image_path_dir = tmp_path / 'images'
+    os.makedirs(image_path_dir)
+    for name in ["Skyrim_Special_Edition_20261101_120000.jpg", "Skyrim_Special_Edition_20261101_120005.jpg", "my_notes.jpg",
+                 ImageManager.LAST_PICTURE_FILE]:
+        (image_path_dir / name).write_bytes(b'x')
+    image_manager._ImageManager__image_path = str(image_path_dir)
+    image_manager._remove_old_pictures()
+    assert sorted(p.name for p in image_path_dir.iterdir()) == [ImageManager.LAST_PICTURE_FILE, "my_notes.jpg"]
 
 
 def test_get_image_success_takes_screenshot(image_manager: ImageManager, mock_win32gui, mock_mss):

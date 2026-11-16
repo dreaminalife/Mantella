@@ -52,6 +52,7 @@ Trying my best to explain why I added these features and how to make the most of
 - [Talk, Nearby and Random Events](#talk-nearby-and-random-events)
 - [Drop Last Sentences](#drop-last-sentences)
 - [Interrupt Hotkey](#interrupt-hotkey)
+- [Show Them What You See](#show-them-what-you-see)
 - [In-Game Events](#in-game-events)
 - [Tidier In-Game Events](#tidier-in-game-events)
 
@@ -2474,9 +2475,9 @@ For example, you walk into the Bannered Mare and call out *"Who here has seen a 
 
 How you speak:
 
-- **Typing:** the text box opens first. Cancel it and nothing happens. The game finds who is nearby while you type, so the answer comes sooner.
-- **Microphone:** it starts listening once the conversation is ready. You don't have to press the key again.
-- If nobody nearby could hear you, you get the note *Nobody is around to hear you* and nothing starts.
+- **Typing:** the text box opens first. Cancel it and nothing happens. The game finds who is nearby while you type, so the answer comes sooner. If nobody nearby could hear you, you get the note *Nobody is around to hear you* and nothing starts.
+- **Microphone:** you get the note *Getting ready...*, and it starts listening a moment later, once *Listening...* shows. You don't have to press the key again. The game finds who is nearby while you speak. If nobody is around, you get *Nobody answers* after you speak.
+- Pressing the key again while it is getting ready does nothing.
 
 Who can answer, and what they remember, follow the [Shout](#shout) settings. The first time you switch to **Private** in such a conversation, nobody is sent away (everyone there joined by shouting): it only stops new people from joining.
 
@@ -2904,22 +2905,40 @@ The events are written by the NPC Event Generator model (**LLM** tab), whether [
 
 NPCs can do things while they talk. An NPC starts its line with the action's name, and the game does it as the line starts: "Wait: As you wish" and Lydia waits where she is. The name isn't spoken.
 
-| Action | What the NPC does | On by default in |
+| Action | What the NPC does | How to make it happen |
 | --- | --- | --- |
-| Attack | Attacks you | One-on-one, Group, Shout |
-| StandDown | Stops fighting | Every kind |
-| Inventory | Opens the give and take menu | One-on-one, Group, Shout |
-| Barter | Opens their shop | One-on-one, Group, Shout |
-| Flee | Runs away from you | One-on-one, Group, Shout |
-| MoveTo | Walks over to you | One-on-one, Group, Shout |
-| Follow | Starts following you | Off |
-| Unfollow | Stops following you | Off |
-| Wait | Waits where they are | Off |
-| Teleport | Jumps to you, e.g. when stuck | Off |
-| Loot | Picks up items nearby | Off |
-| CollectIngredients | Gathers ingredients nearby | Off |
-| Brawl | A fistfight with you, nobody dies | Off |
-| Listen | Gives you more time to speak | Off (you can always say it, see below) |
+| Attack | Attacks you | Say something truly offensive to them: insult or threaten them |
+| StandDown | Stops fighting | Take back what you said, apologize, or ask them to stop fighting |
+| Inventory | Opens the give and take menu | Ask what they carry, or offer them an item or ask for one |
+| Barter | Opens their shop | Ask what they have for sale |
+| Flee | Runs away from you | Scare them so much they want to get away from you |
+| MoveTo | Walks over to you | Ask them to come over to you |
+| Follow | Starts following you | Ask them to come with you (they have to be convinced) |
+| Unfollow | Stops following you | Ask them to stop following you |
+| Wait | Waits where they are | Ask them to wait or stay here |
+| Teleport | Jumps to you, e.g. when stuck | Ask them to teleport to you |
+| Loot | Picks up items nearby | Ask them to loot the area |
+| CollectIngredients | Gathers ingredients nearby | Ask them to gather ingredients |
+| Brawl | A fistfight with you, nobody dies | Pick a fight with them |
+| Listen | Gives you more time to speak | Say or type "listen" (see below), or ask them to hear you out |
+| Look | Sees what you see (needs Vision on), see below | Ask them to look at something, or what they see |
+
+The last column is what the NPC is told to react to. The NPC still decides whether to do it, and you can also type just the action's name (see below). On by default: Attack, Inventory, Barter, Flee and MoveTo in One-on-one, Group and Shout conversations, and StandDown in every kind. The others start off.
+
+With **Advanced Actions** on, NPCs can also use these. They are off by default:
+
+| Action | What the NPC does | How to make it happen |
+| --- | --- | --- |
+| AddToConversation | Calls someone nearby into the conversation | Ask them to bring someone nearby over, e.g. "Get Hulda over here" |
+| CastSpell | Casts one of their spells on someone | Ask them to cast a spell they know, e.g. "Heal me" |
+| Emote | Plays an animation: laughs, bows, drinks... | Make them laugh, ask them to bow, raise a toast... |
+| CheckDirections | Looks up the way to a place, then tells you | Ask how to get somewhere, e.g. "How do I get to Dawnstar?" |
+| TravelTo | Leaves for a place on the map | Ask them to go somewhere, e.g. "Go wait for me in Riverwood" |
+| CancelTravel | Drops those travel plans | Ask them not to go after all |
+| LeadTo | Leads you or an NPC to a place | Ask them to take you (or someone else) somewhere |
+| ReportCrime | Gives you a bounty (needs a guard nearby) | Confess a crime to them, or tell them about one you did |
+| AbsolveCrime | Clears a small bounty (needs a guard nearby) | Talk them into letting a small crime go, e.g. a theft |
+| ShareConversation | Tells someone who isn't there about this conversation, once it ends | Ask them to pass on what you said to someone, e.g. "Tell Jarl Balgruuf what I found" |
 
 These are the original Mantella's actions, with its defaults. Its EndConversation isn't offered: only you end a conversation (the end conversation keyword, or in game), so an NPC never ends a scene on you. Offended and Forgiven are now called Attack and StandDown. The Actions For Mantella mod's actions (Sex, Trade, Undress) work as before and show up in the same lists.
 
@@ -2930,11 +2949,31 @@ How actions fit the kinds of conversation:
 - **An action that is switched off does nothing.** If an NPC says one anyway, its name is still taken out of the line, so it isn't spoken.
 - **Typing just an action's name** (e.g. `Barter`) makes the last NPC who spoke do it, without asking the AI. It works with the actions the NPCs can use in that conversation, also in a group.
 - **Listen:** say or type "listen" and your next line waits for 10 seconds of silence before it ends, so you have time to think (with the microphone). The NPCs still hear it. An NPC who uses Listen gives you the same extra time.
-- **The interrupt key:** an action happens when its line starts. Interrupting before the line is sent drops the action with it; interrupting during the line doesn't undo it.
+- **The interrupt key:** an action happens when its line starts. Interrupting before the line is sent drops the action with it; interrupting during the line doesn't undo it. An action the AI model picked with Advanced Actions goes to the game after the lines the NPC wrote with it, so interrupting while those are spoken drops it too.
+- **Look:** with Vision on, NPCs normally see a screenshot with every reply. Where Look is ticked, they only get one when they use Look: Lydia starts with "Look:", and her reply is asked for again, this time with what you see. What the reply had already said stays said: it goes on from there instead of starting again. In a group, everyone who looks in one turn sees the same screenshot. If Vision fails to start, Look does nothing: an NPC who starts with "Look:" just says the rest of the line. Once an NPC has looked, a second "Look:" in that reply is just taken out of the line, so the line isn't lost. If the vision model sends back no description of the screenshot, the NPC answers without seeing it and the log says why (often a vision model that can't read images, or a max_tokens too low in **Custom Vision Model Parameters**). The **Custom Vision Model** list offers every model that can read images, also those that take more than images, such as Gemini.
+
+**Advanced Actions.** Normally the NPC starts its line with an action's name. With Advanced Actions on, the AI model picks the action and its details separately from what the NPC says (tool calling), which only some models can do. That lets NPCs use the actions above, and aim the others at someone: the guard attacks the drunk, not you.
+
+- **Still only for themselves.** Whoever the model names to do an action, only the NPC speaking does it. AddToConversation is the exception: it names who gets called over. Without Game Master Mode, one reply speaks for every NPC in a group (and in radiant conversations), so there the model names which of them does each action; never you. If it names none of them, the last NPC who spoke does it (with a separate model picking the actions, nobody has spoken yet: the NPC who joined last). The NPC whose action answers back speaks first with the answer.
+- **Asking twice works.** An NPC can do the same thing again, with the same details: follow you again after you dismissed them, open their inventory a second time. Only not in two replies in a row: the model doesn't see what it picked before, so without this it could open the trade menu again with every reply. Emote and MoveTo can always repeat.
+- **Actions that bring an answer back** (CheckDirections, ReportCrime, AbsolveCrime, ShareConversation, Inventory): the NPC speaks again with the game's answer. You ask "How do I get to Dawnstar?"; Faendal looks it up, then says "Three days north on foot." Looking it up and his line count as one reply: in a group nobody else speaks in between, and that line can't use another action that answers back.
+- **Without you:** while you watch an NPC Event, in Director Mode and in radiant conversations, Attack, Flee, Teleport and MoveTo stay, aimed only at NPCs, and so do the advanced ones, except AbsolveCrime and ReportCrime. Nothing can name you. Barter, Brawl, Follow, Inventory and Unfollow are still left out.
+- **CastSpell:** while Advanced Actions is on, each NPC is told which spells they know, so they only offer what they can cast. That's up to 20 spells, the ones given to this NPC first, then those of their kind. Spells that can't be cast are left out: always-on abilities (other mods give NPCs many, often without a name) and hidden spells mods use behind the scenes. A spell you give an NPC yourself (e.g. with `addspell`) is on the list from your next conversation with them.
+- **Most People in Conversation:** AddToConversation never goes past it (Conversation page, Shout section), and isn't offered once the conversation is full.
+- **ShareConversation** works with summaries off too: when the conversation ends, the person it was shared with remembers what they were told. A conversation under 5 lines shares nothing, as for summaries.
+- If the model only picks actions and writes no line, it is asked again for the line, now told what the NPC does. With a separate model picking the actions, the NPC's model is told the same way, so the line fits what the NPC does.
+- A line cut short still does its actions: when Max Sentences per Response stops the line, or the model starts speaking for you or another NPC, the rest of the reply is still read, without being said, for the actions the model picked.
+- Where tools are offered, the prompts' `{actions}` says to use them. Where none are (nothing ticked for that kind of conversation), it lists the basic actions as with Advanced Actions off.
 
 ### Where to find it
 
 **Conversation** page → **Actions**, at the end of the page, below the conversation settings: one list of tick boxes for each kind of conversation, **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
+
+**Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
+
+**LLM** tab → **Separate Model for Advanced Actions**: a separate model picks the actions, set with **Advanced Actions LLM Service** and **Advanced Actions Model**, so each NPC keeps its own model for speaking, even one that can't pick actions. Its instructions are the **Advanced Actions Prompt** on the **Prompts** tab. That model must be able to pick actions (on OpenRouter, models that can call tools); it starts as the same model as the Game Master Model's default, which can. With one that can't, no action happens, and the log says why. Mantella doesn't check that a model can pick actions: keep models that can't out of the random model pool while Advanced Actions is on, unless a separate model picks them.
+
+Emote's animations are listed in `data/Skyrim/skyrim_idles.csv`: the ones with an `x` in the `enabled` column can be used. A row whose id starts with `xx` belongs to another game file, which Emote can't play, so it is skipped even when marked.
 
 In game, **MCM → Mantella → General → NPC Actions**: **Allow Follow (Experimental)**, **Allow Inventory** and **Allow Aggro** still have to be on for Follow, Inventory, Attack and StandDown to happen.
 
@@ -2947,14 +2986,6 @@ When you update, your old **Actions** list (Other tab) is moved over once: an ac
 1. Open **Conversation** → **Actions** and tick **Wait** and **Follow** under **One-on-one**.
 2. In game, turn on **Allow Follow (Experimental)** in **MCM → Mantella → General → NPC Actions**.
 3. Talk to an NPC and ask them to come with you. They answer with Follow and start following you. Ask them to wait here: they stop where they are.
-
-### For developers
-
-- Actions are loaded from `data/actions/*.json` by `src/actions/function_manager.py` (from the original Mantella). Only the ones with a `prompt` can be used as basic actions; the others need Advanced Actions, which comes later. Look (not offered yet) and EndConversation (only the player ends a conversation) are loaded but never offered (`action_definitions.NOT_OFFERED`).
-- `src/actions/action_rules.actions_for(config, kind)` decides what NPCs can use: the kind's ticks minus `INVOLVE_PLAYER` for the kinds without the player. Each conversation type has an `action_kind()`, and `conversation_type.npc_actions()` is used both for the prompt's `{actions}` and for reading the reply (`Conversation.npc_actions()`, the Game Master's `__run_reply`), so the two always agree. `actions_parser` also takes the names of every other action out of a line.
-- The settings are in `src/config/definitions/action_definitions.py`. `ConfigLoader.__carry_over_actions` moves `active_actions` over when config.ini has it and none of the new keys.
-- Listen never goes to the game: `Conversation.listen_longer()` sets a one-line pause on the speech recognition (`Transcriber.set_temporary_pause`).
-- Tests: `tests/test_action_permissions.py` (every action in every kind, defaults, carry-over, prompts), `tests/test_actions_flow.py` (whole conversations with a pretend game), `tests/actions/test_function_manager.py`, and in the game `tests/ingame/actions/actions_ingame.py` with `bat mta`.
 
 ## Conversation Wheel
 
@@ -2975,20 +3006,22 @@ Outside a conversation:
 | **NPC Event** | Starts an [NPC Event](#npc-events) now |
 | **Approach** | Checks right away whether someone nearby has a reason to talk to you, like [NPC Initiative](#npc-initiative)'s **Check Now** |
 
-In a conversation (while you watch NPCs talk without you, only **Step in** or **Join**, **End** and **Add / Remove** are shown):
+In a conversation (while you watch NPCs talk without you, only **Step in** or **Join** and **Add / Remove** are shown):
 
 | Option | What it does |
 | --- | --- |
 | **Interrupt** | The NPCs stop and it's your turn |
+| **Show** | The NPCs see what you see right now, with the next thing you say. See [Show Them What You See](#show-them-what-you-see) |
 | **Step in** | Shown while you watch an NPC Event. You join the scene |
 | **Join** | Shown during a conversation between NPCs that you're not in. You join it |
-| **End** | Ends the conversation for everyone |
 | **Add / Remove** | Shown when you're looking at someone. Brings them in, or sends them away |
 | **Companions** | Brings in your companions nearby who aren't in the conversation yet |
 | **Shout / Private** | Switches [Shout](#shout) on or off |
 | **Talk Event / Nearby Event / Random Event** | Something happens. See [Talk, Nearby and Random Events](#talk-nearby-and-random-events) |
 
 **Companions** are your followers who are following you right now, plus anyone on your companions list. Nearby means within 20 meters, at most the 6 nearest, and free to talk. The list is saved with your game.
+
+The wheel has no **End**. To end a conversation, use the **End Conversation / Remove NPC** hotkey, say goodbye, or walk away.
 
 ### Where to find it
 
@@ -3035,6 +3068,36 @@ In game: **MCM → Mantella → General → Controls → Interrupt NPCs**, or **
 1. In game, open **MCM → Mantella → General** and bind **Interrupt NPCs** under **Controls**.
 2. Start a conversation and let the NPC talk.
 3. Press the hotkey mid-reply. The NPC stops and it is your turn to speak.
+
+## Show Them What You See
+
+### What it does
+
+During a conversation, press the hotkey (or pick **Show** on the [Conversation Wheel](#conversation-wheel)) and the NPCs see what you see at that moment. The picture goes with the next thing you say, so you can show them something and then ask about it.
+
+Example: you spot a dragon on a ridge, press Show, turn to Lydia and say "What do you make of that?" She answers about the dragon, even though you're no longer looking at it.
+
+- It works with **Vision** off. Most players keep Vision off because it sends a picture with every reply. Show sends one only when you ask.
+- The game shows `You show them what you see` once the picture is taken. Pressing Show again replaces the picture.
+- Only the replies to that line get the picture, not the next lines or an event you pick after it. The conversation keeps a short note that you showed them something, so later lines still make sense.
+- It needs a model that can read pictures: your conversation model, or the **Custom Vision Model** in the **Vision** tab. If the model can't read it, you hear the error sound and the NPC answers without it.
+- With Vision on, the NPCs use the picture you showed for that line instead of a new one.
+- The picture uses the **Vision** tab's settings (size, quality). The game window must be visible on screen.
+- To check what the NPCs saw, open `Documents\My Games\Mantella\data	mp\images\last_picture.jpg` (**Vision** tab → **Save Screenshots**, on by default). Only the newest picture is kept, from Show or Vision: each one replaces the one before, so the folder never grows. Screenshots saved one by one by older versions are removed when Mantella starts.
+
+In [Director Mode](#multi-conversation-director-mode), your character isn't in the scene, so the NPCs are told it's how the scene looks right now.
+
+Nothing happens outside a conversation, or while you only watch NPCs talk without you.
+
+### Where to find it
+
+In game: **MCM → Mantella → General → Controls → Show Them What You See** (no key by default), or **Show** on the [Conversation Wheel](#conversation-wheel). Requires the Mantella game plugin version that includes it. Skyrim only.
+
+### Quick start
+
+1. In game, open **MCM → Mantella → General** and bind **Show Them What You See** under **Controls**.
+2. Start a conversation and look at something.
+3. Press the hotkey, then say "What do you think of that?"
 
 ## In-Game Events
 

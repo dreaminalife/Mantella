@@ -20,7 +20,7 @@ class VisionDefinitions:
     
     @staticmethod
     def get_save_screenshot_config_value() -> ConfigValue:
-        description = "Whether to save screenshots to Documents/My Games/Mantella/data/tmp/images/. Disable this setting to improve performance."
+        description = "Saves the newest picture the NPCs got to Documents/My Games/Mantella/data/tmp/images/last_picture.jpg, so you can check what they saw. Each new picture replaces the one before. Turn it off to save a little time per picture."
         return ConfigValueBool("save_screenshot", "Save Screenshots", description, True, tags=[ConfigValueTag.share_row])  
 
     @staticmethod

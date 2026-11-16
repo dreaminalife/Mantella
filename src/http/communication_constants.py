@@ -22,6 +22,10 @@ class communication_constants:
     KEY_REPLYTYPE_PLAYERTALK: str  = PREFIX + "player_talk"
     KEY_REPLYTYPE_ENDCONVERSATION: str  = PREFIX + "end_conversation"
     KEY_REPLYTYPE_INTERRUPTRECEIVED: str  = PREFIX + "interrupt_received"
+    # Show: a picture of what the player sees now, sent with the player's next line. Handled right away, like an interruption
+    KEY_REQUESTTYPE_SHOW: str = PREFIX + "show"
+    KEY_REPLYTYPE_SHOWRECEIVED: str = PREFIX + "show_received"
+    KEY_SHOW_TAKEN: str = PREFIX + "show_taken" # False if the picture couldn't be taken
 
     KEY_REQUESTTYPE_NPCINITIATIVE: str = PREFIX + "npc_initiative_check"
     KEY_REPLYTYPE_NPCINITIATIVE: str = PREFIX + "npc_initiative_result"

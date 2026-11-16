@@ -37,6 +37,8 @@ from src.random_llm_selector import LLMSelection
 from src.sequential_llm_selector import SequentialLLMSelector
 from src.model_profile_manager import ModelProfileManager
 from src.llm.client_base import ClientBase, FirstTokenTimeout, ProviderError, ToolCalls
+from src.llm.image_client import ImageClient, VisionCapture, image_manager_for
+from src.image.image_manager import ImageManager
 from src.llm.messages import AssistantMessage, Message, UserMessage
 from src.actions.function_manager import FunctionManager
 from src.actions.tool_request import ToolRequest
@@ -132,8 +134,38 @@ class ChatManager:
         
         # Store vision client reference independently to handle random selection and hot swaps
         self.__vision_client = getattr(client, '_image_client', None)
+        # Show with Vision off: what takes the picture and what sends it, made the first time the player uses Show
+        self.__picture_taker: ImageManager | None = None
+        self.__show_client: ImageClient | None = None
         self.__random_selector = RandomLLMSelector()
         self.__sequential_selector = SequentialLLMSelector()
+
+    def take_picture(self) -> VisionCapture | None:
+        """Show: a picture of the game window right now, with the Vision settings. None if it couldn't be taken"""
+        try:
+            if self.__picture_taker is None:
+                self.__picture_taker = image_manager_for(self.__config)
+            image = self.__picture_taker.get_image()
+        except Exception as e:
+            utils.play_error_sound()
+            logging.error(f"Show: could not take a picture of the game: {e}")
+            return None
+        if not image:
+            logging.error("Show: could not take a picture of the game. Is the game window visible on screen?")
+            return None
+        return VisionCapture(image)
+
+    def __picture_client(self) -> ImageClient | None:
+        """Show: what adds the shown picture to a request. The Vision one when Vision is on"""
+        if self.__vision_client:
+            return self.__vision_client
+        if self.__show_client is None:
+            try:
+                self.__show_client = ImageClient(self.__config, self.__api_file, 'IMAGE_SECRET_KEY.txt')
+            except Exception as e:
+                logging.error(f"Show: could not set up sending the picture, so the NPCs answer without it: {e}")
+                return None
+        return self.__show_client
 
     def reset_sequential_llm_selection(self) -> None:
         """Start sequential pools from the first model. Called when a new conversation starts."""
@@ -421,6 +453,8 @@ class ChatManager:
             self.__per_service_tts.clear()
             # Update vision client reference for hot swap
             self.__vision_client = getattr(client, '_image_client', None)
+            self.__picture_taker = None # Show: made again with the new settings
+            self.__show_client = None
             
             # Clear per-character client cache so they get recreated with new settings
             self.__per_character_clients.clear()
@@ -759,8 +793,17 @@ class ChatManager:
         drop_buffer = drop_last_sentences_buffer(drop_last_count)
         max_retries = 5
         retries = 0
-        # Look needs Vision working. Without it, an NPC starting its line with "Look:" just says the line, and the model doesn't get the tool
-        can_see = bool(self.__config.vision_enabled and self.__vision_client)
+        # Show: the player showed the NPCs a picture with the line they reply to. It goes with this reply, also with Vision off
+        shown = messages.shown_picture() if isinstance(messages, message_thread) else None
+        picture_client = self.__picture_client() if shown else None
+        showing = bool(shown and picture_client)
+        picture_dropped = False # The model failed with the shown picture: asked again without any picture
+        if showing:
+            messages = messages.copy_with([]) # Only for this reply's requests: they send the shown picture, not a new one
+            messages.vision_capture = shown
+        # Look needs Vision working. Without it, an NPC starting its line with "Look:" just says the line, and the model doesn't get the tool.
+        # Not needed when the player showed a picture: the NPC sees it already
+        can_see = bool(self.__config.vision_enabled and self.__vision_client) and not showing
         look_tool = FunctionManager._actions.get(LOOK, {}).get('name', 'Look')
         if not can_see and any(a.identifier == LOOK for a in actions):
             actions = [a for a in actions if a.identifier != LOOK]
@@ -926,15 +969,17 @@ class ChatManager:
                     last_used_client = current_client
 
                     # Ensure vision client is available and up to date on the selected client
-                    if self.__config.vision_enabled and self.__vision_client:
+                    if not picture_dropped and (showing or (self.__config.vision_enabled and self.__vision_client)):
                         try:
-                            # Where Look is offered, only once the NPC used it
-                            image_client = self.__vision_client if (looking or not look_offered) else None
+                            # Show: the shown picture. Otherwise, where Look is offered, only once the NPC used it
+                            image_client = picture_client if showing else (self.__vision_client if (looking or not look_offered) else None)
                             existing_image_client = getattr(current_client, '_image_client', None)
                             if existing_image_client is not image_client:
                                 current_client._image_client = image_client
                         except Exception as e:
                             logging.warning(f"Could not attach vision client to selected LLM client: {e}")
+                    elif getattr(current_client, '_image_client', None) is not None:
+                        current_client._image_client = None # A picture shown before isn't sent again, nor one the model failed with
                     # Log which LLM model is being used
                     if hasattr(current_client, 'model_name'):
                         logging.info(f"[LLM: {current_client.model_name}]")
@@ -1013,6 +1058,14 @@ class ChatManager:
                     blocking_queue.put(new_sentence)
                     break
                 except ProviderError:
+                    if showing and not used_fallback:
+                        # Maybe the model can't read pictures, or it failed for another reason: asked again without it before the Fallback Model.
+                        # The error sound was played already
+                        logging.warning(f"The request with the picture the player showed (Show) failed, so it is sent again without the picture. "
+                                        f"If the model can't read pictures, pick one that does, or set up a Custom Vision Model in the Vision settings")
+                        showing = False
+                        picture_dropped = True
+                        continue
                     fallback_client = None if used_fallback else self._get_fallback_client()
                     if fallback_client is None:
                         break # Already logged by the client. The reply stays empty

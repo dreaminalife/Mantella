@@ -1,7 +1,8 @@
-from datetime import datetime
 import logging
 import base64
 import os
+import re
+import tempfile
 import src.utils as utils
 import numpy as np
 import win32gui
@@ -15,6 +16,9 @@ class ImageManager:
     '''
     Manages game window capture and image processing
     '''
+    LAST_PICTURE_FILE: str = 'last_picture.jpg' # Save Screenshots: only the newest picture is kept, so the folder never grows
+    # How pictures were named before only the newest was kept: '<window title>_<date>_<time>.jpg'
+    OLD_PICTURE_NAME = re.compile(r'.+_\d{8}_\d{6}\.jpg$')
     
     @utils.time_it
     def __init__(self, 
@@ -61,6 +65,7 @@ class ImageManager:
         if self.__save_screenshot:
             self.__image_path: str = save_folder+'data\\tmp\\images'
             os.makedirs(self.__image_path, exist_ok=True)
+            self._remove_old_pictures()
 
         self.__capture_params = None
 
@@ -251,13 +256,33 @@ class ImageManager:
 
     @utils.time_it
     def _save_screenshot_to_file(self, screenshot: bytes):
-        '''Save the screenshot to a file
+        '''Save the screenshot as the newest picture, over the one before, so the player can check what the NPC saw
         
         Args:
             screenshot (bytes): The screenshot data to save
         '''
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{self.__image_path}/{self.__window_title.replace(' ', '_')}_{timestamp}.jpg"
+        temporary = None
+        try:
+            # Written whole first, then put in place: a picture being opened, or two saved at once (Show and Vision), is never half written
+            descriptor, temporary = tempfile.mkstemp(suffix='.tmp', dir=self.__image_path)
+            with os.fdopen(descriptor, 'wb') as f:
+                f.write(screenshot)
+            os.replace(temporary, os.path.join(self.__image_path, self.LAST_PICTURE_FILE))
+            temporary = None
+        except OSError as e:
+            # Only a copy for the player to look at: the picture still goes to the NPC
+            logging.warning(f"Could not save the picture to {self.__image_path}: {e}")
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.remove(temporary)
 
-        with open(filename, 'wb') as f:
-            f.write(screenshot)
+    def _remove_old_pictures(self):
+        '''Pictures saved before only the newest was kept, one per screenshot. Nothing reads them'''
+        try:
+            old = [name for name in os.listdir(self.__image_path) if self.OLD_PICTURE_NAME.match(name)]
+            for name in old:
+                os.remove(os.path.join(self.__image_path, name))
+            if old:
+                logging.info(f"Removed {len(old)} old saved screenshots from {self.__image_path}. Only the newest picture is kept now")
+        except OSError as e:
+            logging.warning(f"Could not remove the old saved screenshots in {self.__image_path}: {e}")

@@ -365,6 +365,19 @@ class message_thread():
     def get_last_message(self) -> Message:
         return self.__messages[len(self.__messages) -1]
 
+    def shown_picture(self) -> "VisionCapture | None":
+        """Show: the picture the player showed with their last line, while the NPCs reply to it"""
+        for message in reversed(self.__messages):
+            if isinstance(message, UserMessage) and message.shown_picture:
+                return message.shown_picture
+        return None
+
+    def forget_shown_pictures(self):
+        """Show: once the player says something new, the picture shown before isn't sent again. The line keeps its note"""
+        for message in self.__messages:
+            if isinstance(message, UserMessage):
+                message.shown_picture = None
+
     @utils.time_it
     def get_last_assistant_message(self) -> AssistantMessage | None:
         for message in reversed(self.__messages):
