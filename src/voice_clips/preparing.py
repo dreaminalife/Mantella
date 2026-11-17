@@ -30,6 +30,13 @@ TRIES = 3
 WAITING_FOR_THE_GAME = ("Waiting for the game. It starts the next time you talk to someone in game or load a save, "
                         "and then goes on by itself while you play.")
 
+
+def online_only_message(names: list[str]) -> str:
+    """Prepare all voices pressed while every voice service in use runs online"""
+    who = " and ".join(names) if names else "Online voice services"
+    return (f"Nothing to prepare: {who} clone{'s' if len(names) == 1 else ''} each voice the first time an NPC speaks. "
+            "Prepare all voices is for Pocket TTS and voice setups on your PC.")
+
 _background = threading.local()
 
 
@@ -84,6 +91,10 @@ class VoicePreparation:
 
     def prepare_all(self) -> str:
         with self.__lock:
+            online = [s.info.name for s in self.__services if s.info.runs_online]
+            if self.__services and len(online) == len(self.__services):
+                # Nothing would be made, so the game isn't asked for every clip either
+                return online_only_message(list(dict.fromkeys(online)))
             if self.__all_asked is not None and self.__all is None and time.time() - self.__all_asked < LIST_WAIT_SECONDS:
                 return WAITING_FOR_THE_GAME
             self.__all_asked = time.time()
@@ -118,7 +129,7 @@ class VoicePreparation:
         if makers:
             maker = makers[0]
             if not getattr(maker, "can_copy_voices", True):
-                return (text + f". {maker.info.name} can't copy voices right now, so no voices are made and NPCs use its built-in voices. "
+                return (text + f". {maker.info.name} can't clone voices right now, so no voices are made and NPCs use its built-in voices. "
                         f"See {maker.info.name} on this page.")
             made = sum(1 for v in with_clip if self.__voice_made(maker, v))
             text += f". Voices made for {maker.info.name}: **{made}** of {len(with_clip)}"

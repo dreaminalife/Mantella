@@ -196,9 +196,21 @@ def test_a_service_that_cant_copy_voices_isnt_reported_done(preparation, request
     service.can_copy_voices = False # Pocket TTS without a working sign-in
     preparation.add_service(service)
     listed(preparation, requests, ["MaleNord"])
-    assert "can't copy voices right now" in preparation.progress() and "Done" not in preparation.progress()
+    assert "can't clone voices right now" in preparation.progress() and "Done" not in preparation.progress()
 
 
 def test_a_first_clip_for_someone_speaking_still_brings_lines_to_hear(requests):
     requests.ask_for("FemaleEvenToned")
     assert json.loads(requests.requests_for_reply()[0])["count"] == 4
+
+
+def test_with_only_online_services_there_is_nothing_to_prepare(preparation, requests, store):
+    online = FakeService(store, runs_online=True)
+    online.info.name = "ElevenLabs"
+    preparation.add_service(online)
+    message = preparation.prepare_all()
+    assert "Nothing to prepare: ElevenLabs clones each voice the first time an NPC speaks" in message
+    assert requests.requests_for_reply() == [] # the game isn't asked for every clip
+    assert preparation.progress() == ""
+    preparation.add_service(FakeService(store)) # an NPC on Pocket TTS too
+    assert "Nothing to prepare" not in preparation.prepare_all()

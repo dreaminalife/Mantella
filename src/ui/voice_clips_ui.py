@@ -11,7 +11,8 @@ from typing import Any, Callable
 import gradio as gr
 
 from src.config.config_loader import ConfigLoader
-from src.tts import pocket_tts
+from src.tts import kept_voices, pocket_tts
+from src.tts.registry import voice_services
 from src.tts.test_line import TEST_LINE, speak_with_clip
 from src.tts.voice_folders import voice_clips_folder
 from src.tts.voice_picker import OWN_CLIP, TRIAL_PREFIX, VOICE_TYPE_CLIP, VoicePick
@@ -77,7 +78,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
                     "- **A new voice type** uses a stand-in voice for about its first line. **Prepare all voices**, at the bottom, avoids that.\n"
                     "- **NPCs with no voice lines**, such as an unvoiced follower, use the voice type in their character file "
                     "(the skyrim_voice_folder column), or else one that fits their race and gender.\n"
-                    "- **Works with** Pocket TTS and your voice setups. Piper, XTTS and xVASynth don't use clips.\n"
+                    "- **Works with** Pocket TTS, ElevenLabs, Inworld and your voice setups. Piper, XTTS and xVASynth don't use clips.\n"
                     "- **Needs** MantellaVoiceClips.dll, which comes with the game add-on.\n"
                     f"- **Clips are saved in** `{store.folder}`.")
 
@@ -143,8 +144,12 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         share_msg = gr.Markdown("")
 
     gr.Markdown("### Prepare all voices\n"
-                "Clone every voice ahead of time, so nobody starts with a stand-in. It starts the next time you talk to someone in game "
-                "or load a save, then works in the background while you play: about 10 minutes for 100 voice types with Pocket TTS.")
+                "Clone every voice ahead of time, so nobody starts with a stand-in.")
+    with gr.Accordion("How it works", open=False, elem_classes="voice-clips-subsection"):
+        gr.Markdown(f"- **Starts** {LATER} or load a save, then works in the background while you play.\n"
+                    "- **Takes** about 10 minutes for 100 voice types with Pocket TTS.\n"
+                    "- **For** Pocket TTS and voice setups on your PC. ElevenLabs and Inworld clone each voice the first time an NPC "
+                    "speaks, so they don't need it.")
     prepare_btn = gr.Button("Prepare all voices", size="sm")
     prepare_msg = gr.Markdown(preparation.progress(), elem_classes="voice-clips-progress")
     # The count refreshes every 3 seconds while the page is open. Gradio marks a refreshing part with a green border, which an empty
@@ -160,7 +165,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
     def show(choice: str | None, message: str = ""):
         """Everything in "Change a voice" for the picked clip"""
         kind, key = split(choice)
-        pocket_tts.remove_trial_voices(config.save_folder, keep=key or None) # voices made to hear other clips' lists aren't needed any more
+        kept_voices.remove_trial_voices(config.save_folder, keep=key or None) # voices made to hear other clips' lists aren't needed any more
         if not key:
             return ("", gr.update(value=None, visible=False), gr.update(choices=[], value=None), gr.update(value=None, visible=False),
                     gr.update(interactive=False), gr.update(interactive=False), gr.update(visible=False), gr.update(interactive=False),
@@ -194,21 +199,24 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         pick = clip_voice(store, kind, key, candidate) if key else None
         if pick is None:
             return gr.update(value=None, visible=False), "Pick a voice clip first."
-        service = config.tts_service_name
+        service = config.chosen_voice_service_name() # as picked on the page now, before the game has sent a request
         try:
             path = speak_with_clip(config, chat_manager_getter, service, pick, (sentence or "").strip() or TEST_LINE)
         except Exception as e:
             logging.warning(f"Hear it speak failed: {e}")
             return gr.update(value=None, visible=False), f"Could not speak: {e}"
         which = "the clip you're trying" if candidate else "the clip in use right now"
-        return gr.update(value=path, visible=True), f"**▶ The test sentence, in the voice {service} cloned from {which}.**"
+        info = voice_services.find(service)
+        online = (f" {service} keeps this voice on your account until you pick another voice, unless you clone from it."
+                  if candidate and info is not None and info.runs_online else "")
+        return gr.update(value=path, visible=True), f"**▶ The test sentence, in the voice {service} cloned from {which}.**{online}"
 
     def on_use_line(choice: str | None, candidate: str | None):
         kind, key = split(choice)
         if not key or not candidate:
             return show(choice, "Pick a clip from the list first.")
         store.choose_candidate(kind, key, candidate)
-        pocket_tts.use_trial_voice(config.save_folder, key, store.clip(kind, key) or "")
+        kept_voices.use_trial_voice(config.save_folder, key, store.clip(kind, key) or "")
         return show(choice, "Done. The next line spoken uses the voice cloned from this clip. The old clip is in the list if you want it back.")
 
     def on_bring_back(choice: str | None):
@@ -230,7 +238,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         if kind != NPCS:
             return gr.update(), gr.update(), *show(choice, "Only an NPC's own voice can be removed. To change a voice type's voice, clone from another clip in the list instead.")
         store.remove(kind, key)
-        pocket_tts.remove_saved_voices(config.save_folder, key)
+        kept_voices.remove_saved_voices(config.save_folder, key)
         return (gr.update(choices=clip_choices(store), value=None), gr.update(choices=npc_choices(store)),
                 *show(None, "Removed. The NPC sounds like the rest of their voice type again."))
 
@@ -243,8 +251,8 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
             voice_type = store.use_npc_clip_for_voice_type(key)
         except ValueError as e:
             return gr.update(), gr.update(), *show(choice, str(e))
-        pocket_tts.move_saved_voice(config.save_folder, key, voice_type, store.clip(VOICE_TYPES, voice_type) or "")
-        pocket_tts.remove_saved_voices(config.save_folder, key)
+        kept_voices.move_saved_voice(config.save_folder, key, voice_type, store.clip(VOICE_TYPES, voice_type) or "")
+        kept_voices.remove_saved_voices(config.save_folder, key)
         new_choice = f"{VOICE_TYPES}/{voice_type}"
         name = spaced(npc.voice_type)
         return (gr.update(choices=clip_choices(store), value=new_choice), gr.update(choices=npc_choices(store)),
@@ -277,7 +285,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
 
     def on_prepare():
         if not preparation.in_use:
-            return "Pick a voice service that copies voices, such as Pocket TTS, as the TTS Service first, then load a save in game."
+            return "Pick a voice service that clones voices, such as Pocket TTS, as the TTS Service first, then load a save in game."
         return preparation.prepare_all()
 
     shown = [about_ui, clip_audio_ui, candidate_ui, candidate_audio_ui, use_line_btn, more_btn, remove_btn, speak_btn, spoken_ui, change_msg, bring_back_btn, trying_note_ui, voice_type_btn]

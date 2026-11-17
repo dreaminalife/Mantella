@@ -48,6 +48,7 @@ class VoiceServiceInfo:
     legacy_enum: TTSEnum | None = None # Piper, XTTS and xVASynth: the TTS Service value they had before this list
     is_setup: bool = False # one of the player's own voice setups
     setup: dict | None = None # the setup's boxes, for a voice setup
+    price_per_million_chars: float | None = None # an online service's list price, for the cost shown on the page
 
     @property
     def is_legacy(self) -> bool:
@@ -89,6 +90,16 @@ def _pocket_tts(config, game, info):
     return PocketTTS(config, info)
 
 
+def _elevenlabs(config, game, info):
+    from src.tts.elevenlabs import ElevenLabs
+    return ElevenLabs(config, info)
+
+
+def _inworld(config, game, info):
+    from src.tts.inworld import Inworld
+    return Inworld(config, info)
+
+
 def _legacy_services() -> list[VoiceServiceInfo]:
     return [
         VoiceServiceInfo(TTSEnum.PIPER.display_name, _piper, TRAINED, aliases=["piper"], legacy_enum=TTSEnum.PIPER),
@@ -100,6 +111,8 @@ def _legacy_services() -> list[VoiceServiceInfo]:
 def _new_services() -> list[VoiceServiceInfo]:
     return [
         VoiceServiceInfo("Pocket TTS", _pocket_tts, CLIP, aliases=["pockettts", "pocket"], languages=["en", "fr", "de", "it", "pt", "es", "nl"]),
+        VoiceServiceInfo("ElevenLabs", _elevenlabs, CLIP, runs_online=True, aliases=["elevenlabs", "11labs", "eleven"], price_per_million_chars=40.0),
+        VoiceServiceInfo("Inworld", _inworld, CLIP, runs_online=True, aliases=["inworld"], accepts_ipa=True, price_per_million_chars=25.0),
     ]
 
 

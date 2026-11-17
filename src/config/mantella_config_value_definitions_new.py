@@ -17,7 +17,7 @@ from src.config.definitions.other_definitions import OtherDefinitions
 from src.config.definitions.startup_definitions import StartupDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.stt_definitions import STTDefinitions
-from src.config.definitions.tts_definitions import TTSDefinitions, TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, XTTS_PART, XVASYNTH_PART
+from src.config.definitions.tts_definitions import TTSDefinitions, TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP, XTTS_PART, XVASYNTH_PART
 from src.config.definitions.vision_definitions import VisionDefinitions
 from src.config.definitions.model_profile_definitions import ModelProfileDefinitions
 import sys
@@ -282,6 +282,10 @@ class MantellaConfigValueDefinitionsNew:
         result.add_base_group(ConfigValueGroup("VoiceClips", VOICE_CLIPS_GROUP, TTSDefinitions.VOICE_CLIPS_DESCRIPTION, on_value_change_callback,
                                                page=tts_category.name, foldable=True))
         result.add_base_group(ConfigValueGroup("PocketTTS", POCKET_TTS_GROUP, TTSDefinitions.POCKET_TTS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("ElevenLabs", ELEVENLABS_GROUP, TTSDefinitions.ELEVENLABS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("Inworld", INWORLD_GROUP, TTSDefinitions.INWORLD_DESCRIPTION, on_value_change_callback,
                                                page=tts_category.name, foldable=True))
 
         stt_category = ConfigValueGroup("STT", "Speech-to-Text", "Settings for the STT methods Mantella supports.", on_value_change_callback)

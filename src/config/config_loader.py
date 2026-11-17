@@ -271,6 +271,11 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             utils.play_error_sound()
             logging.error(24, f"Failed to write default 'config.ini'. Possible reason: MantellaSoftware does not have rights to write at its location. Exception: {repr(e)}")
 
+    def chosen_voice_service_name(self, identifier: str = "tts_service") -> str:
+        """The voice service picked on the settings page right now. tts_service_name only changes with the next request from the game,
+        so a button on the page that speaks with the TTS Service reads this instead"""
+        return self.__voice_service_name(identifier)
+
     def __voice_service_name(self, identifier: str) -> str:
         """The chosen voice service, by its name in the list of voice services. Piper when it is no longer in the list"""
         name = self.__definitions.get_string_value(identifier, False)

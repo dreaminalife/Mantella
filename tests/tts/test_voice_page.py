@@ -87,5 +87,46 @@ def test_hear_it_speak_uses_the_clip_or_the_line_picked_in_the_list(tmp_path, mo
     assert pick.key == "try_femaleeventoned" and pick.clip_path == candidate and text == TEST_LINE # never the name of the clip's own voice
     audio, message = on_speak(None, None, "")
     assert not audio["visible"] and message == "Pick a voice clip first."
-    with pytest.raises(ValueError, match="doesn't copy voices"):
+    with pytest.raises(ValueError, match="doesn't clone voices"):
         voice_from_clip(object(), "Piper", pick, "Hello")
+
+
+def test_the_online_services_have_parts_of_their_own_and_never_show_the_key(tmp_path, monkeypatch):
+    from src.ui import online_voices_ui
+    from src.tts.elevenlabs import ElevenLabs
+    config = ConfigLoader(mygame_folder_path=str(tmp_path), game_override=GameEnum.SKYRIM, prompt_profiles_path=str(tmp_path / "prompt_profiles.json"))
+    config.auto_launch_ui = False
+    blocks = StartUI(config).create_main_block()
+    accordions = [c.label for c in blocks.blocks.values() if isinstance(c, gr.Accordion)]
+    assert accordions.index("Pocket TTS") < accordions.index("ElevenLabs") < accordions.index("Inworld")
+    assert tab_of(next(c for c in blocks.blocks.values() if getattr(c, "label", None) == "ElevenLabs key")) == "Text-to-Speech"
+    saved = {}
+    monkeypatch.setattr(online_voices_ui, "save_key_file", lambda name, key: saved.update({name: key}) or tmp_path / name)
+    monkeypatch.setattr(ElevenLabs, "check_key", classmethod(lambda cls, key, folder: "Your key works."))
+    on_save = next(f.fn for f in blocks.fns if getattr(f.fn, "__name__", "") == "on_save" and "online_voices_ui" in f.fn.__module__)
+    box, message = on_save("  sk_123  ")
+    assert box == "" and "sk_123" not in message and saved == {"ELEVENLABS_SECRET_KEY.txt": "sk_123"} and "Your key works." in message
+    assert config.has_any_config_value_changed # the next line uses the new key
+    from src.tts import online_service
+    on_opens = [f.fn for f in blocks.fns if getattr(f.fn, "__name__", "") == "on_open" and "online_voices_ui" in f.fn.__module__]
+    online_service.set_problem("ElevenLabs", "ElevenLabs won't clone another voice.")
+    try:
+        shown = [on_open() for on_open in on_opens] # each time the page is opened
+        assert sum("won't clone another voice" in text for text in shown) == 1 # on ElevenLabs' part only
+    finally:
+        online_service.set_problem("ElevenLabs", None)
+
+
+def test_hear_the_cloned_voice_uses_the_tts_service_picked_on_the_page_before_the_game_asks(tmp_path, monkeypatch):
+    from src.tts.voice_picker import VOICE_TYPE_CLIP, VoicePick
+    from src.ui import voice_clips_ui
+    config = ConfigLoader(mygame_folder_path=str(tmp_path), game_override=GameEnum.SKYRIM, prompt_profiles_path=str(tmp_path / "prompt_profiles.json"))
+    config.auto_launch_ui = False
+    blocks = StartUI(config).create_main_block()
+    on_speak = next(f.fn for f in blocks.fns if getattr(f.fn, "__name__", "") == "on_speak")
+    used = []
+    monkeypatch.setattr(voice_clips_ui, "clip_voice", lambda store, kind, key, line=None: VoicePick(VOICE_TYPE_CLIP, key, str(tmp_path / "a.wav")))
+    monkeypatch.setattr(voice_clips_ui, "speak_with_clip", lambda config, getter, service, pick, text: used.append(service) or str(tmp_path / "a.wav"))
+    config.definitions.get_config_value_definition("tts_service").value = "Inworld" # picked on the page; the game hasn't sent a request yet
+    _, message = on_speak("voice_types/femaleeventoned", None, "Hello.")
+    assert used == ["Inworld"] and "Inworld cloned" in message

@@ -27,6 +27,8 @@ VOICE_SETUPS_GROUP = "Voice Setups"
 WORD_LISTS_GROUP = "Fix Pronunciation"
 VOICE_CLIPS_GROUP = "Voice Clips"
 POCKET_TTS_GROUP = "Pocket TTS"
+ELEVENLABS_GROUP = "ElevenLabs"
+INWORLD_GROUP = "Inworld"
 # Folded parts of the Text-to-Speech page for one service's settings (config.ini keeps them under [TTS])
 XTTS_PART = "XTTS"
 XVASYNTH_PART = "xVASynth"
@@ -41,6 +43,8 @@ The lists are in the pronunciation folder next to config.ini: mantella_words.csv
 Pocket TTS and your voice setups use these lists. Piper, XTTS and xVASynth don't."""
     VOICE_CLIPS_DESCRIPTION = """Every NPC's voice is cloned from a few seconds of their real voice in your game. Hear it, swap it, or give an NPC a voice of their own."""
     POCKET_TTS_DESCRIPTION = """A small voice program by Kyutai. It clones each NPC's voice from a clip of their real lines and runs on the processor, leaving the graphics card to Skyrim. Pick it under TTS Service: Mantella downloads and starts it for you."""
+    ELEVENLABS_DESCRIPTION = """Online voices that sound the best in listening tests, and cost the most. Each NPC's voice is cloned once on your ElevenLabs account. Pick it under TTS Service, or for one NPC in their tts_service column."""
+    INWORLD_DESCRIPTION = """Online voices close to ElevenLabs' for less, with voice cloning on every plan. Each NPC's voice is cloned once on your Inworld account. Pick it under TTS Service, or for one NPC in their tts_service column."""
 
     class ResourceFolderExistsChecker(ConfigValueConstraint[str]):
         def __init__(self) -> None:
@@ -73,7 +77,7 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
 
 Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Need to add a new column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
 
-Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), or the name of one of your voice setups.
+Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', or the name of one of your voice setups.
 
 Your own voice setups (Voice Setups, below) are in this list too."""
         options, enums = TTSDefinitions.voice_service_options()

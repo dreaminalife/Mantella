@@ -54,17 +54,22 @@ def speak_with_clip(config, chat_manager_getter: Callable[[], Any], service_name
 def voice_from_clip(service: Any, service_name: str, pick: VoicePick, text: str) -> str:
     if not isinstance(service, ClipVoiceService):
         raise ValueError(doesnt_copy_voices(service_name))
+    if not getattr(service, "can_copy_voices", True) and getattr(service, "why_not", ""):
+        raise ValueError(service.why_not) # an online service: no key, or it won't clone another voice right now
     if not getattr(service, "can_copy_voices", True):
-        raise ValueError(f"{service_name} can't copy voices right now, so it would only use its built-in voices. See {service_name} on this page.")
+        raise ValueError(f"{service_name} can't clone voices right now, so it would only use its built-in voices. See {service_name} on this page.")
     out_path = os.path.join(tempfile.gettempdir(), "voicelines", "test_clip.wav")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     service.voice_into(text, pick, out_path)
+    if not getattr(service, "can_copy_voices", True) and getattr(service, "why_not", ""):
+        # Refused just now: the line was spoken in a built-in voice, not the cloned one this button promises
+        raise ValueError(service.why_not)
     return out_path
 
 
 def doesnt_copy_voices(service_name: str) -> str:
-    return (f"{service_name} doesn't copy voices from clips. To hear a clip speak, pick Pocket TTS or one of your voice setups "
-            "as the TTS Service.")
+    return (f"{service_name} doesn't clone voices from clips. To hear a clip speak, pick Pocket TTS, ElevenLabs, Inworld or one "
+            "of your voice setups as the TTS Service.")
 
 
 def speak_with_setup(config, info: VoiceServiceInfo, voice_type: str, text: str = TEST_LINE) -> str:

@@ -26,7 +26,7 @@ import requests
 
 from src import utils
 from src.config.config_loader import ConfigLoader
-from src.tts.clip_service import ClipVoiceService
+from src.tts.clip_service import ClipVoiceService, clip_hash
 from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import BUILT_IN, TRIAL_PREFIX, VoicePick, VoiceSpeaker
@@ -62,9 +62,9 @@ ACCESS_NO_TERMS = "terms not accepted"
 ACCESS_UNKNOWN = "unknown" # no internet, or Hugging Face didn't answer: tried anyway
 
 ACCESS_MESSAGES = {
-    ACCESS_NO_TOKEN: f"Pocket TTS can't copy voices: {KEY_FILE} is missing or empty, so every NPC uses a built-in voice. See 'Turn on voice cloning' under Pocket TTS on the Text-to-Speech page.",
-    ACCESS_BAD_TOKEN: f"Pocket TTS can't copy voices: Hugging Face doesn't accept the token in {KEY_FILE}, so every NPC uses a built-in voice. Make a new read token at {TOKEN_PAGE}.",
-    ACCESS_NO_TERMS: f"Pocket TTS can't copy voices: your Hugging Face account hasn't accepted Kyutai's terms, so every NPC uses a built-in voice. Accept them at {MODEL_PAGE}.",
+    ACCESS_NO_TOKEN: f"Pocket TTS can't clone voices: {KEY_FILE} is missing or empty, so every NPC uses a built-in voice. See 'Turn on voice cloning' under Pocket TTS on the Text-to-Speech page.",
+    ACCESS_BAD_TOKEN: f"Pocket TTS can't clone voices: Hugging Face doesn't accept the token in {KEY_FILE}, so every NPC uses a built-in voice. Make a new read token at {TOKEN_PAGE}.",
+    ACCESS_NO_TERMS: f"Pocket TTS can't clone voices: your Hugging Face account hasn't accepted Kyutai's terms, so every NPC uses a built-in voice. Accept them at {MODEL_PAGE}.",
 }
 CLONING_REFUSED = "could not download the weights for the model with voice cloning" # what Kyutai's program says without access
 
@@ -155,12 +155,6 @@ def _remove_other_versions(save_folder: str) -> None:
         for name in os.listdir(parent):
             if re.fullmatch(r"v\d[\d.]*", name) and name != PROGRAM_VERSION and os.path.isdir(os.path.join(parent, name)):
                 shutil.rmtree(os.path.join(parent, name), ignore_errors=True)
-
-
-def clip_hash(clip_path: str) -> str:
-    """Names a clip's saved voice: the same sound gives the same name, whichever key it is saved under"""
-    with open(clip_path, "rb") as file:
-        return hashlib.sha256(file.read()).hexdigest()[:16]
 
 
 def _language_folders(save_folder: str) -> list[str]:
@@ -489,7 +483,7 @@ class PocketTTS(ClipVoiceService):
 
     def __say_no_copying(self, message: str) -> None:
         logging.warning(message)
-        add_notice("Pocket TTS can't copy voices, so NPCs use built-in voices. See Mantella's Text-to-Speech page.")
+        add_notice("Pocket TTS can't clone voices, so NPCs use built-in voices. See Mantella's Text-to-Speech page.")
 
     def __environment(self) -> dict[str, str]:
         environment = dict(os.environ)
@@ -524,7 +518,7 @@ class PocketTTS(ClipVoiceService):
                     self.__access = access
                     self.__say_no_copying(ACCESS_MESSAGES[access])
                 else:
-                    logging.warning("Pocket TTS could not download Kyutai's voice-copying model this time. "
+                    logging.warning("Pocket TTS could not download Kyutai's voice cloning model this time. "
                                     "Your sign-in is fine, so it tries again with the next line.")
             raise RuntimeError(f"Pocket TTS could not make a voice from {os.path.basename(clip_path)}: {output[-300:]}")
 

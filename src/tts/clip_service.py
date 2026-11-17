@@ -6,6 +6,7 @@ A service only answers what differs: how to start it, how a clip becomes a voice
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -27,6 +28,12 @@ from src.voice_clips.requests import clip_requests_for
 
 TRIES = 2 # one retry, then the line goes to the backup service
 _warned_languages: set[tuple[str, str]] = set()
+
+
+def clip_hash(clip_path: str) -> str:
+    """Names the voice made from a clip: the same sound gives the same name, whichever voice it is kept under"""
+    with open(clip_path, "rb") as file:
+        return hashlib.sha256(file.read()).hexdigest()[:16]
 
 
 class VoiceServiceFailure(Exception):

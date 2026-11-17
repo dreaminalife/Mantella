@@ -22,9 +22,10 @@ from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_visitor import ConfigValueVisitor
 from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, EXTRA_ROUNDS, REPLIES_IN_BETWEEN, SHARED, TALK_KINDS, WHO_MUST_SPEAK,
                                                              greyed_choices, talk_key, who_still_speaks_now)
-from src.config.definitions.tts_definitions import TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, TTSDefinitions
+from src.config.definitions.tts_definitions import TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP, TTSDefinitions
 from src.ui.voice_ui import render_voice_setups_editor, render_voice_test, render_word_lists_editor
 from src.ui.voice_clips_ui import render_pocket_tts_panel, render_voice_clips_editor
+from src.ui.online_voices_ui import render_online_service_panel
 
 # Global reference to the game manager for character data reload functionality
 _game_manager_ref = None
@@ -1179,7 +1180,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
 
     def __render_voice_group(self, config_value: ConfigValueGroup) -> bool:
         """The voice parts of the Text-to-Speech page, which keep their own files instead of settings. False for any other group"""
-        if config_value.name not in (TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP) or self.__config_loader is None:
+        if config_value.name not in (TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP) or self.__config_loader is None:
             return False
         config_loader = self.__config_loader
         chat_manager_getter = lambda: getattr(_game_manager_ref, "chat_manager", None) if _game_manager_ref is not None else None
@@ -1200,6 +1201,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 render_voice_clips_editor(config_loader, chat_manager_getter)
             elif config_value.name == POCKET_TTS_GROUP:
                 render_pocket_tts_panel(config_loader)
+            elif config_value.name in (ELEVENLABS_GROUP, INWORLD_GROUP):
+                render_online_service_panel(config_loader, config_value.name)
             else:
                 render_word_lists_editor(config_loader, chat_manager_getter)
         return True
