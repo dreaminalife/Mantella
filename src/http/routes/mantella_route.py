@@ -19,6 +19,11 @@ from src.tts.ttsable import TTSable
 from src.tts.xvasynth import xVASynth
 from src.tts.xtts import XTTS
 from src.tts.piper import Piper
+from src.tts.registry import create_voice_service
+from src.tts.voice_folders import voice_clips_folder
+from src.voice_clips.clip_store import shared_clip_store
+from src.voice_clips.requests import clip_requests_for
+from src.tts.voice_notices import take_notices
 from src import utils
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.tts_definitions import TTSEnum
@@ -76,8 +81,10 @@ class mantella_route(routeable):
                 tts = xVASynth(self._config)
             elif self._config.tts_service == TTSEnum.XTTS:
                 tts = XTTS(self._config, current_game)  # Use existing game instance
-            if self._config.tts_service == TTSEnum.PIPER:
+            elif self._config.tts_service == TTSEnum.PIPER:
                 tts = Piper(self._config, current_game)  # Use existing game instance
+            else: # the newer voice services and the player's voice setups
+                tts = create_voice_service(self._config.tts_service_name, self._config, current_game)
 
             llm_client = LLMClient(self._config, self.__secret_key_file, self.__image_secret_key_file)
             
@@ -108,6 +115,7 @@ class mantella_route(routeable):
     def _setup_route(self):
         if self.__game:
             self.__game.end_conversation({})
+            self.__game.stop_voice_services()
 
         game: Gameable
         game_enum = self._config.game
@@ -121,8 +129,10 @@ class mantella_route(routeable):
             tts = xVASynth(self._config)
         elif self._config.tts_service == TTSEnum.XTTS:
             tts = XTTS(self._config, game)
-        if self._config.tts_service == TTSEnum.PIPER:
+        elif self._config.tts_service == TTSEnum.PIPER:
             tts = Piper(self._config, game)
+        else: # the newer voice services and the player's voice setups
+            tts = create_voice_service(self._config.tts_service_name, self._config, game)
 
         llm_client = LLMClient(self._config, self.__secret_key_file, self.__image_secret_key_file)
         summary_client = SummaryLLMCLient(self._config, self.__secret_key_file, self.__image_secret_key_file)
@@ -243,6 +253,12 @@ class mantella_route(routeable):
                             reply = self.__game.end_conversation(received_json)
                         case comm_consts.KEY_REQUESTTYPE_QUESTCHECKLIST:
                             reply = self.__game.quest_check_list()
+                        case comm_consts.KEY_REQUESTTYPE_VOICECLIP_SAVELOADED:
+                            reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_SAVELOADED}
+                        case comm_consts.KEY_REQUESTTYPE_VOICECLIP_DELIVERED:
+                            changed = self.__voice_clip_requests().collect()
+                            logging.debug(f"Voice clips: request {received_json.get(comm_consts.KEY_VOICECLIP_REQUESTID, '')} delivered, {changed} clip(s) changed")
+                            reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_DELIVERED}
                         case _:
                             reply = self.error_message(f"Request type '{request_type}' was not recognized")
                 except Exception:
@@ -252,6 +268,15 @@ class mantella_route(routeable):
             else:
                 reply = self.error_message(f"Request did not contain properly formatted json!")
 
+            voice_clip_requests = self.__voice_clip_requests().requests_for_reply()
+            if voice_clip_requests and isinstance(reply, dict):
+                reply[comm_consts.KEY_VOICECLIP_REQUESTS] = voice_clip_requests # The add-on hands these to MantellaVoiceClips.dll, whatever the reply is
+            notices = take_notices()
+            if notices and isinstance(reply, dict):
+                reply[comm_consts.KEY_VOICE_NOTICES] = notices
             if self._show_debug_messages:
                 logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
             return reply
+
+    def __voice_clip_requests(self):
+        return clip_requests_for(shared_clip_store(voice_clips_folder(self._config.save_folder)))

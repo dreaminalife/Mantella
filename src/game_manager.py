@@ -203,6 +203,14 @@ class GameStateManager:
             personal_reflection=personal_reflection,
         )
 
+    def stop_voice_services(self) -> None:
+        """Before Mantella starts over with new settings: stops the voice programs it started"""
+        self.__chat_manager.stop_voice_services()
+
+    @property
+    def chat_manager(self) -> ChatManager:
+        return self.__chat_manager
+
     @utils.time_it
     def hot_swap_settings(self, game: Gameable, chat_manager: ChatManager, config: ConfigLoader, llm_client: LLMClient, secret_key_file: str, image_secret_key_file: str) -> bool:
         """Attempts to hot-swap settings without ending active conversations.
@@ -228,8 +236,10 @@ class GameStateManager:
             # Update basic components
             self.__game = game
             self.__config = config
+            if self.__chat_manager is not chat_manager:
+                self.__chat_manager.stop_voice_services(keep=chat_manager.tts) # a voice program Mantella started for the old settings
             self.__chat_manager = chat_manager
-            
+
             # Update config-derived values
             self.__automatic_greeting = config.automatic_greeting
             self.__conv_has_narrator = config.narration_handling == NarrationHandlingEnum.USE_NARRATOR
@@ -1514,6 +1524,8 @@ class GameStateManager:
             llm_service: str = ""
             llm_model: str = ""
             is_player_character: bool = bool(json[comm_consts.KEY_ACTOR_ISPLAYER])
+            plugin: str = str(json.get(comm_consts.KEY_ACTOR_PLUGIN, "") or "")
+            local_id: str = f"{int(json[comm_consts.KEY_ACTOR_LOCALID]) & 0xFFFFFF:08X}" if plugin and json.get(comm_consts.KEY_ACTOR_LOCALID) else ""
             if self.__talk and self.__talk.contains_character(ref_id) and not (self.__reload_present_npcs and not is_player_character):
                 already_loaded_character: Character | None = self.__talk.get_character(ref_id)
                 if already_loaded_character:
@@ -1576,7 +1588,9 @@ class GameStateManager:
                             custom_values,
                             tts_service,
                             llm_service,
-                            llm_model)
+                            llm_model,
+                            plugin,
+                            local_id)
         except CharacterDoesNotExist:                 
             logging.log(23, 'Restarting...')
             return None 

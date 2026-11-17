@@ -17,7 +17,7 @@ from src.config.definitions.other_definitions import OtherDefinitions
 from src.config.definitions.startup_definitions import StartupDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.stt_definitions import STTDefinitions
-from src.config.definitions.tts_definitions import TTSDefinitions
+from src.config.definitions.tts_definitions import TTSDefinitions, TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, XTTS_PART, XVASYNTH_PART
 from src.config.definitions.vision_definitions import VisionDefinitions
 from src.config.definitions.model_profile_definitions import ModelProfileDefinitions
 import sys
@@ -250,8 +250,9 @@ class MantellaConfigValueDefinitionsNew:
 
         tts_category = ConfigValueGroup("TTS", "Text-to-Speech", "Settings for the TTS methods Mantella supports.", on_value_change_callback)
         tts_category.add_config_value(TTSDefinitions.get_tts_service_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xvasynth_folder_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_folder_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_tts_backup_service_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_xvasynth_folder_config_value().in_folded_part(XVASYNTH_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_folder_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_piper_folder_config_value(is_integrated))
         tts_category.add_config_value(TTSDefinitions.get_lipgen_folder_config_value(is_integrated))
         tts_category.add_config_value(TTSDefinitions.get_facefx_folder_config_value(is_integrated))
@@ -259,19 +260,29 @@ class MantellaConfigValueDefinitionsNew:
         tts_category.add_config_value(TTSDefinitions.get_lip_generation_config_value())
         tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_config_value())
         tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_volume_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_url_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_default_model_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_device_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_deepspeed_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_lowvram_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_data_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_xtts_accent_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_xtts_url_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_default_model_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_device_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_deepspeed_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_lowvram_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_data_config_value().in_folded_part(XTTS_PART))
+        tts_category.add_config_value(TTSDefinitions.get_xtts_accent_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_tts_print_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_tts_process_device_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_pace_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_use_cleanup_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_use_sr_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_tts_process_device_config_value().in_folded_part(XVASYNTH_PART))
+        tts_category.add_config_value(TTSDefinitions.get_pace_config_value().in_folded_part(XVASYNTH_PART))
+        tts_category.add_config_value(TTSDefinitions.get_use_cleanup_config_value().in_folded_part(XVASYNTH_PART))
+        tts_category.add_config_value(TTSDefinitions.get_use_sr_config_value().in_folded_part(XVASYNTH_PART))
         result.add_base_group(tts_category)
+        # Shown at the end of the Text-to-Speech page. They keep their own files next to config.ini, not settings
+        result.add_base_group(ConfigValueGroup("TryAVoice", TRY_A_VOICE_GROUP, "", on_value_change_callback, page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("VoiceSetups", VOICE_SETUPS_GROUP, TTSDefinitions.VOICE_SETUPS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("WordsToSayDifferently", WORD_LISTS_GROUP, TTSDefinitions.WORD_LISTS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("VoiceClips", VOICE_CLIPS_GROUP, TTSDefinitions.VOICE_CLIPS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
+        result.add_base_group(ConfigValueGroup("PocketTTS", POCKET_TTS_GROUP, TTSDefinitions.POCKET_TTS_DESCRIPTION, on_value_change_callback,
+                                               page=tts_category.name, foldable=True))
 
         stt_category = ConfigValueGroup("STT", "Speech-to-Text", "Settings for the STT methods Mantella supports.", on_value_change_callback)
         stt_category.add_config_value(STTDefinitions.get_audio_threshold_config_value())

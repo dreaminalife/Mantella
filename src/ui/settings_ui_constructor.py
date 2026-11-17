@@ -22,6 +22,9 @@ from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_visitor import ConfigValueVisitor
 from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, EXTRA_ROUNDS, REPLIES_IN_BETWEEN, SHARED, TALK_KINDS, WHO_MUST_SPEAK,
                                                              greyed_choices, talk_key, who_still_speaks_now)
+from src.config.definitions.tts_definitions import TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, TTSDefinitions
+from src.ui.voice_ui import render_voice_setups_editor, render_voice_test, render_word_lists_editor
+from src.ui.voice_clips_ui import render_pocket_tts_panel, render_voice_clips_editor
 
 # Global reference to the game manager for character data reload functionality
 _game_manager_ref = None
@@ -1174,8 +1177,37 @@ class SettingsUIConstructor(ConfigValueVisitor):
         for trigger in (situation_ui.change, input_ui.change):
             trigger(refresh, inputs=[input_ui, situation_ui], outputs=[preview_ui], show_progress="hidden")
 
+    def __render_voice_group(self, config_value: ConfigValueGroup) -> bool:
+        """The voice parts of the Text-to-Speech page, which keep their own files instead of settings. False for any other group"""
+        if config_value.name not in (TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP) or self.__config_loader is None:
+            return False
+        config_loader = self.__config_loader
+        chat_manager_getter = lambda: getattr(_game_manager_ref, "chat_manager", None) if _game_manager_ref is not None else None
+        with gr.Accordion(label=config_value.name, open=False):
+            if config_value.description:
+                gr.Markdown(config_value.description.replace("\n", "<br>"))
+            if config_value.name == TRY_A_VOICE_GROUP:
+                render_voice_test(config_loader, chat_manager_getter)
+            elif config_value.name == VOICE_SETUPS_GROUP:
+                dropdowns = []
+                for identifier in ("tts_service", "tts_backup_service"):
+                    selection = self.__identifier_to_config_value.get(identifier)
+                    component = self.__config_value_to_ui_element.get(selection) if selection is not None else None
+                    if isinstance(selection, ConfigValueSelection) and component is not None:
+                        dropdowns.append((selection, component))
+                render_voice_setups_editor(config_loader, dropdowns)
+            elif config_value.name == VOICE_CLIPS_GROUP:
+                render_voice_clips_editor(config_loader, chat_manager_getter)
+            elif config_value.name == POCKET_TTS_GROUP:
+                render_pocket_tts_panel(config_loader)
+            else:
+                render_word_lists_editor(config_loader, chat_manager_getter)
+        return True
+
     def visit_ConfigValueGroup(self, config_value: ConfigValueGroup):
         if not config_value.is_hidden:
+            if self.__render_voice_group(config_value):
+                return
             if config_value.name == "Prompt Profiles":
                 self.render_prompt_profile_editor(config_value)
                 return
@@ -1206,9 +1238,12 @@ class SettingsUIConstructor(ConfigValueVisitor):
         regular_settings = []
         basic_settings = []
         advanced_settings = []
+        folded_parts: dict[str, list[ConfigValue]] = {} # e.g. XTTS: its settings, in the order they were added
         for cf in config_value.value:
             if not cf.is_hidden:
-                if ConfigValueTag.advanced in cf.tags:
+                if cf.shown_in:
+                    folded_parts.setdefault(cf.shown_in, []).append(cf)
+                elif ConfigValueTag.advanced in cf.tags:
                     advanced_settings.append(cf)
                     has_advanced_values = True
                 elif ConfigValueTag.basic in cf.tags:
@@ -1263,19 +1298,28 @@ class SettingsUIConstructor(ConfigValueVisitor):
         for group_id in list(self.__row_groups.keys()):
             self.__render_row_group(group_id)
         
+        for name, settings in folded_parts.items():
+            self.__render_folded_part(name, settings)
         if has_advanced_values:
-            with gr.Accordion(label="Advanced", open=False):
-                for cf in advanced_settings:
-                    cf.accept_visitor(self)
-                
-                # Render any pending row group in advanced section
-                if self.__last_row_group is not None:
-                    self.__render_row_group(self.__last_row_group)
-                    self.__last_row_group = None
-                
-                # Render any remaining row groups in advanced section
-                for group_id in list(self.__row_groups.keys()):
-                    self.__render_row_group(group_id)
+            self.__render_folded_part("Advanced", advanced_settings)
+
+    def __render_folded_part(self, name: str, settings: list[ConfigValue]):
+        """Settings in a part of the page that starts folded, e.g. XTTS or Advanced"""
+        if self.__pending_shared_setting is not None: # a setting from above doesn't share a row with this part's first
+            self.__create_single_setting(self.__pending_shared_setting)
+            self.__pending_shared_setting = None
+        with gr.Accordion(label=name, open=False):
+            for cf in settings:
+                cf.accept_visitor(self)
+            # A setting waiting to share a row, and row groups, stay in this part
+            if self.__pending_shared_setting is not None:
+                self.__create_single_setting(self.__pending_shared_setting)
+                self.__pending_shared_setting = None
+            if self.__last_row_group is not None:
+                self.__render_row_group(self.__last_row_group)
+                self.__last_row_group = None
+            for group_id in list(self.__row_groups.keys()):
+                self.__render_row_group(group_id)
 
     def __close_shown_when_column(self, column: gr.Column | None):
         """Ends a column of settings that only show while a switch is on. Its last setting stays in it"""
@@ -1769,6 +1813,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
 
             
             # Default handling for non-special cases
+            if config_value.identifier in ("tts_service", "tts_backup_service"):
+                TTSDefinitions.refresh_voice_service_options(config_value) # the player's voice setups are listed too
             choices = config_value.options
             if config_value.option_labels:
                 # (shown text, saved option): the dropdown shows the label, and the option is still what is saved

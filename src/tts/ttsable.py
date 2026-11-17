@@ -155,6 +155,11 @@ class TTSable(ABC):
         pass
 
 
+    def stop(self) -> None:
+        """Called when this service is replaced (settings changed) or Mantella closes. Piper, XTTS and xVASynth do nothing here"""
+        pass
+
+
     def _sanitize_voice_name(self, voice_name):
         """Sanitizes the voice name by removing spaces."""
         if isinstance(voice_name, str):

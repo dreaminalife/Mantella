@@ -22,7 +22,26 @@ class TTSEnum(Enum):
             self.XVASYNTH: 'xVASynth',
         }[self]
 
+TRY_A_VOICE_GROUP = "Try A Voice"
+VOICE_SETUPS_GROUP = "Voice Setups"
+WORD_LISTS_GROUP = "Fix Pronunciation"
+VOICE_CLIPS_GROUP = "Voice Clips"
+POCKET_TTS_GROUP = "Pocket TTS"
+# Folded parts of the Text-to-Speech page for one service's settings (config.ini keeps them under [TTS])
+XTTS_PART = "XTTS"
+XVASYNTH_PART = "xVASynth"
+
 class TTSDefinitions:
+    VOICE_SETUPS_DESCRIPTION = """Connect any voice program or website, no code needed. Mantella speaks two request styles: OpenAI-style (llama.cpp, audio.cpp, LocalAI, many websites) and XTTS-style (XTTS servers and programs like them).
+A saved setup shows up in the TTS Service list, can be the Backup Voice Service, and works in a character's tts_service column.
+NPC voices are cloned from their voice clips (see Voice Clips). Until a clip arrives, the setup's male or female voice speaks.
+Setups are saved in voice_setups.json next to config.ini, so you can copy them to another PC."""
+    WORD_LISTS_DESCRIPTION = """Fix how a word is said, for example Dovahkiin as Doh-vah-keen. Only the speech changes, never the subtitles or what NPCs remember. Works from the next line.
+The lists are in the pronunciation folder next to config.ini: mantella_words.csv (Mantella's, replaced by updates), my_words.csv (yours, never touched by updates, and it wins over Mantella's), and any other list you put there.
+Pocket TTS and your voice setups use these lists. Piper, XTTS and xVASynth don't."""
+    VOICE_CLIPS_DESCRIPTION = """Every NPC's voice is cloned from a few seconds of their real voice in your game. Hear it, swap it, or give an NPC a voice of their own."""
+    POCKET_TTS_DESCRIPTION = """A small voice program by Kyutai. It clones each NPC's voice from a clip of their real lines and runs on the processor, leaving the graphics card to Skyrim. Pick it under TTS Service: Mantella downloads and starts it for you."""
+
     class ResourceFolderExistsChecker(ConfigValueConstraint[str]):
         def __init__(self) -> None:
             super().__init__(f"Selected folder must contain subfolder '\\resources\\'!")
@@ -36,14 +55,37 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
                 return ConfigValueConstraintResult()
         
     @staticmethod
+    def voice_service_options() -> tuple[list[str], list]:
+        """Every voice service and voice setup, with the old TTS Service value for Piper, XTTS and xVASynth (None for the others)"""
+        from src.tts.registry import voice_services
+        services = voice_services.all()
+        return [s.name for s in services], [s.legacy_enum for s in services]
+
+    @staticmethod
+    def refresh_voice_service_options(selection: ConfigValueSelection) -> None:
+        """After a voice setup is added or removed, the TTS Service and Backup Voice Service lists show it"""
+        options, enums = TTSDefinitions.voice_service_options()
+        selection.set_options(options, enums)
+
+    @staticmethod
     def get_tts_service_config_value() -> ConfigValue:
         description = """The TTS service used by Mantella as default.
 
 Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Need to add a new column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
 
-Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth)"""
-        options = [e.display_name for e in TTSEnum]
-        return ConfigValueSelection("tts_service", "TTS Service", description, TTSEnum.PIPER.display_name, options, list(TTSEnum))
+Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), or the name of one of your voice setups.
+
+Your own voice setups (Voice Setups, below) are in this list too."""
+        options, enums = TTSDefinitions.voice_service_options()
+        return ConfigValueSelection("tts_service", "TTS Service", description, TTSEnum.PIPER.display_name, options, enums)
+
+    @staticmethod
+    def get_tts_backup_service_config_value() -> ConfigValue:
+        description = """Speaks a line when Pocket TTS or one of your voice setups fails, for example when your internet drops or the program stops.
+The line is tried twice first. The NPC's voice changes for that one line instead of going silent.
+Piper, XTTS and xVASynth work as before: when one of them fails for an NPC, the TTS Service speaks the line."""
+        options, enums = TTSDefinitions.voice_service_options()
+        return ConfigValueSelection("tts_backup_service", "Backup Voice Service", description, TTSEnum.PIPER.display_name, options, enums)
 
     @staticmethod
     def get_xvasynth_folder_config_value() -> ConfigValue:

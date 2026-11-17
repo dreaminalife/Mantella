@@ -88,6 +88,9 @@ class StartUI(routeable):
                     group = groups_by_name.get(name)
                     if group is not None:
                         group.accept_visitor(self.__constructor)
+                    for page_group in self._config.definitions.base_groups: # sections shown at the end of this page (the Text-to-Speech page's voice setups)
+                        if getattr(page_group, "page", None) == name and not page_group.is_hidden:
+                            page_group.accept_visitor(self.__constructor)
 
         self.__constructor.setup_model_dependencies()
     

@@ -26,7 +26,13 @@ class ConfigValue(ABC, Generic[T]):
         self.__row_group: str | None = row_group
         self._on_value_change_callback: Callable[..., Any] | None = None
         self.shown_when: str | None = None # The identifier of a bool setting in the same section: this setting only shows while that one is on
-    
+        self.shown_in: str | None = None # The name of a folded part of its page this setting shows in (before the advanced and basic tags). Only the page changes: config.ini keeps it in its section
+
+    def in_folded_part(self, name: str) -> "ConfigValue[T]":
+        """Shows this setting in a folded part of its page with this name, e.g. XTTS"""
+        self.shown_in = name
+        return self
+
     @property
     def identifier(self) -> str:
         return self.__identifier

@@ -3,9 +3,11 @@ import traceback
 from src.http.routes.routeable import routeable
 from src.http.routes.mantella_route import mantella_route
 from src.http.routes.config_route import config_route
+from src.http.routes.voice_files_route import voice_files_route
 import logging
 from src.setup import MantellaSetup
 from src.ui.start_ui import StartUI
+from src.ui.ui_files_folder import use_own_ui_files_folder
 
 def main():
     try:
@@ -29,9 +31,10 @@ def main():
             show_debug_messages=should_debug_http
         )
         conversation.start_loading_in_background()
+        use_own_ui_files_folder() # before the page is built: test sounds from the last run are removed
         ui = StartUI(config)
         config_reload = config_route(config, should_debug_http)
-        routes: list[routeable] = [conversation, ui]
+        routes: list[routeable] = [conversation, ui, voice_files_route(config, should_debug_http)]
             
         #add the UI
         mantella_http_server.start(int(config.port), routes, config.play_startup_sound, config.show_http_debug_messages)

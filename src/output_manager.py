@@ -7,6 +7,7 @@ import unicodedata
 import wave
 import hashlib
 import json
+import re
 from typing import Any, AsyncGenerator
 from openai import APIConnectionError
 from src.llm.output.sentence_accumulator import sentence_accumulator
@@ -45,12 +46,11 @@ from src.actions.tool_request import ToolRequest
 from src.actions.action_rules import LOOK
 from src.llm.key_file_resolver import key_file_resolver
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
-from src.config.definitions.tts_definitions import TTSEnum
 from src.games.gameable import Gameable
 from src.tts.ttsable import TTSable
-from src.tts.piper import Piper
-from src.tts.xtts import XTTS
-from src.tts.xvasynth import xVASynth
+from src.tts.clip_service import ClipVoiceService
+from src.tts.registry import VoiceServiceInfo, normalize_service_name, serving_in_game, voice_services
+from src.tts.voice_picker import VoicePick, VoiceSpeaker
 
 def describe_action(action: dict) -> str:
     """An action the AI model picked, in the log and in the note for the NPC's line: its name and details, e.g. MoveTo (target: Hulda)"""
@@ -129,7 +129,7 @@ class ChatManager:
         self.__end_of_sentence_chars = [unicodedata.normalize('NFKC', char) for char in self.__end_of_sentence_chars]
         self.__per_character_clients: dict[str, AIClient] = {}  # Cache for per-character LLM clients
         self.__logged_tts_characters: set[str] = set()  # Track characters we've logged TTS info for in current response
-        self.__per_service_tts: dict[TTSEnum, TTSable] = {}  # Cache for per-service TTS
+        self.__per_service_tts: dict[str, TTSable] = {}  # Voice services other than the TTS Service, by name: per-NPC ones and the backup
         self.__game: Gameable | None = game
         
         # Store vision client reference independently to handle random selection and hot swaps
@@ -446,6 +446,7 @@ class ChatManager:
         """
         try:
             # Update basic components
+            self.stop_voice_services(keep=tts)
             self.__config = config
             self.__tts = tts
             self.__client = client
@@ -472,53 +473,109 @@ class ChatManager:
             logging.error(f"ChatManager hot-swap failed: {e}")
             return False
     
-    def _parse_tts_service_str(self, value: str | None) -> TTSEnum | None:
-        if not value:
-            return None
-        # Handle pandas NaN values and empty strings
-        value_str = str(value).strip().lower()
-        if value_str in ('nan', 'none', 'null', ''):
-            return None
-        normalized = value_str.replace('-', '').replace('_', '').replace(' ', '')
-        mapping = {
-            'piper': TTSEnum.PIPER,
-            'xtts': TTSEnum.XTTS,
-            'xvasynth': TTSEnum.XVASYNTH,
-            'xva': TTSEnum.XVASYNTH,
-        }
-        return mapping.get(normalized)
-    
-    def _get_or_create_tts(self, service: TTSEnum) -> TTSable:
+    def _parse_tts_service_str(self, value: str | None) -> VoiceServiceInfo | None:
+        """A name from the tts_service column: piper, xtts, xvasynth or xva, a newer service, or one of the player's voice setups"""
+        return voice_services.find(value)
+
+    def _get_or_create_tts(self, service: VoiceServiceInfo) -> TTSable:
         # If requested service matches the default instance, reuse it
+        if service.name == getattr(self.__config, 'tts_service_name', None) or (service.legacy_enum is not None and service.legacy_enum == getattr(self.__config, 'tts_service', None)):
+            return self.__tts
+        if service.name in self.__per_service_tts:
+            return self.__per_service_tts[service.name]
         try:
-            if service == self.__config.tts_service:
-                return self.__tts
-        except Exception:
-            # If config is missing tts_service for any reason, proceed to cache check
-            pass
-        if service in self.__per_service_tts:
-            return self.__per_service_tts[service]
-        # Create new instance based on service
-        try:
-            if service == TTSEnum.PIPER:
-                if not self.__game:
-                    raise RuntimeError("Piper requires a game context")
-                instance = Piper(self.__config, self.__game)
-            elif service == TTSEnum.XTTS:
-                if not self.__game:
-                    raise RuntimeError("XTTS requires a game context")
-                instance = XTTS(self.__config, self.__game)
-            elif service == TTSEnum.XVASYNTH:
-                instance = xVASynth(self.__config)
-            else:
-                # Fallback to default TTS if unsupported enum
-                instance = self.__tts
-            self.__per_service_tts[service] = instance
+            instance = serving_in_game(voice_services.create(service, self.__config, self.__game))
+            self.__per_service_tts[service.name] = instance
             return instance
         except Exception as e:
-            logging.warning(f"Failed to initialize TTS service '{service}': {e}. Falling back to default TTS.")
+            logging.warning(f"Failed to initialize TTS service '{service.name}': {e}. Falling back to default TTS.")
             return self.__tts
-    
+
+    def stop_voice_services(self, keep: TTSable | None = None) -> None:
+        """Stops the voice programs Mantella started, except *keep*"""
+        for instance in {id(t): t for t in [self.__tts, *self.__per_service_tts.values()]}.values():
+            if instance is not keep:
+                try:
+                    instance.stop()
+                except Exception as e:
+                    logging.warning(f"Could not stop a voice service: {e}")
+
+    def __backup_tts(self) -> TTSable | None:
+        backup = voice_services.find(getattr(self.__config, 'tts_backup_service_name', None))
+        return self._get_or_create_tts(backup) if backup else None
+
+    def __voice_chain(self, first: TTSable) -> list[TTSable]:
+        """Who speaks a line, in order, when the one before fails.
+        A newer service or voice setup goes to the Backup Voice Service. Piper, XTTS and xVASynth keep the old way: an NPC's own one goes to the TTS Service"""
+        chain = [first]
+        if isinstance(first, ClipVoiceService):
+            backup = self.__backup_tts()
+            if backup is not None:
+                chain.append(backup)
+        elif first is not self.__tts:
+            chain.append(self.__tts)
+            if isinstance(self.__tts, ClipVoiceService):
+                backup = self.__backup_tts()
+                if backup is not None:
+                    chain.append(backup)
+        unique: list[TTSable] = []
+        for instance in chain:
+            if all(instance is not u for u in unique):
+                unique.append(instance)
+        return unique
+
+    @staticmethod
+    def __service_name(instance: TTSable) -> str:
+        return instance.info.name if isinstance(instance, ClipVoiceService) else type(instance).__name__
+
+    def __speak_with_chain(self, chain: list[TTSable], speak: Any) -> str:
+        """Tries each voice service in turn. *speak* voices the line with one and returns the sound file"""
+        for i, instance in enumerate(chain):
+            try:
+                audio_file = speak(instance)
+                is_last = i == len(chain) - 1
+                if not is_last and not (audio_file and os.path.exists(audio_file) and os.path.getsize(audio_file) > 0):
+                    raise FileNotFoundError(f"Audio file not created or empty: {audio_file}")
+                return audio_file
+            except Exception as e:
+                if i == len(chain) - 1:
+                    raise
+                logging.warning(f"{self.__service_name(instance)} failed: {e}. {self.__service_name(chain[i + 1])} speaks the line instead.")
+        raise RuntimeError("No voice service to speak the line")
+
+    @staticmethod
+    def _speak_as_character(instance: TTSable, character: Character, text: str, synth_options: SynthesizationOptions) -> str:
+        if isinstance(instance, ClipVoiceService):
+            return instance.synthesize(character.tts_voice_model, text, character.in_game_voice_model, character.csv_in_game_voice_model, character.voice_accent, synth_options,
+                                       character.advanced_voice_model, speaker=VoiceSpeaker.from_character(character))
+        return instance.synthesize(character.tts_voice_model, text, character.in_game_voice_model, character.csv_in_game_voice_model, character.voice_accent, synth_options, character.advanced_voice_model)
+
+    def speak_test_line(self, service_name: str, voice_type: str, text: str, use_word_lists: bool = True) -> str:
+        """The Test button: one line in a voice type's voice, from one voice service. Returns the sound file"""
+        service = voice_services.find(service_name)
+        if service is None:
+            raise ValueError(f"There is no voice service called '{service_name}'.")
+        instance = self._get_or_create_tts(service)
+        gender = 1 if voice_type.lower().startswith("female") else 0
+        with self.__tts_access_lock:
+            if isinstance(instance, ClipVoiceService):
+                out_path = os.path.join(os.getenv('TMP') or ".", "voicelines", "test_line.wav")
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                instance.voice_into(text, instance.pick_voice(VoiceSpeaker(gender=gender, voice_type=voice_type)), out_path, use_word_lists)
+                return out_path
+            spaced = " ".join(part for part in re.findall(r"[A-Z][a-z]*", voice_type)) or voice_type # FemaleEvenToned -> Female Even Toned, as Piper and XTTS name voices
+            return instance.synthesize(spaced, f" {text} ", voice_type, voice_type, self.__config.language, SynthesizationOptions(False, False))
+
+    def speak_clip_test_line(self, service_name: str, pick: VoicePick, text: str) -> str:
+        """Hear it speak, under Voice Clips: one line in the voice the service makes from one clip. Returns the sound file"""
+        from src.tts.test_line import voice_from_clip
+        service = voice_services.find(service_name)
+        if service is None:
+            raise ValueError(f"There is no voice service called '{service_name}'.")
+        instance = self._get_or_create_tts(service)
+        with self.__tts_access_lock:
+            return voice_from_clip(instance, service_name, pick, text)
+
     @utils.time_it
     def generate_sentence(self, content: SentenceContent) -> Sentence:
         """Generates the audio for a text and returns the corresponding sentence
@@ -546,7 +603,9 @@ class ChatManager:
                 if self.__config.narration_handling == NarrationHandlingEnum.USE_NARRATOR and content.sentence_type == SentenceTypeEnum.NARRATION:
                     synth_options = SynthesizationOptions(False, self.__is_first_sentence)
                     logging.info(f"TTS for narration: using='default' (narrator)")
-                    audio_file = self.__tts.synthesize(self.__config.narrator_voice, text, self.__config.narrator_voice, self.__config.narrator_voice, "en", synth_options, self.__config.narrator_voice)
+                    narrator_voice = self.__config.narrator_voice
+                    audio_file = self.__speak_with_chain(self.__voice_chain(self.__tts),
+                        lambda tts: tts.synthesize(narrator_voice, text, narrator_voice, narrator_voice, "en", synth_options, narrator_voice))
                 else:
                     synth_options = SynthesizationOptions(character_to_talk.is_in_combat, self.__is_first_sentence)
                     # Determine per-character TTS, with fallback to default
@@ -555,8 +614,8 @@ class ChatManager:
                     selected_tts_service = self._parse_tts_service_str(requested_tts_service_str)
 
                     # Log error for invalid TTS service specification
-                    if requested_tts_service_str and selected_tts_service is None:
-                        logging.error(f"Invalid TTS service '{requested_tts_service_str}' specified for character {character_to_talk.name}. Valid options: piper, xtts, xvasynth. Using default TTS instead.")
+                    if selected_tts_service is None and normalize_service_name(requested_tts_service_str):
+                        logging.error(f"Invalid TTS service '{requested_tts_service_str}' specified for character {character_to_talk.name}. Valid options: piper, xtts, xvasynth, or {', '.join(voice_services.names())}. Using default TTS instead.")
 
                     # Log TTS info once per character per response
                     if character_to_talk.name not in self.__logged_tts_characters:
@@ -568,27 +627,17 @@ class ChatManager:
                                            "unknown")
 
                         if selected_tts_service is not None:
-                            tts_service_name = selected_tts_service.display_name
+                            tts_service_name = selected_tts_service.name
                         else:
                             tts_service_name = "default"
 
                         logging.info(f"TTS for {character_to_talk.name}: using {tts_service_name} with voice '{final_voice_model}'")
                         self.__logged_tts_characters.add(character_to_talk.name)
 
-                    # Try per-character TTS first
-                    if selected_tts_service is not None:
-                        try:
-                            tts_instance = self._get_or_create_tts(selected_tts_service)
-                            audio_file = tts_instance.synthesize(character_to_talk.tts_voice_model, text, character_to_talk.in_game_voice_model, character_to_talk.csv_in_game_voice_model, character_to_talk.voice_accent, synth_options, character_to_talk.advanced_voice_model)
-                            # Verify audio file was actually created
-                            if not (audio_file and os.path.exists(audio_file) and os.path.getsize(audio_file) > 0):
-                                raise FileNotFoundError(f"Audio file not created or empty: {audio_file}")
-                        except Exception as e:
-                            logging.warning(f"Per-character TTS '{requested_tts_service_str}' failed: {e}. Falling back to default TTS.")
-                            audio_file = self.__tts.synthesize(character_to_talk.tts_voice_model, text, character_to_talk.in_game_voice_model, character_to_talk.csv_in_game_voice_model, character_to_talk.voice_accent, synth_options, character_to_talk.advanced_voice_model)
-                    else:
-                        # No per-character TTS requested, use default
-                        audio_file = self.__tts.synthesize(character_to_talk.tts_voice_model, text, character_to_talk.in_game_voice_model, character_to_talk.csv_in_game_voice_model, character_to_talk.voice_accent, synth_options, character_to_talk.advanced_voice_model)
+                    # The NPC's own voice service first, then whoever speaks when it fails
+                    first = self._get_or_create_tts(selected_tts_service) if selected_tts_service is not None else self.__tts
+                    audio_file = self.__speak_with_chain(self.__voice_chain(first),
+                        lambda tts: self._speak_as_character(tts, character_to_talk, text, synth_options))
             except Exception as e:
                 utils.play_error_sound()
                 error_text = f"Text-to-Speech Error: {e}"

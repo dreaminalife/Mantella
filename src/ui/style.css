@@ -277,7 +277,8 @@
 
 /* Tag Editor: the foldable parts inside "Choose or create a tag" (NPCs, Dynamic events, Quest outcomes, Notes) as visible boxes,
    so it's clear where each one starts and ends */
-.tag-editor-subsection {
+.tag-editor-subsection,
+.voice-clips-subsection { /* Voice Clips' folded parts: a box of their own, so they don't run into the text around them */
     border: 1px solid var(--border-color-primary) !important;
     border-radius: var(--radius-lg) !important;
     background: var(--background-fill-secondary) !important;
@@ -474,4 +475,29 @@
 }
 .prompt-example-other {
     color: var(--body-text-color-subdued);
+}
+
+/* Voice Clips (src/ui/voice_clips_ui.py): a button next to a dropdown sits level with the box, not with its label */
+.voice-clips-row {
+    align-items: flex-end !important;
+}
+/* The button lines up with the box itself: the box sits inside a panel with padding below it, and is taller than a small button */
+.voice-clips-row > button {
+    margin-bottom: 10px !important;
+    min-height: 38px !important;
+}
+.voice-clips-row:has(textarea) > button {
+    min-height: 42px !important;
+}
+
+/* Voice Clips: the Prepare all voices count refreshes every 3 seconds. Gradio gives a refreshing part a pulsing green border,
+   which shows as a green line while the count is empty */
+.voice-clips-progress .generating {
+    border: none !important;
+    animation: none !important;
+}
+
+/* Sound players: no playback speed button (1x). It only changed how fast the page played a line, never the voice in game */
+.playback.icon {
+    display: none !important;
 }

@@ -10,6 +10,8 @@ from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, DIR
                                                              max_npc_turns_identifier, most_replies_identifier, talk_key, use_own_key)
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.tts_definitions import TTSEnum
+from src.tts.registry import FALLBACK_SERVICE, voice_services
+from src.tts.voice_setups import voice_setups_for
 from src.conversation.action import Action
 from src.actions.function_manager import FunctionManager
 from src.config.definitions.action_definitions import ACTION_KINDS, NOT_OFFERED, OLD_KEYWORDS, actions_key, carried_over_ticks
@@ -24,6 +26,8 @@ import src.utils as utils
 from pathlib import Path
 import json
 
+VOICE_SERVICE_KEYS = ("tts_service", "tts_backup_service")
+
 class ConfigLoader:
     def __init__(self, mygame_folder_path: str, file_name='config.ini', game_override: GameEnum | None = None, prompt_profiles_path: str | None = None):
         self.is_run_integrated = "--integrated" in sys.argv
@@ -36,6 +40,7 @@ class ConfigLoader:
         self.__prompt_profile_manager = PromptProfileManager(prompt_profiles_path)
         path_to_actions = os.path.join(utils.resolve_path(),"data","actions")
         self.__actions = [a for a in ConfigLoader.load_actions_from_json(path_to_actions) if a.identifier not in NOT_OFFERED]
+        voice_setups_for(mygame_folder_path) # the player's voice setups go in the TTS Service list
         self.__definitions: ConfigValues = MantellaConfigValueDefinitionsNew.get_config_values(self.is_run_integrated, self.__actions, self.__on_config_value_change)
         if not os.path.exists(self.__file_name):
             logging.log(24,"Cannot find 'config.ini'. Assuming first time usage of MantellaSoftware and creating it.")
@@ -74,7 +79,10 @@ class ConfigLoader:
                                 continue
                         except Exception:
                             pass
-                    config_value.parse(unescaped_value)
+                    result = config_value.parse(unescaped_value)
+                    if each_key in VOICE_SERVICE_KEYS and not result.is_success:
+                        utils.play_error_sound()
+                        logging.warning(f"The voice service '{each_value}' chosen as {config_value.name} no longer exists (a voice setup that was removed or renamed?). {FALLBACK_SERVICE} is used instead. Pick another one on the Text-to-Speech page.")
                 except:
                     create_back_up_configini = True
                     # TODO: filter out warnings for ['game', 'skyrim_mod_folder', 'skyrimvr_mod_folder', 'fallout4_mod_folder', 'fallout4vr_mod_folder', fallout4vr_folder]
@@ -130,6 +138,10 @@ class ConfigLoader:
         self.__apply_prompt_values()
         self.__has_any_value_changed = True
         self.__log_next_system_prompt = True
+
+    def notify_voice_services_changed(self) -> None:
+        """A voice setup was saved or removed: the next request starts the voice services again with it"""
+        self.__has_any_value_changed = True
 
     def consume_log_next_system_prompt(self) -> bool:
         """Return whether the next generated system prompt should be logged, then clear the flag."""
@@ -257,7 +269,16 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             writer.write(self.__file_name, definitions, create_back_up_configini)
         except Exception as e:
             utils.play_error_sound()
-            logging.error(24, f"Failed to write default 'config.ini'. Possible reason: MantellaSoftware does not have rights to write at its location. Exception: {repr(e)}")    
+            logging.error(24, f"Failed to write default 'config.ini'. Possible reason: MantellaSoftware does not have rights to write at its location. Exception: {repr(e)}")
+
+    def __voice_service_name(self, identifier: str) -> str:
+        """The chosen voice service, by its name in the list of voice services. Piper when it is no longer in the list"""
+        name = self.__definitions.get_string_value(identifier, False)
+        service = voice_services.find(name)
+        if service is None:
+            logging.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")
+            service = voice_services.find(FALLBACK_SERVICE)
+        return service.name
 
     def __update_config_values_from_current_state(self):
         self.__definitions.clear_constraint_violations()
@@ -345,7 +366,9 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
                     a.keyword = self.__definitions.get_string_value(LanguageDefinitions.action_keyword_key(a))
 
             #TTS
-            self.tts_service: TTSEnum = self.__definitions.get_enum_value("tts_service", TTSEnum)
+            self.tts_service_name: str = self.__voice_service_name("tts_service")
+            self.tts_service: TTSEnum | None = voice_services.find(self.tts_service_name).legacy_enum # None for the newer services and voice setups
+            self.tts_backup_service_name: str = self.__voice_service_name("tts_backup_service")
             self.xtts_url = self.__definitions.get_string_value("xtts_url").rstrip('/')
 
             # Do not check if a given path exists unless the TTS service is actually selected

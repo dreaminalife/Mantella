@@ -78,6 +78,15 @@ class communication_constants:
     KEY_QUESTCHECKS_PARAMS1: str = PREFIX + "quest_check_params1"
     KEY_QUESTCHECKS_PARAMS2: str = PREFIX + "quest_check_params2"
     KEY_QUESTCHECKS_VERSION: str = PREFIX + "quest_check_version" # In the list, and with every set of answers
+
+    # Voice clips: lines copied from the game for the voice services that copy voices
+    KEY_VOICECLIP_REQUESTS: str = PREFIX + "voice_clip_requests" # On any reply: a list of JSON texts, each handed to MantellaVoiceClips.FetchClips
+    KEY_REQUESTTYPE_VOICECLIP_DELIVERED: str = PREFIX + "voice_clip_delivered" # The DLL finished a request; its files are in voice_clips/incoming
+    KEY_REPLYTYPE_VOICECLIP_DELIVERED: str = PREFIX + "voice_clip_delivered_result"
+    KEY_VOICECLIP_REQUESTID: str = PREFIX + "voice_clip_request_id"
+    KEY_VOICE_NOTICES: str = PREFIX + "voice_notices" # On any reply: short notices about the voice service, each shown once in game
+    KEY_REQUESTTYPE_VOICECLIP_SAVELOADED: str = PREFIX + "voice_clip_save_loaded" # Sent once when a save loads: its reply carries voice clip work waiting (Prepare all voices)
+    KEY_REPLYTYPE_VOICECLIP_SAVELOADED: str = PREFIX + "voice_clip_save_loaded_result"
     KEY_QUESTCHECKS_RESULTS: str = PREFIX + "quest_check_results" # In the context (start, player input), or top-level on the catch-up continue request
     KEY_NPCEVENT_PLAYERNOTICEABLE: str = PREFIX + "npc_event_player_noticeable"
 
@@ -106,6 +115,8 @@ class communication_constants:
     KEY_ACTOR_ISPLAYER: str = PREFIX + "actor_is_player"
     KEY_ACTOR_RELATIONSHIPRANK: str = PREFIX + "actor_relationshiprank"
     KEY_ACTOR_VOICETYPE: str = PREFIX + "actor_voicetype"
+    KEY_ACTOR_PLUGIN: str = PREFIX + "actor_plugin" # The plugin the NPC comes from, and their form ID in it: names their own voice clip across load orders
+    KEY_ACTOR_LOCALID: str = PREFIX + "actor_localid"
     KEY_ACTOR_ISINCOMBAT: str = PREFIX + "actor_is_in_combat"
     KEY_ACTOR_ISENEMY: str = PREFIX + "actor_is_enemy"
     KEY_ACTOR_CUSTOMVALUES: str = PREFIX + "actor_custom_values"
