@@ -38,6 +38,8 @@ class Gameable(ABC):
             input("Press Enter to exit.")
         
         self._is_vr: bool = config.game.is_vr
+        if "voice_effect" not in self.__character_df.columns: # so an override file can set it: one NPC's voice effect
+            self.__character_df["voice_effect"] = ""
         #Apply character overrides
         mod_overrides_folder = os.path.join(*[config.mod_path_base, self.extender_name, "Plugins","MantellaSoftware","data",f"{mantella_game_folder_path}","character_overrides"])
         self.__apply_character_overrides(mod_overrides_folder, self.__character_df.columns.values.tolist())

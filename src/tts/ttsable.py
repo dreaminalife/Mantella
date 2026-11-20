@@ -40,6 +40,11 @@ class TTSable(ABC):
 
         self._game = config.game
 
+    @property
+    def voice_in_use(self) -> str:
+        """The voice the last line was spoken with, for the log"""
+        return f"voice '{self._last_voice}'"
+
     @utils.time_it
     def synthesize(self, voice: str, voiceline: str, in_game_voice: str, csv_in_game_voice: str, voice_accent: str, synth_options: SynthesizationOptions, advanced_voice_model: str | None = None):
         """Synthesizes a given voiceline
@@ -70,6 +75,8 @@ class TTSable(ABC):
             self._generate_voiceline_files(final_voiceline_file, voiceline)
         elif (self._lip_generation_enabled in ['lazy', 'disabled'] and self._game.base_game == GameEnum.FALLOUT4):
             self._generate_voiceline_files(final_voiceline_file, voiceline, skip_lip_generation=True)
+
+        self._finish_line(final_voiceline_file) # after the lip file, so an echo's tail doesn't move the mouth
         
         #rename to unique name        
         if (os.path.exists(final_voiceline_file)):
@@ -157,6 +164,11 @@ class TTSable(ABC):
 
     def stop(self) -> None:
         """Called when this service is replaced (settings changed) or Mantella closes. Piper, XTTS and xVASynth do nothing here"""
+        pass
+
+
+    def _finish_line(self, wav_file: str) -> None:
+        """Changes the finished line once its lip file is made: the voice effect and Voice Volume. Piper, XTTS and xVASynth do nothing here"""
         pass
 
 

@@ -17,6 +17,7 @@ from src.llm.messages import UserMessage
 from src.bio_section_filter import apply_bio_section_filter, should_filter_memory_bios
 from src.quest_tags import history as quest_tag_history
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import label_prompt
 from src.remember.inner_monologue import format_thought_history_text
 from src.remember.summaries import (
     CharacterSummaryParameters,
@@ -442,7 +443,7 @@ class PersonalReflection:
         except PromptSectionError as e:
             logging.error(str(e))
             return ""
-        return reflection_template.format(
+        return label_prompt(reflection_template.format(
             name=name,
             names=names,
             language=self.__language_name,
@@ -453,7 +454,7 @@ class PersonalReflection:
             conversation_summary=conversation_summary,
             private_thoughts=self.__fill_private_thoughts(private_thoughts),
             lorebook="",
-        )
+        ), self.__config.prompt_profile_manager, "personal_reflection_prompt", speaker=name)
 
     def __thought_history_for_prompt(self, npc: Character, world_id: str) -> str:
         """Full on-disk thought history for this NPC, including thoughts just saved."""

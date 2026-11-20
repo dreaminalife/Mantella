@@ -1,5 +1,5 @@
 """ElevenLabs and Inworld: each clip cloned once on the player's account and reused, cloned again after a swap with the old voice deleted,
-a voice deleted on the website cloned again, a refused clone falling back to built-in voices, and the Voice Clips page's tried voices"""
+a voice deleted on the website cloned again, a refused clone falling back to built-in voices, and voices cloned from several clips"""
 import base64
 import json
 import threading
@@ -12,7 +12,6 @@ from src.tts import online_service, voice_notices
 from src.tts.clip_service import ClipVoiceService, VoiceServiceFailure
 from src.tts.elevenlabs import ElevenLabs
 from src.tts.inworld import Inworld
-from src.tts.online_service import cost_per_conversation
 from src.tts.online_voices import cloned_voices
 from src.tts.registry import voice_services
 from src.tts.test_line import voice_from_clip
@@ -32,6 +31,7 @@ class FakeOnlineService:
         self.speak_error: tuple[int, dict] | None = None # every line fails like this, the voice still being there
         self.refuse: tuple[int, dict] | None = None # how a clone is refused
         self.headers: list[dict] = []
+        self.slots = (30, 4) # voices the plan keeps, and how many are in use
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -80,7 +80,7 @@ class FakeOnlineService:
 
             def do_GET(self):
                 if self.path == "/v1/user/subscription":
-                    return self.send(200, json.dumps({"voice_limit": 30, "voice_slots_used": 4, "can_use_instant_voice_cloning": True}).encode())
+                    return self.send(200, json.dumps({"voice_limit": server.slots[0], "voice_slots_used": server.slots[1], "can_use_instant_voice_cloning": True}).encode())
                 if self.path.startswith("/v1/voices/") or self.path.startswith("/voices/v1/voices/"):
                     voice_id = self.path.rsplit("/", 1)[-1]
                     return self.send(404, b"{}") if voice_id in server.gone else self.send(200, json.dumps({"voice_id": voice_id}).encode())
@@ -138,7 +138,6 @@ def test_both_are_listed_as_online_services():
         info = voice_services.find(alias)
         assert info.name == name and info.runs_online # Prepare all voices skips them
     assert voice_services.find("Inworld").accepts_ipa and not voice_services.find("ElevenLabs").accepts_ipa
-    assert cost_per_conversation(40.0) == "about $0.12 per conversation of 30 lines"
 
 
 def test_a_clip_is_cloned_once_and_reused(monkeypatch, voice_config, tmp_path, fake):
@@ -235,6 +234,46 @@ def test_inworld_clones_with_the_clip_itself_and_speaks_sound_symbols(monkeypatc
     assert fake.headers[0]["Authorization"] == "Basic aBase64Key"
     assert fake.spoken[0][0] == "ws__v1" and fake.spoken[0][1]["modelId"] == "inworld-tts-2"
     assert service.format_ipa("Dovahkiin", "ˈdoʊvɑːkiːn") == "/ˈdoʊvɑːkiːn/"
+    service.voice_into("Say Dovahkiin.", VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", path), str(tmp_path / "two.wav"), use_word_lists=False,
+                       ipa_word=("Dovahkiin", "ˈdoʊvɑːkiːn")) # Fix Pronunciation's Hear it fixed
+    assert fake.spoken[-1][1]["text"] == "Say /ˈdoʊvɑːkiːn/."
+
+
+def test_inworld_speaks_with_the_chosen_model(monkeypatch, voice_config, tmp_path, fake):
+    service = make(monkeypatch, voice_config, Inworld)
+    voice_config.inworld_model = "TTS-2 Flash"
+    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", clip(tmp_path)), str(tmp_path / "one.wav"))
+    assert fake.spoken[0][1]["modelId"] == "inworld-tts-2-flash"
+
+
+def test_inworld_delivers_lines_by_the_voices_delivery_on_tts_2_only(monkeypatch, voice_config, tmp_path, fake):
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, Inworld)
+    voice_config.inworld_model, voice_config.inworld_delivery = "TTS-2", "Creative"
+    lydia, serana = (VoicePick(VOICE_TYPE_CLIP, key, clip(tmp_path, f"{key}.wav")) for key in ("femalenord", "femaleeventoned"))
+    service._clips.set_voice_setting(VOICE_TYPES, "femalenord", "inworld_delivery", "Stable") # this voice's own, from the Voice Clips page
+    service.voice_into("Hello.", lydia, str(tmp_path / "one.wav"))
+    service.voice_into("Hello.", serana, str(tmp_path / "two.wav"))
+    assert [request["deliveryMode"] for _, request in fake.spoken] == ["STABLE", "CREATIVE"] # the other voice has the page's
+    voice_config.inworld_model = "TTS-2 Flash" # Flash has no Delivery
+    service.voice_into("Hello.", lydia, str(tmp_path / "three.wav"))
+    assert "deliveryMode" not in fake.spoken[-1][1]
+
+
+def test_inworld_gets_the_line_with_its_sounds_and_directions_and_elevenlabs_without(monkeypatch, voice_config, tmp_path, fake):
+    from src.tts.synthesization_options import SynthesizationOptions
+    pick = VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", clip(tmp_path))
+    options = SynthesizationOptions(False, True)
+    for service_class in (Inworld, ElevenLabs):
+        service = make(monkeypatch, voice_config, service_class)
+        service._pick, service._voice_text = pick, "[sigh] Fine, [say coldly] take it."
+        service.tts_synthesize("Fine, take it.", str(tmp_path / "one.wav"), options)
+        service._pick = pick # the next line has no sounds or directions
+        service.tts_synthesize("Go.", str(tmp_path / "two.wav"), options)
+    inworld_lines = [request["text"] for _, request in fake.spoken if "voiceId" in request]
+    elevenlabs_lines = [request["text"] for _, request in fake.spoken if "voiceId" not in request]
+    assert inworld_lines == ["[sigh] Fine, [say coldly] take it.", "Go."]
+    assert elevenlabs_lines == ["Fine, take it.", "Go."]
 
 
 def test_a_new_key_forgets_voices_from_the_old_account(monkeypatch, voice_config, tmp_path, fake):
@@ -244,22 +283,122 @@ def test_a_new_key_forgets_voices_from_the_old_account(monkeypatch, voice_config
     assert not make(monkeypatch, voice_config, ElevenLabs, key="second").voice_ready(pick)
 
 
-def test_a_tried_clip_is_kept_when_cloned_from_and_deleted_otherwise(monkeypatch, voice_config, tmp_path, fake):
-    service = make(monkeypatch, voice_config, ElevenLabs)
-    keeper = ElevenLabs.keeper()
-    used, tried, other = clip(tmp_path, "used.wav"), clip(tmp_path, "tried.wav", 0.6), clip(tmp_path, "other.wav", 0.8)
-    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "malenord", used), str(tmp_path / "a.wav"))
-    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "try_malenord", tried), str(tmp_path / "b.wav")) # Hear the cloned voice
-    open(used, "wb").write(open(tried, "rb").read()) # Clone from this clip
-    keeper.use_trial_voice(voice_config.save_folder, "malenord", used)
-    store = cloned_voices(voice_config.save_folder, "ElevenLabs")
-    assert store.get("malenord")["voice_id"] == "v2" and store.get("try_malenord") is None
-    assert b"Mantella malenord" in fake.clones[1]["body"] and b"trying" not in fake.clones[1]["body"] # nothing marks the kept voice as spare
-    assert fake.wait_for_deleted("v1") # the voice from the old clip
+def a_voice(service, tmp_path, seconds: list[float], key: str = "femaleeventoned") -> VoicePick:
+    """A voice type in the service's clip store, with its chosen clips (tones of these lengths) in order"""
+    from src.voice_clips.clip_store import VOICE_TYPES, ClipInfo
+    store = service._clips
+    store.set_clip(VOICE_TYPES, key, clip(tmp_path, "top.wav", seconds[0]), ClipInfo(name="FemaleEvenToned",
+                   path=r"sound\voice\skyrim.esm\femaleeventoned\a__000dd600_1.fuz"))
+    for n, length in enumerate(seconds[1:], start=1):
+        store.add_candidate(VOICE_TYPES, key, clip(tmp_path, f"{n}.wav", length),
+                            ClipInfo(path=rf"sound\voice\skyrim.esm\femaleeventoned\a__000dd60{n}_1.fuz", order=n))
+    return VoicePick(VOICE_TYPE_CLIP, key, store.clip(VOICE_TYPES, key))
 
-    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "try_malenord", other), str(tmp_path / "c.wav"))
-    keeper.remove_trial_voices(voice_config.save_folder, keep="femaleeventoned") # another voice picked on the page
-    assert fake.wait_for_deleted("v3") and store.get("malenord")["voice_id"] == "v2"
+
+def test_elevenlabs_clones_from_every_chosen_clip_as_separate_files(monkeypatch, voice_config, tmp_path, fake):
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [2.0, 2.0, 2.0])
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    assert fake.clones[0]["body"].count(b'name="files"') == 3
+    assert ElevenLabs(voice_config, voice_services.find("ElevenLabs")).voice_ready(pick) # the next run keeps it
+
+
+def test_inworld_clones_from_the_chosen_clips_joined_and_within_30_seconds(monkeypatch, voice_config, tmp_path, fake):
+    import io
+    import soundfile as sf
+    service = make(monkeypatch, voice_config, Inworld)
+    pick = a_voice(service, tmp_path, [9.0, 9.0, 9.0, 9.0]) # 4 lines of 9 s (and their quiet): only 2 fit in 30 s
+    assert len(service.clips_for(pick)) == 2
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    sample = base64.b64decode(json.loads(fake.clones[0]["body"])["voiceSamples"][0]["audioData"])
+    seconds = sf.info(io.BytesIO(sample)).duration
+    assert 19.0 < seconds < 30.0 # two clips and the gap between them
+
+
+def test_choosing_other_clips_clones_again_and_deletes_the_old_voice(monkeypatch, voice_config, tmp_path, fake):
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [1.0, 1.0, 1.0])
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    store = service._clips
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.voice_lines(VOICE_TYPES, "femaleeventoned")[2][0])
+    assert not service.voice_ready(pick)
+    service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert len(fake.clones) == 2 and fake.clones[1]["body"].count(b'name="files"') == 2 and fake.spoken[-1][0] == "v2"
+    assert fake.wait_for_deleted("v1")
+
+
+def refuse_first_clone(monkeypatch) -> None:
+    """ElevenLabs refuses the next clone, saying the plan holds no more voices"""
+    refused = []
+    real_clone = ElevenLabs.clone
+    def clone(self, name, clip_paths, language, pick=None):
+        if not refused:
+            refused.append(True)
+            from src.tts.online_service import PlanFull
+            raise PlanFull("voice limit reached")
+        return real_clone(self, name, clip_paths, language, pick)
+    monkeypatch.setattr(ElevenLabs, "clone", clone)
+
+
+def test_a_full_plan_makes_room_with_the_voices_old_copy(monkeypatch, voice_config, tmp_path, fake):
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [1.0, 1.0])
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    store = service._clips
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.voice_lines(VOICE_TYPES, "femaleeventoned")[1][0])
+    fake.slots = (30, 30) # every slot in use, as ElevenLabs says
+    refuse_first_clone(monkeypatch)
+    service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert "v1" in fake.deleted and fake.spoken[-1][0] == "v2" and service.can_copy_voices
+
+
+def test_a_refusal_when_the_plan_isnt_full_keeps_the_voice(monkeypatch, voice_config, tmp_path, fake):
+    """Another limit (such as a monthly cap on making voices): deleting the voice wouldn't help, so NPCs keep it"""
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [1.0, 1.0])
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    store = service._clips
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.voice_lines(VOICE_TYPES, "femaleeventoned")[1][0])
+    refuse_first_clone(monkeypatch) # the fake plan has room: 4 of 30 in use
+    service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert fake.deleted == [] and cloned_voices(voice_config.save_folder, "ElevenLabs").get("femaleeventoned")["voice_id"] == "v1"
+    assert fake.spoken[-1][0] == "v1" # NPCs keep the voice made before, not a built-in one
+    assert not service.can_copy_voices and service.why_not # refused for a while, and says why
+    service.voice_into("Hello.", pick, str(tmp_path / "three.wav"))
+    assert fake.spoken[-1][0] == "v1" and len(fake.clones) == 1 # not asked again during the wait
+
+
+def test_a_short_voice_asks_the_game_for_more_lines(monkeypatch, voice_config, tmp_path, fake):
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [1.0, 1.0, 1.0, 1.0]) # 4 short lines, far less than a minute
+    service._top_up(pick)
+    [sent] = service._clip_requests.requests_for_reply()
+    assert json.loads(sent)["count"] == 12 # enough lines of that length for a minute, up to 16 clips in all
+
+
+def test_a_short_voice_whose_clips_the_player_chose_still_gets_more_lines(monkeypatch, voice_config, tmp_path, fake):
+    """The player's clips stay as they are: the new lines go after them, and a line they took out isn't asked for again"""
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = a_voice(service, tmp_path, [1.0, 1.0, 1.0, 1.0])
+    store = service._clips
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.voice_lines(VOICE_TYPES, "femaleeventoned")[1][0]) # the player changed it
+    assert store.is_hand_picked(VOICE_TYPES, "femaleeventoned")
+    service._top_up(pick)
+    [sent] = service._clip_requests.requests_for_reply()
+    request = json.loads(sent)
+    assert request["count"] > 0 and "skyrim.esm|000dd601" in request["exclude"]
+
+
+def test_only_a_refusal_about_the_number_of_voices_means_the_plan_is_full():
+    from src.tts.online_service import says_plan_full
+    for full in ("voice_limit_reached", "You have reached your voice limit.", "Maximum number of voices reached", "Too many cloned voices"):
+        assert says_plan_full(full), full
+    for other in ("Audio exceeds the length limit for voice cloning", "character limit reached", "Rate limit exceeded", ""):
+        assert not says_plan_full(other), other
 
 
 def test_check_my_key(monkeypatch, voice_config, fake):
@@ -299,6 +438,119 @@ def test_out_of_credits_while_speaking_says_why_and_stops_asking_for_a_while(mon
     assert fake.spoken[-1][0] == "v1" and online_service.problem("ElevenLabs") == ""
 
 
+def test_a_service_that_doesnt_answer_is_asked_once_then_the_backup_speaks_for_a_while(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    asked = []
+
+    def no_answer(*args, **kwargs):
+        asked.append(args[0])
+        raise requests.ConnectionError("no internet")
+    monkeypatch.setattr(requests, "post", no_answer)
+    for line in ("one", "two", "three"):
+        with pytest.raises(VoiceServiceFailure): # the backup service speaks these lines
+            service.voice_into("Hello.", pick, str(tmp_path / f"{line}.wav"))
+    assert len(asked) == 1 # one clone tried, not one per try and per line
+    assert "lost the connection to ElevenLabs" in online_service.problem("ElevenLabs")
+
+
+def cut_off_lines(monkeypatch, how_many: int, error):
+    """The next *how_many* lines sent are cut off with *error*; returns the lines sent"""
+    import requests
+    real_post = requests.post
+    sent = []
+
+    def post(url, *args, **kwargs):
+        if "text-to-speech" not in url:
+            return real_post(url, *args, **kwargs)
+        sent.append(url)
+        if len(sent) <= how_many:
+            raise error
+        return real_post(url, *args, **kwargs)
+    monkeypatch.setattr(requests, "post", post)
+    return sent
+
+
+def test_a_line_cut_off_once_is_sent_once_more(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav")) # cloned
+    sent = cut_off_lines(monkeypatch, 1, requests.ConnectionError("Connection aborted."))
+    service.voice_into("Hello.", pick, str(tmp_path / "two.wav")) # no failure: the backup service doesn't speak
+    assert len(sent) == 2 and online_service.problem("ElevenLabs") == "" and service.why_not == ""
+
+
+def test_a_line_cut_off_twice_lets_the_backup_speak_for_a_while(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    sent = cut_off_lines(monkeypatch, 2, requests.ConnectionError("Connection aborted."))
+    with pytest.raises(VoiceServiceFailure):
+        service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert len(sent) == 2 and "lost the connection to ElevenLabs" in online_service.problem("ElevenLabs")
+
+
+def test_a_line_not_answered_in_time_is_not_sent_again(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    sent = cut_off_lines(monkeypatch, 1, requests.ReadTimeout("read timed out"))
+    with pytest.raises(VoiceServiceFailure, match="didn't answer in time"): # the NPC doesn't wait that long twice
+        service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert len(sent) == 1
+
+
+def test_one_slow_line_doesnt_turn_the_service_off(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    sent = cut_off_lines(monkeypatch, 1, requests.ReadTimeout("read timed out"))
+    with pytest.raises(VoiceServiceFailure):
+        service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert online_service.problem("ElevenLabs") == "" and service.why_not == ""
+    service.voice_into("Hello.", pick, str(tmp_path / "three.wav")) # the next line is asked for again, and works
+    assert len(sent) == 2
+
+
+def test_two_slow_lines_in_a_row_let_the_backup_speak_for_a_while(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    sent = cut_off_lines(monkeypatch, 2, requests.ReadTimeout("read timed out"))
+    for line in ("two", "three", "four"):
+        with pytest.raises(VoiceServiceFailure): # the backup service speaks these lines
+            service.voice_into("Hello.", pick, str(tmp_path / f"{line}.wav"))
+    assert len(sent) == 2 # the fourth line goes straight to the backup, without asking again
+    assert "2 lines in a row" in online_service.problem("ElevenLabs") and "tries again in 5 minutes" in service.why_not
+    assert "internet down" not in service.why_not
+
+
+def test_a_slow_line_between_answered_ones_starts_counting_again(monkeypatch, voice_config, tmp_path, fake):
+    import requests
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    pick = VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    for line in ("two", "three"):
+        cut_off_lines(monkeypatch, 1, requests.ReadTimeout("read timed out"))
+        with pytest.raises(VoiceServiceFailure):
+            service.voice_into("Hello.", pick, str(tmp_path / f"{line}.wav"))
+        service.voice_into("Hello.", pick, str(tmp_path / f"{line}-answered.wav"))
+    assert online_service.problem("ElevenLabs") == ""
+
+
+def test_a_longer_line_gets_a_longer_wait(monkeypatch, voice_config):
+    service = make(monkeypatch, voice_config, ElevenLabs)
+    short, longer = service.line_wait("Hello."), service.line_wait("word " * 60)
+    assert 12 <= short < longer <= service.LONGEST_LINE_WAIT
+    assert service.line_wait("word " * 1000) == service.LONGEST_LINE_WAIT
+
+
 def test_an_old_problem_is_not_shown_as_right_now(monkeypatch):
     online_service.set_problem("Inworld", "Inworld can't speak.", online_service.SPEAKING)
     assert online_service.problem("Inworld") == "Inworld can't speak."
@@ -307,3 +559,22 @@ def test_an_old_problem_is_not_shown_as_right_now(monkeypatch):
     now = time.time()
     monkeypatch.setattr(online_service.time, "time", lambda: now + online_service.RETRY_MINUTES * 60 + 1)
     assert online_service.problem("Inworld") == "" # fixed meanwhile, or set again when it fails again
+
+
+def test_voices_left_over_from_trying_clips_are_deleted_once(monkeypatch, voice_config, fake):
+    store = cloned_voices(voice_config.save_folder, "Inworld")
+    store.set("try_malenord", "old_try", "abc")
+    store.set("malenord", "kept", "def")
+    monkeypatch.setattr(online_service.OnlineCloneService, "_tidied", set())
+    make(monkeypatch, voice_config, Inworld)
+    assert fake.wait_for_deleted("old_try") and store.get("try_malenord") is None and store.get("malenord")["voice_id"] == "kept"
+
+
+def test_only_a_service_that_spoke_in_game_counts_as_in_use(monkeypatch, voice_config, tmp_path, fake):
+    service = make(monkeypatch, voice_config, Inworld)
+    service.serve_in_game() # started, as Hear the voice on the page does through the running Mantella
+    service.voice_into("Hello.", a_voice(service, tmp_path, [1.0]), str(tmp_path / "one.wav"))
+    assert service.info not in service._preparation.services_in_use()
+    service.spoke_in_game = True # a line in game
+    assert service.info in service._preparation.services_in_use()
+    service.stop()

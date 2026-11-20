@@ -41,7 +41,7 @@ class sentence_length_parser(output_parser):
             # Only merge if same speaker and type
             if (last_content.speaker == next_content.speaker and 
                 last_content.sentence_type == next_content.sentence_type):
-                last_content.append_other_sentence_content(next_content.text, next_content.actions)
+                last_content.append_other_sentence_content(next_content.text, next_content.actions, next_content.voice_text)
                 return last_content, None
         
         # Either both sentences are long enough or they can't be merged

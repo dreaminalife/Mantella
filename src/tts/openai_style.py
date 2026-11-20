@@ -17,7 +17,7 @@ import soundfile as sf
 from src.tts import audio_cleanup
 from src.tts.clip_service import ClipVoiceService
 from src.tts.registry import VoiceServiceInfo
-from src.tts.voice_picker import VoicePick
+from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import CLIP_BASE64, CLIP_NAME, CLIP_PATH, read_key_file
 
 DEFAULT_VOICE = "default"
@@ -65,13 +65,31 @@ class OpenAIStyleService(ClipVoiceService):
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._key}"} if self._key else {}
 
-    def prepare_voice(self, pick: VoicePick) -> dict[str, Any]:
-        fields = clip_fields(self._setup, pick)
-        voice = pick.key if not pick.clip_path else self.built_in_voice(None)
-        return {"voice": voice, **fields}
+    @property
+    def clones_voices(self) -> bool:
+        """Only a setup with a box for the clip. One without speaks with its male and female voices, as its Clip field name says"""
+        return bool(self._setup.get("clip_field") and self._setup.get("clip_mode"))
 
-    def speak(self, text: str, voice: dict[str, Any], out_path: str) -> None:
-        body: dict[str, Any] = {"input": text, "response_format": "wav", **voice}
+    can_copy_voices = clones_voices
+
+    @property
+    def why_not(self) -> str:
+        return "" if self.clones_voices else f"{self._info.name} has no Clip field name, so it only speaks with its male and female voices."
+
+    def pick_voice(self, speaker: VoiceSpeaker | None, named_voice: str | None = None) -> VoicePick:
+        pick = super().pick_voice(speaker, named_voice)
+        if pick.clip_path and not self.clones_voices: # a clip another service asked the game for
+            return VoicePick(BUILT_IN, self.built_in_voice(speaker.gender if speaker else None), None)
+        return pick
+
+    def prepare_voice(self, pick: VoicePick) -> tuple[dict[str, Any], VoicePick]:
+        """The clip is read again for each line, so a clip sent as base64 isn't held in memory for every voice"""
+        voice = pick.key if not pick.clip_path else self.built_in_voice(None)
+        return {"voice": voice}, pick
+
+    def speak(self, text: str, voice: tuple[dict[str, Any], VoicePick], out_path: str) -> None:
+        names, pick = voice
+        body: dict[str, Any] = {"input": text, "response_format": "wav", **names, **clip_fields(self._setup, pick)}
         if self._setup.get("model"):
             body["model"] = self._setup["model"]
         body.update(self._setup.get("extra_fields") or {})

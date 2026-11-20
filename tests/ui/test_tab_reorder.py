@@ -51,7 +51,7 @@ def test_the_live_conversation_tab_is_now_the_conversation_tab_and_its_settings_
     names = default_tab_names(ConfigLoader(tmp_path).definitions.base_groups)
     assert LIVE_CONVERSATION_TAB == "Conversation" and "Live Conversation" not in names
     assert names.count("Conversation") == 1
-    for section in ("All Conversations", "Group Conversation", "Shout", "Director Mode", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"):
+    for section in ("All Conversations", "Group Conversation", "Shout", "Director Mode", "NPC Initiative", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"):
         assert section not in names
 
 

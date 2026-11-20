@@ -21,7 +21,7 @@
   - Must express Lydia's internal reaction/feelings to what just happened, to the people involved (including Dragonborn),  and what **impactful** actions they will immediately take, or what **impactful** new topics they would bring up in the next turn to ** concretely ** move the conversation forward. Do NOT use conditional framing like "if..., then...", "in case...", or "only if...". State exactly what they are going to do/say/ask.
 
 Response format example:
-Ysolda: Keep your voice down. We're here to close the deal,  we don't want to draw the attention of the town guard.
+Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
 <<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
 <<action next turn Ysolda>>  I need to make the handoff quickly and get back behind the city gates.
 

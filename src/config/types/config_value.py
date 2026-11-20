@@ -10,6 +10,7 @@ class ConfigValueTag(StrEnum):
     share_row = "share_row"
     tick_boxes = "tick_boxes" # A multi-selection shown as tick boxes instead of a dropdown
     radio_buttons = "radio_buttons" # A selection shown as radio buttons instead of a dropdown, so every choice shows at once
+    slider = "slider" # A number shown as a slider from its lowest to its highest value, instead of a number box
 
 T = TypeVar('T')
 class ConfigValue(ABC, Generic[T]):
@@ -25,12 +26,19 @@ class ConfigValue(ABC, Generic[T]):
         self.__tags: list[ConfigValueTag] = tags
         self.__row_group: str | None = row_group
         self._on_value_change_callback: Callable[..., Any] | None = None
-        self.shown_when: str | None = None # The identifier of a bool setting in the same section: this setting only shows while that one is on
+        # When this setting shows (same section): "identifier" while that switch is on, "identifier=Value" while that selection is Value,
+        # or a tuple of these, which must all hold
+        self.shown_when: str | tuple[str, ...] | None = None
         self.shown_in: str | None = None # The name of a folded part of its page this setting shows in (before the advanced and basic tags). Only the page changes: config.ini keeps it in its section
 
     def in_folded_part(self, name: str) -> "ConfigValue[T]":
         """Shows this setting in a folded part of its page with this name, e.g. XTTS"""
         self.shown_in = name
+        return self
+
+    def in_row(self, name: str) -> "ConfigValue[T]":
+        """Draws this setting side by side with the others given the same row name, e.g. three switches in one row"""
+        self.__row_group = name
         return self
 
     @property
@@ -92,3 +100,18 @@ class ConfigValue(ABC, Generic[T]):
     @abstractmethod
     def accept_visitor(self, visitor: ConfigValueVisitor):
         pass
+
+
+def shown_when_conditions(shown_when: str | tuple[str, ...] | None) -> tuple[str, ...]:
+    """A setting's shown_when as a tuple of conditions: () when it always shows"""
+    if not shown_when:
+        return ()
+    return (shown_when,) if isinstance(shown_when, str) else tuple(shown_when)
+
+
+def condition_holds(condition: str, value: Any) -> bool:
+    """ "identifier" holds while that switch is on, "identifier=Value" while that list has Value picked"""
+    _, has_value, wanted = condition.partition("=")
+    if has_value:
+        return str(value) == wanted
+    return bool(value)

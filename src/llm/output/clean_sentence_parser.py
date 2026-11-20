@@ -10,7 +10,8 @@ class clean_sentence_parser(output_parser):
     def cut_sentence(self, output: str, current_settings: sentence_generation_settings) -> tuple[SentenceContent | None, str]:
         return None, self.clean_sentence(output)
         
-    def clean_sentence(self, sentence: str) -> str:
+    def clean_sentence(self, sentence: str, keep_square_brackets: bool = False) -> str:
+        """keep_square_brackets: the AI may write sounds and directions in square brackets ([laugh]), so they are not turned into narration"""
         def remove_as_a(sentence: str) -> str:
             """Remove 'As an XYZ,' from beginning of sentence"""
             if sentence.startswith('As a'):
@@ -25,8 +26,9 @@ class clean_sentence_parser(output_parser):
         sentence = remove_as_a(sentence)
         sentence = sentence.replace('\r\n', ' ')
         sentence = sentence.replace('\n', ' ')
-        sentence = sentence.replace('[', '(')
-        sentence = sentence.replace(']', ')')
+        if not keep_square_brackets:
+            sentence = sentence.replace('[', '(')
+            sentence = sentence.replace(']', ')')
         sentence = sentence.replace('{', '(')
         sentence = sentence.replace('}', ')')
         # local models sometimes get the idea in their head to use double asterisks **like this** in sentences instead of single

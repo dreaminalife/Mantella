@@ -101,14 +101,14 @@ class FunctionManager:
                                         if validated_entities:
                                             validated_args[param_name] = validated_entities
                                         else:
-                                            logger.warning(f"Skipping action '{identifier}' - no valid entities for parameter '{param_name}'")
+                                            FunctionManager._log_skipped(identifier, param_name, entity_names, characters, nearby_only)
                                             validated_args = None
                                             break
                                     else:
                                         if validated_entities:
                                             validated_args[param_name] = validated_entities[0]
                                         else:
-                                            logger.warning(f"Skipping action '{identifier}' - no valid entities for parameter '{param_name}'")
+                                            FunctionManager._log_skipped(identifier, param_name, entity_names, characters, nearby_only)
                                             validated_args = None
                                             break
                             
@@ -661,6 +661,21 @@ class FunctionManager:
 
 
     @staticmethod
+    def _in_conversation(names: list[str], characters: Characters) -> bool:
+        """Every one of these people is in the conversation already"""
+        present = {name.lower() for name in characters.get_all_names_w_nearby(include_player=True)}
+        return bool(names) and all(str(name).lower() in present for name in names)
+
+    @staticmethod
+    def _log_skipped(identifier: str, param_name: str, names: list[str], characters: Characters, nearby_only: bool) -> None:
+        """An action nobody it names can do. Asking for someone already in the conversation (to join it, or to come over) is no mistake:
+        it's done already"""
+        if nearby_only and FunctionManager._in_conversation(names, characters):
+            logger.info(f"Action '{identifier}' not needed: {', '.join(str(n) for n in names)} {'is' if len(names) == 1 else 'are'} already in the conversation")
+            return
+        logger.warning(f"Skipping action '{identifier}' - no valid entities for parameter '{param_name}'")
+
+    @staticmethod
     def _validate_npc_names(npc_names: list[str], characters: Characters, exclude_player: bool = True, include_nearby: bool = False, nearby_only: bool = False) -> list[str]:
         """Validate that NPC names exist based on scope
         
@@ -711,6 +726,8 @@ class FunctionManager:
                 # Preserve LLM casing
                 valid_names.append(llm_name)
                 seen_lower.add(llm_lower)
+            elif nearby_only and FunctionManager._in_conversation([llm_name], characters):
+                continue # Already in the conversation: nothing to do for them. Said once in _log_skipped when it's everyone the action names
             else:
                 if nearby_only:
                     available = "nearby"

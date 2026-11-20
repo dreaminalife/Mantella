@@ -146,3 +146,59 @@ def test_stopping_stops_every_service_but_the_one_kept(voice_config, registry):
         instance.stop = (lambda n=name: stopped.append(n))
     chat_manager.stop_voice_services(keep=chat_manager.tts)
     assert stopped == ["Setup"]
+
+
+def test_the_backup_starts_only_when_a_line_needs_it(voice_config, registry):
+    started = []
+    backup = registry.find("Backup")
+    original = backup.factory
+    backup.factory = lambda config, game, info: started.append(info.name) or original(config, game, info)
+    chat_manager = manager(voice_config, registry, "Online")
+    say(chat_manager, lydia())
+    assert started == []
+    FakeNewService.failing = {"Online"}
+    say(chat_manager, lydia())
+    assert started == ["Backup"]
+
+
+def test_the_backup_starts_with_the_game_so_it_is_ready_when_a_line_fails(voice_config, registry):
+    started = []
+    backup = registry.find("Backup")
+    original = backup.factory
+    backup.factory = lambda config, game, info: started.append(info.name) or original(config, game, info)
+    chat_manager = manager(voice_config, registry, "Online")
+    chat_manager.start_backup_voice_service()
+    assert started == ["Backup"]
+    FakeNewService.failing = {"Online"}
+    say(chat_manager, lydia())
+    assert started == ["Backup"] and spoken_by[-1] == "Backup" # the one started with the game speaks, not a second one
+
+
+def test_the_backup_doesnt_start_with_the_game_when_the_tts_service_never_hands_it_lines(voice_config, registry):
+    started = []
+    backup = registry.find("Backup")
+    original = backup.factory
+    backup.factory = lambda config, game, info: started.append(info.name) or original(config, game, info)
+    manager(voice_config, registry, "Old").start_backup_voice_service() # Piper, XTTS and xVASynth keep the old way
+    manager(voice_config, registry, "Backup").start_backup_voice_service() # the TTS Service is the backup itself
+    assert started == ["Backup"] # only the TTS Service made in the second manager
+
+
+def test_the_log_names_the_failing_service_once(voice_config, registry, caplog):
+    FakeNewService.failing = {"Online"}
+    say(manager(voice_config, registry, "Online"), lydia())
+    assert "Online failed: internet down. Backup speaks the line instead." in caplog.text
+    assert "Online failed: Online failed" not in caplog.text and "internet down.." not in caplog.text
+
+
+def test_the_log_names_who_speaks_with_which_voice(voice_config, registry, caplog):
+    caplog.set_level("INFO")
+    say(manager(voice_config, registry, "Online"), lydia())
+    assert "TTS for Lydia: Online speaks with built-in voice 'alba'. If it fails: Backup" in caplog.text
+
+
+def test_the_log_says_the_backup_spoke_and_with_which_voice(voice_config, registry, caplog):
+    caplog.set_level("INFO")
+    FakeNewService.failing = {"Online"}
+    say(manager(voice_config, registry, "Online"), lydia())
+    assert "Backup spoke the line with built-in voice 'alba'" in caplog.text and "TTS for Lydia: Backup speaks with built-in voice 'alba'" in caplog.text

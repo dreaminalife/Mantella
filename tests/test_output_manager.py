@@ -816,6 +816,62 @@ async def test_rejected_reply_stays_empty_without_fallback(
     assert _spoken_texts_from_queue(mock_queue) == [""]
 
 
+class TooSlowClient(MockAIClient):
+    """The LLM doesn't start its reply within LLM Response Timeout"""
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    async def streaming_call(self, messages=None, is_multi_npc=False, response_started_at=None):
+        from src.llm.client_base import FirstTokenTimeout
+        self.calls += 1
+        raise FirstTokenTimeout("LLM did not respond within 60.0 seconds")
+        yield
+
+
+@pytest.mark.asyncio
+async def test_fallback_model_answers_when_the_model_is_too_slow(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    output_manager._ChatManager__client = TooSlowClient()
+    created = _enable_fallback(output_manager, monkeypatch, MockAIClient(response_pattern=["From fallback."]))
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+
+    assert created == ["fallback-model"]
+    assert _spoken_texts_from_queue(mock_queue) == ["From fallback.", ""]
+
+
+@pytest.mark.asyncio
+async def test_a_too_slow_fallback_model_gives_the_usual_line(
+    output_manager: ChatManager,
+    example_skyrim_npc_character: Character,
+    example_characters_pc_to_npc: Characters,
+    mock_queue: SentenceQueue,
+    mock_messages: message_thread,
+    mock_actions: list[Action],
+    monkeypatch,
+):
+    output_manager._ChatManager__client = TooSlowClient()
+    fallback = TooSlowClient()
+    _enable_fallback(output_manager, monkeypatch, fallback)
+
+    await output_manager.process_response(
+        example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions
+    )
+
+    assert fallback.calls == 1 # asked once, not again and again
+    assert "I can't find the right words at the moment." in _spoken_texts_from_queue(mock_queue)
+
+
 class NotAnsweringClient(MockAIClient):
     """The LLM takes long to send its first token"""
     async def streaming_call(self, messages=None, is_multi_npc=False, response_started_at=None):
@@ -842,3 +898,108 @@ async def test_stopping_does_not_wait_for_the_llm_to_answer(
     await asyncio.wait_for(response, timeout=2)
 
     assert _spoken_texts_from_queue(mock_queue) == [""]
+
+
+def _voice_tags_reply(output_manager: ChatManager, monkeypatch, response_pattern: list[str], audio_tags: bool, directions: bool) -> list[tuple[str, str | None]]:
+    """The reply's sentences: what everyone sees, and what the voice service is sent (None: the same)"""
+    config = output_manager._ChatManager__config
+    output_manager._ChatManager__client.response_pattern = response_pattern
+    config.narration_handling = NarrationHandlingEnum.CUT_NARRATIONS
+    config.narration_start_indicators, config.narration_end_indicators = ["*", "(", "["], ["*", ")", "]"]
+    config.number_words_tts = 1
+    config.drop_last_sentences_single = 0
+    config.tts_service_name = "Inworld"
+    config.inworld_model = "TTS-2"
+    config.inworld_audio_tags, config.inworld_directions = audio_tags, directions
+    sent: list[str | None] = []
+    def speak(instance, character, text, synth_options, voice_text=None):
+        sent.append(voice_text.strip() if voice_text else voice_text) # None: the service says the line as it is
+        return "mock_audio_file.wav"
+    monkeypatch.setattr(ChatManager, "_speak_as_character", staticmethod(speak))
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_sounds_and_directions_reach_only_the_voice_service(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                                   example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                                   mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["[sigh] Fine. ", "[say coldly] Take it. ", "Go. ", "*She turns away* ", "[laugh]"], True, True)
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Fine.", "Take it.", "Go.", ""] # subtitles and memory: no tags, the narration cut
+    assert sent == ["[sigh] Fine.", "[say coldly] Take it.", None] # a direction changes only its sentence; a sound with no words after it is dropped
+
+
+@pytest.mark.asyncio
+async def test_a_short_sentence_merged_with_the_next_keeps_its_sound(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                                     example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                                     mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["Ha! ", "[laugh] You thought ", "I'd fall for that?"], True, False)
+    output_manager._ChatManager__config.number_words_tts = 3
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Ha! You thought I'd fall for that?", ""]
+    assert sent == ["Ha! [laugh] You thought I'd fall for that?"]
+
+
+@pytest.mark.asyncio
+async def test_with_both_switches_off_square_brackets_are_still_narration(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                                          example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                                          mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["[sigh] Fine, ", "take it."], False, False)
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Fine, take it.", ""]
+    assert sent == [None]
+
+
+@pytest.mark.asyncio
+async def test_an_npc_with_another_voice_service_gets_no_tags(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                              example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                              mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["[sigh] Fine, ", "take it."], True, True)
+    output_manager._ChatManager__config.tts_service_name = "Pocket TTS"
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Fine, take it.", ""]
+    assert sent == [None]
+
+
+@pytest.mark.asyncio
+async def test_an_action_keyword_is_never_said_by_the_voice_service(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                                    example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                                    mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["Wave: ", "[laugh] See you ", "later. ", "Wave: ", "Bye now."], True, True)
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["See you later.", "Bye now.", ""]
+    assert sent == ["[laugh] See you later.", None]
+
+
+@pytest.mark.asyncio
+async def test_a_full_stop_inside_a_direction_doesnt_end_the_sentence(output_manager: ChatManager, example_skyrim_npc_character: Character,
+                                                                      example_characters_pc_to_npc: Characters, mock_queue: SentenceQueue,
+                                                                      mock_messages: message_thread, mock_actions: list[Action], monkeypatch):
+    sent = _voice_tags_reply(output_manager, monkeypatch, ["Fine. ", "[say angrily. ", "very loud!] Go away now."], True, True)
+
+    await output_manager.process_response(example_skyrim_npc_character, mock_queue, mock_messages, example_characters_pc_to_npc, mock_actions)
+
+    assert _spoken_texts_from_queue(mock_queue) == ["Fine.", "Go away now.", ""]
+    assert sent == [None, "[say angrily. very loud!] Go away now."]
+
+
+def test_a_square_bracket_left_open_doesnt_hold_the_reply_back():
+    from src.llm.output.sentence_accumulator import sentence_accumulator
+    accumulator = sentence_accumulator([".", "!", "?"], keep_square_brackets=True)
+    accumulator.accumulate("Hi [say angrily. very")
+    assert not accumulator.has_next_sentence() # waits for the "]"
+    accumulator.accumulate(" loud] Go. Next.")
+    assert accumulator.has_next_sentence() and accumulator.get_next_sentence() == "Hi [say angrily. very loud] Go."
+    stray = sentence_accumulator([".", "!", "?"], keep_square_brackets=True)
+    stray.accumulate("A [ stray bracket. " + "And then a long line that goes on. " * 6)
+    assert stray.has_next_sentence() and stray.get_next_sentence() == "A [ stray bracket."

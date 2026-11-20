@@ -13,6 +13,7 @@ from src.llm.llm_client import LLMClient
 from src.llm.message_thread import message_thread
 from src.llm.messages import AssistantMessage, UserMessage
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import label_prompt
 from src.remember.summaries import (
     CharacterSummaryParameters,
     drop_blocks_since,
@@ -239,6 +240,7 @@ class InnerMonologue:
             conversation_summary=conversation_summary.strip(),
             lorebook="",
         )
+        prompt = label_prompt(prompt, self.__config.prompt_profile_manager, "inner_monologue_prompt", speaker=npc.name)
         talk_messages = npc_info.messages.get_talk_only(include_system_generated_messages=True)
         # get_talk_only returns copies, so this only hides other NPCs' turn thoughts from this request
         for message in talk_messages:

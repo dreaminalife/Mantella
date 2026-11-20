@@ -612,7 +612,7 @@ class LLMDefinitions:
         description = """NPC Initiative (enabled in the Mantella MCM): how sure the decision model must be before a nearby NPC walks up to the player and starts a conversation.
                         The check uses the Game Master Decision Service and Model. The NPC with the highest probability is chosen only if that probability is at least this value.
                         Ignored when Use Decision Model for Game Master is disabled: the Game Master LLM then picks an NPC or nobody directly."""
-        return ConfigValueFloat("npc_initiative_threshold","NPC Initiative Threshold",description, 0.6, 0, 1, tags=[ConfigValueTag.advanced])
+        return ConfigValueFloat("npc_initiative_threshold","NPC Initiative Threshold",description, 0.6, 0, 1)
 
     @staticmethod
     def get_game_master_addressed_threshold_config_value() -> ConfigValue:

@@ -22,29 +22,53 @@ class TTSEnum(Enum):
             self.XVASYNTH: 'xVASynth',
         }[self]
 
-TRY_A_VOICE_GROUP = "Try A Voice"
-VOICE_SETUPS_GROUP = "Voice Setups"
+# The Text-to-Speech page, top to bottom: Speed and lip sync (folded), TTS Service and Backup Voice Service, a list of every
+# service (Settings for), and under it the picked one's Global settings for <service> (with Your key in them) and Model, or its program
+# settings. Then folded: Hear it, Customization per voice type and per NPC, Voice Effects and Fix Pronunciation.
+# Only the page changes: config.ini keeps every setting under [TTS]
+SPEED_PART = "Speed and lip sync"
+NPC_VOICES_PART = "Customization per voice type and per NPC"
+HEAR_IT_PART = "Hear it"
 WORD_LISTS_GROUP = "Fix Pronunciation"
-VOICE_CLIPS_GROUP = "Voice Clips"
+VOICE_EFFECTS_GROUP = "Voice Effects"
 POCKET_TTS_GROUP = "Pocket TTS"
 ELEVENLABS_GROUP = "ElevenLabs"
 INWORLD_GROUP = "Inworld"
-# Folded parts of the Text-to-Speech page for one service's settings (config.ini keeps them under [TTS])
+HEYGEN_GROUP = "HeyGen"
+QWEN_GROUP = "Qwen"
+BOSON_GROUP = "Boson AI"
+PIPER_PART = "Piper"
 XTTS_PART = "XTTS"
 XVASYNTH_PART = "xVASynth"
+VOICE_SETUPS_PART = "Your voice setups"
+# The online services' parts of the page: each has its own key panel
+ONLINE_SERVICE_GROUPS = (ELEVENLABS_GROUP, INWORLD_GROUP, HEYGEN_GROUP, QWEN_GROUP, BOSON_GROUP)
+# The choices under Settings for, in their order: one part of the page each, shown one at a time
+SERVICE_PARTS = (POCKET_TTS_GROUP, *ONLINE_SERVICE_GROUPS, PIPER_PART, XTTS_PART, XVASYNTH_PART, VOICE_SETUPS_PART)
+# Each newer service's Volume (config.ini keeps it under [TTS]); it shows in that service's part of the page
+SERVICE_VOLUMES = {POCKET_TTS_GROUP: "pocket_tts_volume", ELEVENLABS_GROUP: "elevenlabs_volume", INWORLD_GROUP: "inworld_volume",
+                   HEYGEN_GROUP: "heygen_volume", QWEN_GROUP: "qwen_volume", BOSON_GROUP: "boson_volume"}
+
+
+def service_part_id(part: str) -> str:
+    """The page element of a service's part (elem_id), e.g. tts-part-boson-ai"""
+    return "tts-part-" + "-".join(part.lower().split())
+
+def every_npc_part(part: str) -> str:
+    """The fold with a service's settings for every NPC, in its part under Settings for"""
+    return f"Global settings for {part}"
+
+
+def sound_part_id(part: str) -> str:
+    """The page element of a service's Global settings (elem_id), e.g. tts-part-boson-ai-sound"""
+    return service_part_id(part) + "-sound"
 
 class TTSDefinitions:
-    VOICE_SETUPS_DESCRIPTION = """Connect any voice program or website, no code needed. Mantella speaks two request styles: OpenAI-style (llama.cpp, audio.cpp, LocalAI, many websites) and XTTS-style (XTTS servers and programs like them).
-A saved setup shows up in the TTS Service list, can be the Backup Voice Service, and works in a character's tts_service column.
-NPC voices are cloned from their voice clips (see Voice Clips). Until a clip arrives, the setup's male or female voice speaks.
-Setups are saved in voice_setups.json next to config.ini, so you can copy them to another PC."""
-    WORD_LISTS_DESCRIPTION = """Fix how a word is said, for example Dovahkiin as Doh-vah-keen. Only the speech changes, never the subtitles or what NPCs remember. Works from the next line.
-The lists are in the pronunciation folder next to config.ini: mantella_words.csv (Mantella's, replaced by updates), my_words.csv (yours, never touched by updates, and it wins over Mantella's), and any other list you put there.
-Pocket TTS and your voice setups use these lists. Piper, XTTS and xVASynth don't."""
-    VOICE_CLIPS_DESCRIPTION = """Every NPC's voice is cloned from a few seconds of their real voice in your game. Hear it, swap it, or give an NPC a voice of their own."""
-    POCKET_TTS_DESCRIPTION = """A small voice program by Kyutai. It clones each NPC's voice from a clip of their real lines and runs on the processor, leaving the graphics card to Skyrim. Pick it under TTS Service: Mantella downloads and starts it for you."""
-    ELEVENLABS_DESCRIPTION = """Online voices that sound the best in listening tests, and cost the most. Each NPC's voice is cloned once on your ElevenLabs account. Pick it under TTS Service, or for one NPC in their tts_service column."""
-    INWORLD_DESCRIPTION = """Online voices close to ElevenLabs' for less, with voice cloning on every plan. Each NPC's voice is cloned once on your Inworld account. Pick it under TTS Service, or for one NPC in their tts_service column."""
+    WORD_LISTS_DESCRIPTION = """Fix how a word is said, for example Dovahkiin as Doh-vah-keen."""
+    VOICE_CLIPS_DESCRIPTION = """Every NPC's voice is cloned from a few seconds of their real voice in your game. Change any one voice: hear it, swap it, or give an NPC a voice of their own."""
+    VOICE_EFFECTS_DESCRIPTION = """Give creatures and ghosts a voice that fits. Every effect is off until you tick it."""
+    SPEED_DESCRIPTION = """For every service: how fast NPCs start talking, and how their mouths move."""
+    NO_CLONING_NOTE = """{name} doesn't clone NPCs' voices from your game, so there are no voices to change here."""
 
     class ResourceFolderExistsChecker(ConfigValueConstraint[str]):
         def __init__(self) -> None:
@@ -77,11 +101,11 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
 
 Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Need to add a new column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
 
-Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', or the name of one of your voice setups.
+Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', 'heygen', 'qwen', 'boson', or the name of one of your voice setups.
 
-Your own voice setups (Voice Setups, below) are in this list too."""
+Your own voice setups are in this list too. The picked service's settings show below."""
         options, enums = TTSDefinitions.voice_service_options()
-        return ConfigValueSelection("tts_service", "TTS Service", description, TTSEnum.PIPER.display_name, options, enums)
+        return ConfigValueSelection("tts_service", "TTS Service", description, TTSEnum.PIPER.display_name, options, enums, tags=[ConfigValueTag.share_row])
 
     @staticmethod
     def get_tts_backup_service_config_value() -> ConfigValue:
@@ -89,7 +113,128 @@ Your own voice setups (Voice Setups, below) are in this list too."""
 The line is tried twice first. The NPC's voice changes for that one line instead of going silent.
 Piper, XTTS and xVASynth work as before: when one of them fails for an NPC, the TTS Service speaks the line."""
         options, enums = TTSDefinitions.voice_service_options()
-        return ConfigValueSelection("tts_backup_service", "Backup Voice Service", description, TTSEnum.PIPER.display_name, options, enums)
+        return ConfigValueSelection("tts_backup_service", "Backup Voice Service", description, TTSEnum.PIPER.display_name, options, enums,
+                                    tags=[ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_service_volume_config_value(service: str) -> ConfigValue:
+        """*service*: a group in SERVICE_VOLUMES (Pocket TTS, ElevenLabs, ...). Shown in that service's part of the page"""
+        description = f"""How loud NPCs speak with {service}. 100% is as loud as Skyrim's own lines, 150% louder, 50% quieter.
+Every line is first made as loud as the game's own lines, then this is applied. Very loud lines are kept from crackling."""
+        return ConfigValueInt(SERVICE_VOLUMES[service], "Volume", description, 100, 10, 300).in_folded_part(service)
+
+    @staticmethod
+    def get_service_model_config_value(group: str, description: str) -> ConfigValue:
+        """An online service's Model setting: the models on Mantella's list (src/tts/model_catalog.py), and any model typed in"""
+        from src.tts.model_catalog import ServiceModels
+        description += "\nMissing a model? Add it next to Settings for."
+        return ServiceModels.of(group).config_value(description)
+
+    @staticmethod
+    def get_model_settings_config_value(group: str) -> ConfigValue:
+        """Hidden: each model's own values of the service's global settings, kept while another model is picked (voice_style.py)"""
+        from src.tts.model_catalog import ServiceModels
+        models = ServiceModels.of(group)
+        return ConfigValueString(models.stored_setting, f"{group}'s settings for each model", "Kept by Mantella.", "", is_hidden=True).in_folded_part(group)
+
+    @staticmethod
+    def get_model_list_config_value(group: str) -> ConfigValue:
+        """Hidden: the models the player added to the service's list, and Mantella's models they removed (model_catalog.ListChanges)"""
+        from src.tts.model_catalog import ServiceModels
+        models = ServiceModels.of(group)
+        return ConfigValueString(models.list_setting, f"{group}'s added and removed models", "Kept by Mantella.", "", is_hidden=True).in_folded_part(group)
+
+    @staticmethod
+    def get_audio_tags_config_value(module, group: str, description: str) -> ConfigValue:
+        """The Audio tags switch of a service that makes sounds (src/tts/voice_tags.py): *module* has AUDIO_TAGS_SETTING"""
+        description += "\nNeeds the default prompts: if you changed yours, reset them to default."
+        return ConfigValueBool(module.AUDIO_TAGS_SETTING, "Audio tags", description, False).in_folded_part(group)
+
+    @staticmethod
+    def get_directions_config_value(module, group: str, description: str) -> ConfigValue:
+        """The Directions switch of a service that takes directions: *module* has DIRECTIONS_SETTING"""
+        description += "\nNeeds the default prompts: if you changed yours, reset them to default."
+        return ConfigValueBool(module.DIRECTIONS_SETTING, "Directions", description, False).in_folded_part(group)
+
+    class JsonObjectChecker(ConfigValueConstraint[str]):
+        """Settings Mantella doesn't have yet: empty, or fields written as a JSON object"""
+        def __init__(self) -> None:
+            super().__init__(None)
+
+        def apply_constraint(self, value_to_apply_to: str) -> ConfigValueConstraintResult:
+            from src.tts.voice_style import parsed_object
+            text = (value_to_apply_to or "").strip()
+            if text and parsed_object(text) is None:
+                return ConfigValueConstraintResult('Not readable: use {"name": value}, with double quotes.')
+            return ConfigValueConstraintResult()
+
+    @staticmethod
+    def get_style_config_value(setting, group: str, description: str, option_descriptions: dict[str, str] | None = None) -> ConfigValue:
+        """A voice style setting (src/tts/voice_style.py): how every NPC sounds with this service's picked model, unless a voice has
+        its own under Customization per voice type and per NPC. Each model keeps its own value, and a model that skips it hides it"""
+        if setting.json_object:
+            value: ConfigValue = ConfigValueString(setting.name, setting.label, description, setting.default, [TTSDefinitions.JsonObjectChecker()])
+        elif setting.choices:
+            value = ConfigValueSelection(setting.name, setting.label, description, setting.default, list(setting.choices),
+                                         option_descriptions=option_descriptions)
+        else:
+            value = ConfigValueFloat(setting.name, setting.label, description, setting.default, setting.low, setting.high, tags=[ConfigValueTag.slider])
+        return value.in_folded_part(group)
+
+    @staticmethod
+    def get_extra_request_config_value(group: str) -> ConfigValue:
+        """Settings Mantella doesn't have yet: fields the player writes, sent with every line on the picked model"""
+        from src.tts.voice_style import EXTRA_REQUESTS
+        return TTSDefinitions.get_style_config_value(EXTRA_REQUESTS[group], group,
+            f'Fields sent with every line on the picked model, named the way {group}\'s own instructions name them, for example {{"speed": 1.1}}. '
+            f"Leave it empty for none. If {group} refuses them, the backup voice speaks and this page says why.")
+
+    @staticmethod
+    def get_online_service_config_values() -> list[ConfigValue]:
+        """The settings shown in the online services' parts of the page, above their Volume"""
+        from src.tts import boson, heygen, inworld, qwen
+        from src.tts.voice_style import BOSON_EXPRESSIVENESS, HEYGEN_EXPRESSIVENESS, HEYGEN_SIMILARITY, INWORLD_DELIVERY
+        # Only on a model that takes directions (not TTS-2 Flash): the page hides it with another model
+        inworld_directions = TTSDefinitions.get_directions_config_value(inworld, INWORLD_GROUP, "NPCs say lines the way they feel: angrily, in a whisper, trembling.")
+        same_voices = "NPC voices already cloned stay the same."
+        return [
+            TTSDefinitions.get_service_model_config_value(ELEVENLABS_GROUP, f"The model ElevenLabs speaks with. {same_voices}"),
+            TTSDefinitions.get_extra_request_config_value(ELEVENLABS_GROUP),
+            TTSDefinitions.get_model_settings_config_value(ELEVENLABS_GROUP),
+            TTSDefinitions.get_model_list_config_value(ELEVENLABS_GROUP),
+            TTSDefinitions.get_service_model_config_value(INWORLD_GROUP, f"TTS-2 sounds the best. TTS-2 Flash answers faster and costs less. {same_voices}"),
+            TTSDefinitions.get_style_config_value(INWORLD_DELIVERY, INWORLD_GROUP, "How NPCs deliver their lines.",
+                                                  {"Stable": "Even, much the same every time.", "Balanced": "Inworld's usual.",
+                                                   "Creative": "A wider range of feeling, less predictable."}),
+            TTSDefinitions.get_audio_tags_config_value(inworld, INWORLD_GROUP, "NPCs laugh, sigh, gasp and groan while they talk, where it fits the line."),
+            inworld_directions,
+            TTSDefinitions.get_extra_request_config_value(INWORLD_GROUP),
+            TTSDefinitions.get_model_settings_config_value(INWORLD_GROUP),
+            TTSDefinitions.get_model_list_config_value(INWORLD_GROUP),
+            TTSDefinitions.get_service_model_config_value(HEYGEN_GROUP, f"The model HeyGen speaks with. {same_voices}"),
+            TTSDefinitions.get_style_config_value(HEYGEN_SIMILARITY, HEYGEN_GROUP, "How closely each voice copies its clips. Each model keeps its own. Changing it, or picking a model with another Similarity, clones every voice again the next time it speaks: free HeyGen accounts can clone 20 voices a day.",
+                                                  {"Medium": "The loosest copy.", "High": "A looser copy.", "Very high": "A close copy.",
+                                                   "Highest": "The closest copy of the clips."}),
+            TTSDefinitions.get_style_config_value(HEYGEN_EXPRESSIVENESS, HEYGEN_GROUP, "How much NPCs' voices rise and fall: 0 is the flattest, 1 the liveliest. HeyGen ignores it on a line with an audio tag."),
+            TTSDefinitions.get_audio_tags_config_value(heygen, HEYGEN_GROUP, "NPCs laugh, sigh and gasp, and speak angrily, sadly or in a whisper, where it fits the line."),
+            TTSDefinitions.get_extra_request_config_value(HEYGEN_GROUP),
+            TTSDefinitions.get_model_settings_config_value(HEYGEN_GROUP),
+            TTSDefinitions.get_model_list_config_value(HEYGEN_GROUP),
+            TTSDefinitions.get_service_model_config_value(QWEN_GROUP, "The model Qwen speaks with. A Qwen voice only works with the model it was cloned for, so another model clones each voice once more the next time it speaks."),
+            ConfigValueString(qwen.WORKSPACE_SETTING, "Workspace ID", "Your workspace in Alibaba Cloud's Model Studio, Singapore region: copy it from the console's Workspace page. Your key must come from the same workspace.", "").in_folded_part(QWEN_GROUP),
+            TTSDefinitions.get_audio_tags_config_value(qwen, QWEN_GROUP, "NPCs laugh, sigh, gasp and cough while they talk, where it fits the line."),
+            TTSDefinitions.get_directions_config_value(qwen, QWEN_GROUP, "NPCs say lines the way they feel: angrily, in a whisper, trembling. Only while Mantella's Language is English (en): Qwen wants it in the language of the line."),
+            TTSDefinitions.get_extra_request_config_value(QWEN_GROUP),
+            TTSDefinitions.get_model_settings_config_value(QWEN_GROUP),
+            TTSDefinitions.get_model_list_config_value(QWEN_GROUP),
+            TTSDefinitions.get_service_model_config_value(BOSON_GROUP, f"The model Boson AI speaks with. {same_voices}"),
+            TTSDefinitions.get_style_config_value(BOSON_EXPRESSIVENESS, BOSON_GROUP, "How much NPCs' voices rise and fall.",
+                                                  {"Flat": "Flatter and calmer.", "Normal": "Plain, everyday speech.", "Lively": "More feeling in each line."}),
+            TTSDefinitions.get_audio_tags_config_value(boson, BOSON_GROUP, "NPCs laugh, sigh and sob, and speak angrily, sadly or in a whisper, where it fits the line."),
+            TTSDefinitions.get_extra_request_config_value(BOSON_GROUP),
+            TTSDefinitions.get_model_settings_config_value(BOSON_GROUP),
+            TTSDefinitions.get_model_list_config_value(BOSON_GROUP),
+        ]
 
     @staticmethod
     def get_xvasynth_folder_config_value() -> ConfigValue:

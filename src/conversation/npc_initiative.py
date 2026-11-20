@@ -11,6 +11,7 @@ from src.llm.ai_client import AIClient
 from src.llm.client_base import ClientBase
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
+from src.prompt_label import describe_prompt, label_prompt
 from src.utils import get_time_group
 
 NOBODY = "Nobody"
@@ -112,6 +113,7 @@ def _choose_with_decision_model(config: ConfigLoader, client: ClientBase, labell
     # The scene is in the question's instructions. The empty scene keeps the request in the Game Master's shape
     body = {"model": client.model_name, "state": {"scene": "", "conversation": []}, "questions": {DECISION_QUESTION: question}}
     logging.log(15, "NPC Initiative decision request:\n" + format_decision_request(body))
+    logging.info(f"NPC Initiative decision request for {describe_prompt(config.prompt_profile_manager, INSTRUCTIONS)}: model='{client.model_name}', url='{url}'")
     headers = {
         "Authorization": f"Bearer {client.api_key}",
         "HTTP-Referer": "https://art-from-the-machine.github.io/Mantella/",
@@ -150,7 +152,7 @@ def _choose_with_llm(config: ConfigLoader, client: AIClient, labelled: dict[str,
     prompt = f"{question['instructions']}\n\nThe options are:\n{options}"
     request_text = (f"Choose one of: {', '.join(question['criteria'])}.\n"
                     'Reply only with JSON in this format: {"next": "<option>", "reason": "<a few words>"}')
-    request = message_thread(config, prompt)
+    request = message_thread(config, label_prompt(prompt, config.prompt_profile_manager, INSTRUCTIONS))
     request.add_message(UserMessage(config, request_text, "", True))
     started_at = time.time()
     try:

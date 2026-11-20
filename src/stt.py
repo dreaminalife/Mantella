@@ -1,14 +1,7 @@
-import sys
 import numpy as np
-from faster_whisper import WhisperModel
 import logging
 from src.config.config_loader import ConfigLoader
 import src.utils as utils
-import requests
-import json
-import io
-from pathlib import Path
-from openai import OpenAI
 from typing import Optional
 from datetime import datetime
 import queue
@@ -16,10 +9,11 @@ import threading
 import time
 import os
 import wave
-from moonshine_onnx import MoonshineOnnxModel, load_tokenizer
 import onnxruntime as ort
-from scipy.io import wavfile
 from sounddevice import InputStream
+from src import stt_backends
+from src.stt_backends.base import SpeechBackend, SpeechError
+from src.stt_backends.names import is_hint_copy
 from silero_vad import VADIterator, load_silero_vad
 from src.ptt_controller import PTTController
 
@@ -27,7 +21,7 @@ import onnxruntime as ort
 ort.set_default_logger_severity(4)
 
 class Transcriber:
-    """Handles real-time speech-to-text transcription using Moonshine."""
+    """Listens to the microphone, notices when the player starts and stops talking, and hands the recording to the chosen speech-to-text option (src/stt_backends)"""
     
     SAMPLING_RATE = 16000
     CHUNK_SIZE = 512  # Required chunk size for Silero VAD
@@ -38,23 +32,14 @@ class Transcriber:
     def __init__(self, config: ConfigLoader, stt_secret_key_file: str, secret_key_file: str):
         self.loglevel = 27
         self.language = config.stt_language
-        self.task = "translate" if config.stt_translate else "transcribe"
-        self.stt_service = config.stt_service
-        self.full_moonshine_model = config.moonshine_model
-        self.moonshine_model, self.moonshine_precision = self.full_moonshine_model.rsplit('/', 1)
-        self.moonshine_folder = config.moonshine_folder
-        self.moonshine_model_path = os.path.join(self.moonshine_folder, self.full_moonshine_model)
-        self.whisper_model = config.whisper_model
-        self.process_device = config.whisper_process_device
         self.listen_timeout = config.listen_timeout
-        self.external_whisper_service = config.external_whisper_service
-        self.whisper_service = config.whisper_url
-        self.whisper_url = self.__get_endpoint(config.whisper_url)
         self.prompt = ''
+        self.names: list[str] = [] # the same names as the hint, one by one, for options that take words to listen for
         self.show_mic_warning = True
         self.play_cough_sound = config.play_cough_sound
         self.transcription_times = []
-        self.proactive_mic_mode = config.proactive_mic_mode
+        self.__choice = stt_backends.chosen(config)
+        self.proactive_mic_mode = self.__proactive_mode_for(config)
         self.min_refresh_secs = config.min_refresh_secs # Minimum time between transcription updates
         self.refresh_freq = self.min_refresh_secs // self.CHUNK_DURATION # Number of chunks between transcription updates
         self.pause_threshold = config.pause_threshold
@@ -77,43 +62,19 @@ class Transcriber:
             self.__mic_input_path: str = config.save_folder+'data\\tmp\\mic'
             os.makedirs(self.__mic_input_path, exist_ok=True)
 
-        self.__stt_secret_key_file = stt_secret_key_file
+        # stt_secret_key_file (STT_SECRET_KEY.txt) is no longer read here: each service has its own key file, and the old one was copied there when the settings moved over
         self.__secret_key_file = secret_key_file
-        self.__api_key: str | None = self.__get_api_key()
-        self.__initial_client: OpenAI | None = None
-        if (self.stt_service == 'whisper') and (self.__api_key) and ('openai' in self.whisper_url) and (self.external_whisper_service):
-            self.__initial_client = self.__generate_sync_client() # initialize first client in advance to save time
+        self.__reported_problems: set[str] = set() # each kind of problem is shown once, until the settings change
+        language_problem = stt_backends.language_problem(self.__choice, self.language)
+        if language_problem:
+            logging.warning(language_problem)
+        logging.log(self.loglevel, f"Speech-to-text: {self.__choice.preset.name}, model {self.__choice.model or '(set by the program)'}")
+        self.__backend: SpeechBackend = stt_backends.build_backend(self.__choice, config, self.__secret_key_file)
+        try:
+            self.__backend.load()
+        except SpeechError as e: # tried again with the first recording; Mantella keeps running and typing still works
+            self.__report(e)
 
-        self.__ignore_list = ['', 'thank you', 'thank you for watching', 'thanks for watching', 'the transcript is from the', 'the', 'thank you very much', "thank you for watching and i'll see you in the next video", "we'll see you in the next video", 'see you next time']
-        
-        self.transcribe_model: WhisperModel | MoonshineOnnxModel | None = None
-        if self.stt_service == 'whisper':
-            # if using faster_whisper, load model selected by player, otherwise skip this step
-            if not self.external_whisper_service:
-                if self.process_device == 'cuda':
-                    logging.error(f'''Depending on your NVIDIA CUDA version, setting the Whisper process device to `cuda` may cause errors! For more information, see here: https://github.com/SYSTRAN/faster-whisper#gpu''')
-                    try:
-                        self.transcribe_model = WhisperModel(self.whisper_model, device=self.process_device)
-                    except Exception as e:
-                        utils.play_error_sound()
-                        raise e
-                else:
-                    self.transcribe_model = WhisperModel(self.whisper_model, device=self.process_device, compute_type="float32")
-        else:
-            if self.language != 'en':
-                logging.warning(f"Selected language is '{self.language}', but Moonshine only supports English. Please change the selected speech-to-text model to Whisper in `Speech-to-Text`->`STT Service` in the Mantella UI")
-
-            if self.moonshine_model == 'moonshine/tiny':
-                logging.warning('Speech-to-text model set to Moonshine Tiny. If mic input is being transcribed incorrectly, try switching to a larger model in the `Speech-to-Text` tab of the Mantella UI')
-            
-            if os.path.exists(f'{self.moonshine_model_path}/encoder_model.onnx'):
-                logging.log(self.loglevel, 'Loading local Moonshine model...')
-                self.transcribe_model = MoonshineOnnxModel(models_dir=self.moonshine_model_path, model_name=self.moonshine_model)
-            else:
-                logging.log(self.loglevel, 'Loading Moonshine model from Hugging Face...')
-                self.transcribe_model = MoonshineOnnxModel(model_name=self.moonshine_model, model_precision=self.moonshine_precision)
-            self.tokenizer = load_tokenizer()
-        
         # Initialize VAD
         self.vad_model = load_silero_vad(onnx=True)
         self.vad_iterator: VADIterator = self._create_vad_iterator()
@@ -151,68 +112,43 @@ class Transcriber:
             return self._speech_detected
         
 
-    @utils.time_it
-    def __generate_sync_client(self):
-        if self.__initial_client:
-            client = self.__initial_client
-            self.__initial_client = None # do not reuse the same client
-        else:
-            client = OpenAI(api_key=self.__api_key, base_url=self.whisper_url)
+    @property
+    def choice(self) -> stt_backends.STTChoice:
+        """The speech-to-text option in use, and its model"""
+        return self.__choice
 
-        return client
-    
+    def __proactive_mode_for(self, config: ConfigLoader) -> bool:
+        """Proactive Mode re-sends the whole recording every Refresh Frequency seconds: free on this PC, but every re-send is billed online.
+        So it is off for the Online Service choices. Custom Service keeps it, as Mantella can't tell a paid address from a free program at home"""
+        if config.proactive_mic_mode and self.__choice.preset.online:
+            logging.info(f"Proactive Mode is off while speech-to-text uses {self.__choice.preset.name}: each update would be a separate paid request.")
+            return False
+        return config.proactive_mic_mode
 
-    @utils.time_it
-    def __get_endpoint(self, whisper_url):
-        known_endpoints = {
-            'OpenAI': 'https://api.openai.com/v1',
-            'Groq': 'https://api.groq.com/openai/v1',
-            'whisper.cpp': 'http://127.0.0.1:8080/inference',
-        }
-        if whisper_url in known_endpoints:
-            return known_endpoints[whisper_url]
-        else: # if not found, use value as is
-            return whisper_url
-        
-
-    @utils.time_it
-    def __get_api_key(self) -> str:
-        if self.external_whisper_service:
-            try: # first check mod folder for stt secret key
-                mod_parent_folder = str(Path(utils.resolve_path()).parent.parent.parent)
-                with open(mod_parent_folder+'\\'+self.__stt_secret_key_file, 'r') as f:
-                    api_key: str = f.readline().strip()
-            except: # check locally (same folder as exe) for stt secret key
-                try:
-                    with open(self.__stt_secret_key_file, 'r') as f:
-                        api_key: str = f.readline().strip()
-                except:
-                    try: # first check mod folder for secret key
-                        mod_parent_folder = str(Path(utils.resolve_path()).parent.parent.parent)
-                        with open(mod_parent_folder+'\\'+self.__secret_key_file, 'r') as f:
-                            api_key: str = f.readline().strip()
-                    except: # check locally (same folder as exe) for secret key
-                        with open(self.__secret_key_file, 'r') as f:
-                            api_key: str = f.readline().strip()
-                
-            if not api_key:
-                logging.error(f'''No secret key found in GPT_SECRET_KEY.txt. Please create a secret key and paste it in your Mantella mod folder's GPT_SECRET_KEY.txt file.
-If using OpenAI, see here on how to create a secret key: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
-If you would prefer to run speech-to-text locally, please ensure the `Speech-to-Text`->`External Whisper Service` setting in the Mantella UI is disabled.''')
-                input("Press Enter to continue.")
-                sys.exit(0)
-            return api_key
-
+    def __report(self, error: SpeechError) -> None:
+        """Shows a problem in the Mantella window once per kind, so a wrong key doesn't fill the log with every line the player says"""
+        if error.kind in self.__reported_problems:
+            logging.debug(f"Speech-to-text: {error.message}")
+            return
+        self.__reported_problems.add(error.kind)
+        logging.error(f"Speech-to-text: {error.message}")
 
     @utils.time_it
     def _transcribe(self, audio: np.ndarray) -> str:
-        """Transcribe audio using Moonshine model."""
+        """Turns the recording into text with the chosen option. A problem gives an empty text, so the cough sound plays"""
         # Count speech end time from when the last transcribe is called
         self._speech_end_time = time.time()
-        if self.stt_service == 'moonshine':
-            transcription = self.moonshine_transcribe(audio)
-        else:
-            transcription = self.whisper_transcribe(audio, self.prompt)
+        try:
+            transcription = self.__backend.transcribe(audio, self.prompt, self.names, self.language)
+        except SpeechError as e:
+            self.__report(e)
+            transcription = ''
+        except Exception as e:
+            self.__report(SpeechError("unexpected", f"{self.__choice.preset.name} could not turn the recording into text: {e}"))
+            transcription = ''
+        if self.__backend.takes_hint and is_hint_copy(transcription, self.prompt): # Whisper sometimes answers silence with the names it was given
+            logging.debug(f"Speech-to-text returned only the names it was given ('{transcription}'), so it is thrown away")
+            transcription = ''
 
         self.transcription_times.append((time.time() - self._speech_end_time))
         if (self.proactive_mic_mode) and (len(self.transcription_times) % 5 == 0):
@@ -232,120 +168,8 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
 
 
     @utils.time_it
-    def whisper_transcribe(self, audio: np.ndarray, prompt: str):
-        if self.transcribe_model: # local model
-            segments, _ = self.transcribe_model.transcribe(audio, task=self.task, language=self.language, beam_size=5, vad_filter=False, initial_prompt=prompt)
-            result_text = ' '.join(segment.text for segment in segments)
-            if utils.clean_text(result_text) in self.__ignore_list: # common phrases hallucinated by Whisper
-                return ''
-            return result_text
-        
-        # Server versions of Whisper require the audio data to be a file type
-        # Validate audio buffer before processing
-        if len(audio) == 0:
-            logging.warning("Empty audio buffer, skipping transcription")
-            return ''
-
-        audio_file = io.BytesIO()
-        wavfile.write(audio_file, self.SAMPLING_RATE, audio)
-        # Audio file needs a name or else Whisper gets angry
-        audio_file.name = 'out.wav'
-        # Rewind to start to ensure downstream clients read full content
-        try:
-            audio_file.seek(0)
-        except Exception:
-            pass
-        # Log request payload characteristics (safe: no secrets or raw audio)
-        try:
-            audio_size_bytes = audio_file.getbuffer().nbytes
-        except Exception:
-            audio_size_bytes = -1
-
-        if 'openai' in self.whisper_url: # OpenAI compatible endpoint
-            logging.log(self.loglevel, f"STT request → OpenAI-compatible endpoint: url={self.whisper_url}, service={self.whisper_service}, model={self.whisper_model}, language={self.language}, prompt_len={len(prompt)}, audio_bytes={audio_size_bytes}, filename={getattr(audio_file, 'name', 'out.wav')}")
-            client = self.__generate_sync_client()
-            try:
-                response_data = client.audio.transcriptions.create(model=self.whisper_model, language=self.language, file=audio_file, prompt=prompt)
-            except Exception as e:
-                utils.play_error_sound()
-                # Avoid crashing; log helpful guidance
-                try:
-                    err_code = getattr(e, 'code', None)
-                except Exception:
-                    err_code = None
-                if err_code in [404, 'model_not_found']:
-                    if self.whisper_service == 'OpenAI':
-                        logging.error(f"Selected Whisper model '{self.whisper_model}' does not exist in the OpenAI service. Try changing 'Speech-to-Text'->'Model Size' to 'whisper-1' in the Mantella UI")
-                    elif self.whisper_service == 'Groq':
-                        logging.error(f"Selected Whisper model '{self.whisper_model}' does not exist in the Groq service. Try changing 'Speech-to-Text'->'Model Size' to one of the following models in the Mantella UI: https://console.groq.com/docs/speech-text#supported-models")
-                    else:
-                        logging.error(f"Selected Whisper model '{self.whisper_model}' does not exist in the selected service {self.whisper_service}. Try changing 'Speech-to-Text'->'Model Size' to a compatible model in the Mantella UI")
-                else:
-                    logging.error(f"STT error: {e}")
-                try:
-                    client.close()
-                except Exception:
-                    pass
-                return ''
-            client.close()
-            if utils.clean_text(response_data.text) in self.__ignore_list: # common phrases hallucinated by Whisper
-                return ''
-            return response_data.text.strip()
-        else: # custom server model
-            logging.log(self.loglevel, f"STT request → custom endpoint: method=POST url={self.whisper_url}, model={self.whisper_model}, language={self.language}, prompt_len={len(prompt)}, file=('audio.wav', bytes={audio_size_bytes}, content_type='audio/wav')")
-            data = {'model': self.whisper_model, 'prompt': prompt}
-            try:
-                audio_file.seek(0)
-            except Exception:
-                pass
-            files = {'file': ('audio.wav', audio_file, 'audio/wav')}
-            try:
-                response = requests.post(self.whisper_url, files=files, data=data)
-                if response.status_code != 200:
-                    logging.error(f'STT Error: {response.content}')
-                    return ''
-                try:
-                    response_data = response.json()
-                except Exception:
-                    response_data = json.loads(response.text)
-                if 'text' in response_data:
-                    if utils.clean_text(response_data['text']) in self.__ignore_list: # common phrases hallucinated by Whisper
-                        return ''
-                    return response_data['text'].strip()
-                return ''
-            except Exception as e:
-                logging.error(f'Custom STT endpoint error: {e}')
-                return ''
-
-
-    @utils.time_it
-    def moonshine_transcribe(self, audio: np.ndarray) -> str:
-        """Transcribe audio using Moonshine model"""
-        tokens = self.transcribe_model.generate(audio[np.newaxis, :].astype(np.float32))
-        text = self.tokenizer.decode_batch(tokens)[0]
-        text = self.ensure_sentence_ending(text)
-        
-        return text
-    
-
-    def ensure_sentence_ending(self, text: str) -> str:
-        '''Moonshine transcriptions tend to be missing sentence-ending characters, which can confuse LLMs'''
-        if not text:  # Handle empty string
-            return text
-        
-        end_chars = {'.', '?', '!', ':', ';', '。'}
-        
-        if text[-1] == ',':
-            return text[:-1] + '.'
-        elif text[-1] not in end_chars:
-            return text + '.'
-        
-        return text
-
-
-    @utils.time_it
-    def start_listening(self, prompt: str = '') -> None:
-        '''Start background listening thread'''
+    def start_listening(self, prompt: str = '', names: list[str] | None = None) -> None:
+        '''Start background listening thread. *prompt*: the hint sentence of names; *names*: the same names one by one'''
         if self._running:
             return
             
@@ -355,6 +179,7 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
         self._transcription_ready.clear()
         self._current_transcription = ''
         self.prompt = prompt
+        self.names = list(names or [])
         
         # Start audio stream
         self._stream = InputStream(
@@ -574,30 +399,9 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
         Returns True if applied in place; False if a full reinit is required.
         """
         try:
-            heavy_change = False
-
-            # Service switch requires rebuild
-            if getattr(new_config, 'stt_service', self.stt_service) != self.stt_service:
-                heavy_change = True
-
-            # Whisper-specific rebuild conditions
-            if self.stt_service == 'whisper' or getattr(new_config, 'stt_service', self.stt_service) == 'whisper':
-                if getattr(new_config, 'whisper_model', self.whisper_model) != self.whisper_model:
-                    heavy_change = True
-                if getattr(new_config, 'whisper_process_device', self.process_device) != self.process_device:
-                    heavy_change = True
-                if getattr(new_config, 'external_whisper_service', self.external_whisper_service) != self.external_whisper_service:
-                    heavy_change = True
-                new_endpoint = self.__get_endpoint(getattr(new_config, 'whisper_url', self.whisper_url))
-                if new_endpoint != self.whisper_url:
-                    heavy_change = True
-
-            # Moonshine-specific rebuild conditions
-            if self.stt_service == 'moonshine' or getattr(new_config, 'stt_service', self.stt_service) == 'moonshine':
-                if getattr(new_config, 'moonshine_model', self.full_moonshine_model) != self.full_moonshine_model:
-                    heavy_change = True
-                if getattr(new_config, 'moonshine_folder', self.moonshine_folder) != self.moonshine_folder:
-                    heavy_change = True
+            new_choice = stt_backends.chosen(new_config)
+            # Another option, model, address, device or format needs a new backend: the Transcriber is made again
+            heavy_change = new_choice.identity != self.__choice.identity
 
             if heavy_change:
                 return False
@@ -605,10 +409,9 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
             # In-place updates with synchronization
             with self._lock:
                 self.language = new_config.stt_language
-                self.task = "translate" if new_config.stt_translate else "transcribe"
 
                 self.listen_timeout = new_config.listen_timeout
-                self.proactive_mic_mode = new_config.proactive_mic_mode
+                self.proactive_mic_mode = self.__proactive_mode_for(new_config)
                 self.min_refresh_secs = new_config.min_refresh_secs
                 self.refresh_freq = self.min_refresh_secs // self.CHUNK_DURATION
                 self.play_cough_sound = new_config.play_cough_sound
@@ -637,10 +440,6 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
                 self.audio_threshold = new_config.audio_threshold
                 self.pause_threshold = new_config.pause_threshold
 
-                # Update service URL mapping
-                self.whisper_service = new_config.whisper_url
-                self.whisper_url = self.__get_endpoint(new_config.whisper_url)
-
                 # Save mic input path
                 self.__save_mic_input = new_config.save_mic_input
                 if self.__save_mic_input:
@@ -652,15 +451,12 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
                 else:
                     self._soft_reset_vad()
 
-            # Refresh API key/client if using external service
-            if self.external_whisper_service:
-                try:
-                    self.__api_key = self.__get_api_key()
-                    self.__initial_client = None
-                    if (self.stt_service == 'whisper') and (self.__api_key) and ('openai' in self.whisper_url):
-                        self.__initial_client = self.__generate_sync_client()
-                except Exception as e:
-                    logging.warning(f"Failed to update STT API key during hot-swap: {e}")
+            # A key saved in the Key box since: used from the next recording
+            self.refresh_key(new_config)
+            self.__reported_problems.clear()
+            language_problem = stt_backends.language_problem(self.__choice, self.language)
+            if language_problem:
+                logging.warning(language_problem)
 
             logging.info("Applied STT hot-swap settings in place.")
             return True
@@ -668,6 +464,17 @@ If you would prefer to run speech-to-text locally, please ensure the `Speech-to-
             logging.error(f"STT hot-swap failed: {e}")
             return False
 
+
+    def transcribe_once(self, audio: np.ndarray, hint: str, names: list[str]) -> str:
+        """The text of one recording with the option in use, e.g. for the Test button. Raises SpeechError"""
+        self.__backend.forget_failed_load() # the Test button tries a model that failed to load again; if it loads now, the game uses it too
+        return self.__backend.transcribe(audio, hint if self.__backend.takes_hint else '', names, self.language)
+
+    def refresh_key(self, config: ConfigLoader) -> None:
+        """Reads the chosen online service's key again, e.g. after it was saved in the Key box"""
+        if self.__choice.preset.key_file:
+            key, _ = stt_backends.key_for(self.__choice.preset, getattr(config, 'llm_api', ''), self.__secret_key_file)
+            self.__backend.set_key(key)
 
     def cancel_wait(self) -> None:
         """Makes get_latest_transcription return an empty text instead of waiting for speech, e.g. when the player picks an event

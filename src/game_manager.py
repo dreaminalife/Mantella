@@ -159,6 +159,10 @@ class GameStateManager:
         self.__pending_npc_event: "NpcEvent | None" = None # The latest event, until the game starts the conversation that acts it out
         self.__conversation_start_count: int = 0 # A change cancels the NPC Initiative and NPC Event checks that are still running
         self.__event_cancel_count: int = 0 # A change cancels a Conversation, Nearby or Random Event being generated (the player ended the conversation)
+        # How often the game ended a conversation, and how many of those ends have been handled. An end is handled once the requests
+        # before it are done (see stop_conversation_now)
+        self.__ends_requested: int = 0
+        self.__ends_handled: int = 0
         self.__mic_input: bool = False
         self.__mic_ptt: bool = False # push-to-talk
         self.__stt_api_file: str = stt_api_file
@@ -210,6 +214,16 @@ class GameStateManager:
     @property
     def chat_manager(self) -> ChatManager:
         return self.__chat_manager
+
+    @property
+    def stt(self) -> Transcriber | None:
+        """The speech-to-text in use, while the microphone is on"""
+        return self.__stt
+
+    def refresh_stt_key(self) -> None:
+        """A key was saved in the Key box: speech-to-text uses it from the next line"""
+        if self.__stt:
+            self.__stt.refresh_key(self.__config)
 
     @utils.time_it
     def hot_swap_settings(self, game: Gameable, chat_manager: ChatManager, config: ConfigLoader, llm_client: LLMClient, secret_key_file: str, image_secret_key_file: str) -> bool:
@@ -471,9 +485,22 @@ class GameStateManager:
 
     ###### react to calls from the game #######
     @utils.time_it
-    def start_conversation(self, input_json: dict[str, Any]) -> dict[str, Any]:
+    def start_conversation(self, input_json: dict[str, Any], ends_before: int | None = None) -> dict[str, Any]:
+        """
+        Args:
+            ends_before (int | None): ends_requested when the request arrived. Those ends are for the conversation before, which ends here
+                if they haven't been handled yet. An end that arrived after this request is for the new conversation, and still ends it
+        """
         self.__conversation_start_count += 1 # Any NPC Initiative check still running is no longer needed
-        if self.__talk: #This should only happen if game and server are out of sync due to some previous error -> close conversation and start a new one
+        if ends_before is not None and self.__ends_requested > ends_before:
+            # The game ended this conversation while the request waited for the ones before. It was told so already, and the end
+            # was for this conversation, so it is not started. The last conversation's end is handled by its own end request
+            logging.log(24, "The conversation was ended before it started")
+            return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
+        self.__ends_handled = max(self.__ends_handled, self.__ends_requested if ends_before is None else ends_before)
+        # The game ended the last conversation and its end has not been handled yet. Or the game and server are out of sync
+        # due to some previous error -> close conversation and start a new one
+        if self.__talk:
             self.__talk.end()
             self.__talk = None
 
@@ -604,12 +631,15 @@ class GameStateManager:
     def continue_conversation(self, input_json: dict[str, Any]) -> dict[str, Any]:
         if(not self.__talk ):
             return self.error_message("No running conversation.")
-        
+        if self.__talk.is_stopping: # The game ended it after sending this request
+            return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
+
         # comm_consts.KEY_INPUTTYPE is passed when the mic settings have been changed in the MCM since beginning the conversation
         # If this happens, switch the STT settings to match the new input type
         if input_json.__contains__(comm_consts.KEY_INPUTTYPE):
             self.process_stt_setup(input_json)
-        
+            self.__talk.set_mic_setup(self.__stt, self.__mic_input, self.__mic_ptt) # The running conversation listens from the next turn
+
         if self.__should_reload:
             self.__talk.reload_conversation()
             self.__should_reload = False
@@ -689,6 +719,8 @@ class GameStateManager:
     def player_input(self, input_json: dict[str, Any]) -> dict[str, Any]:
         if(not self.__talk ):
             return self.error_message("No running conversation.")
+        if self.__talk.is_stopping: # The game ended it after sending this request
+            return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
         # Shout can't be used without a Game Master: the line is still handled as a private one, and the game switches Shout off again
         is_shout_unavailable = not self.__apply_shout(input_json)
         reply = self.__handle_player_input(input_json)
@@ -708,7 +740,7 @@ class GameStateManager:
             return nothing
         talk.forget_event_picked()
         cancel_count = self.__event_cancel_count
-        is_cancelled = lambda: self.__event_cancel_count != cancel_count or self.__talk is not talk
+        is_cancelled = lambda: self.__event_cancel_count != cancel_count or self.__talk is not talk or talk.is_stopping
         try:
             from src.conversation.context import build_bios_and_summaries_text
             from src.conversation.npc_event import generate_conversation_event
@@ -832,18 +864,54 @@ class GameStateManager:
         logging.debug(f"Quest tags: sent {len(payload[comm_consts.KEY_QUESTCHECKS_FUNCTIONS])} checks (version {payload[comm_consts.KEY_QUESTCHECKS_VERSION]})")
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_QUESTCHECKLIST, comm_consts.KEY_QUESTCHECKS_LIST: payload}
 
-    def interrupt_conversation(self, input_json: dict[str, Any] | None = None):
+    def interrupt_conversation(self, input_json: dict[str, Any] | None = None) -> bool:
         """Interrupt hotkey. Called while another request may still be running.
         Also sent when the player picks a Conversation, Nearby or Random Event: the NPCs stop and a wait for the player to speak ends,
-        so the game can send the event during the player's turn. And when the player ends the conversation while one is being generated"""
+        so the game can send the event during the player's turn. And when the player ends the conversation while one is being generated
+
+        Returns:
+            bool: True for the interrupt hotkey when there is something to interrupt: the game gets the player's turn right away
+                (see player_turn_reply), without waiting for the request still running
+        """
         input_json = input_json or {}
         if input_json.get(comm_consts.KEY_EVENT_CANCEL):
             self.__event_cancel_count += 1
         talk = self.__talk # Can be set to None by a request that ends the conversation
-        if talk:
+        if not talk:
+            return False
+        if input_json.get(comm_consts.KEY_EVENT_KIND):
             talk.request_interrupt()
-            if input_json.get(comm_consts.KEY_EVENT_KIND):
-                talk.stop_waiting_for_player()
+            talk.stop_waiting_for_player()
+            return False
+        if input_json.get(comm_consts.KEY_EVENT_CANCEL):
+            talk.request_interrupt()
+            return False
+        return talk.interrupt_now()
+
+    def player_turn_reply(self) -> dict[str, Any]:
+        """The interrupt hotkey's answer to the request the game is still waiting for: it is the player's turn"""
+        return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_PLAYERTALK,
+                comm_consts.KEY_GAMEMASTERMODE: multi_npc_game_master.is_enabled(self.__config)}
+
+    @property
+    def ends_requested(self) -> int:
+        """How often the game has ended a conversation so far. A start request takes this when it arrives (see start_conversation)"""
+        return self.__ends_requested
+
+    def stop_conversation_now(self):
+        """The game ended the conversation. Called while another request may still be running: whatever it waits for stops,
+        so it is done right away. The conversation itself ends after it, in end_requested_conversation"""
+        self.__ends_requested += 1
+        self.__event_cancel_count += 1 # A Conversation, Nearby or Random Event being generated is not needed anymore
+        talk = self.__talk # Can be set to None by a request that ends the conversation
+        if talk:
+            talk.stop_now()
+
+    def end_requested_conversation(self):
+        """Ends the conversation the game ended (see stop_conversation_now) once the requests before have been handled, and saves
+        what the NPCs remember of it. Nothing if a conversation the player started meanwhile has already ended it"""
+        if self.__ends_handled < self.__ends_requested:
+            self.end_conversation({})
 
     def show_picture(self) -> dict[str, Any]:
         """Show hotkey or wheel option. Called while another request may still be running: takes a picture of the game right now,
@@ -857,6 +925,7 @@ class GameStateManager:
 
     @utils.time_it
     def end_conversation(self, input_json: dict[str, Any]) -> dict[str, Any]:
+        self.__ends_handled = self.__ends_requested
         if(self.__talk):
             self.__talk.end()
             self.__talk = None
@@ -1382,10 +1451,10 @@ class GameStateManager:
             # only init Transcriber if mic input is enabled
             if not self.__stt:
                 self.__stt = Transcriber(self.__config, self.__stt_api_file, self.__api_file)
-            if input_json[comm_consts.KEY_INPUTTYPE] == comm_consts.KEY_INPUTTYPE_PTT:
-                self.__mic_ptt = True
+            self.__mic_ptt = input_json[comm_consts.KEY_INPUTTYPE] == comm_consts.KEY_INPUTTYPE_PTT # Switching back turns push-to-talk off
         else:
             self.__mic_input = False
+            self.__mic_ptt = False
             if self.__stt:
                 self.__stt.stop_listening()
                 self.__stt = None
@@ -1526,6 +1595,8 @@ class GameStateManager:
             is_player_character: bool = bool(json[comm_consts.KEY_ACTOR_ISPLAYER])
             plugin: str = str(json.get(comm_consts.KEY_ACTOR_PLUGIN, "") or "")
             local_id: str = f"{int(json[comm_consts.KEY_ACTOR_LOCALID]) & 0xFFFFFF:08X}" if plugin and json.get(comm_consts.KEY_ACTOR_LOCALID) else ""
+            is_ghost: bool = bool(json.get(comm_consts.KEY_ACTOR_ISGHOST, False))
+            voice_effect: str = ""
             if self.__talk and self.__talk.contains_character(ref_id) and not (self.__reload_present_npcs and not is_player_character):
                 already_loaded_character: Character | None = self.__talk.get_character(ref_id)
                 if already_loaded_character:
@@ -1536,6 +1607,7 @@ class GameStateManager:
                     advanced_voice_model = already_loaded_character.advanced_voice_model
                     voice_accent = already_loaded_character.voice_accent
                     tts_service = getattr(already_loaded_character, 'tts_service', "")
+                    voice_effect = getattr(already_loaded_character, 'voice_effect', "")
                     llm_service = already_loaded_character.llm_service
                     llm_model = already_loaded_character.llm_model
                     is_generic_npc = already_loaded_character.is_generic_npc
@@ -1553,6 +1625,7 @@ class GameStateManager:
                 advanced_voice_model = external_info.advanced_voice_model
                 voice_accent = external_info.voice_accent
                 tts_service = getattr(external_info, 'tts_service', "")
+                voice_effect = getattr(external_info, 'voice_effect', "")
                 llm_service = external_info.llm_service
                 llm_model = external_info.llm_model
                 is_generic_npc = external_info.is_generic_npc
@@ -1590,7 +1663,9 @@ class GameStateManager:
                             llm_service,
                             llm_model,
                             plugin,
-                            local_id)
+                            local_id,
+                            is_ghost,
+                            voice_effect)
         except CharacterDoesNotExist:                 
             logging.log(23, 'Restarting...')
             return None 

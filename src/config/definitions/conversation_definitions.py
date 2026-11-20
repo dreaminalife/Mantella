@@ -263,7 +263,7 @@ class ConversationDefinitions:
 One section for all conversations, then one for each kind of conversation. Click a section's title to open it.
 How the talk settings work, and what happens when the NPCs reach Max NPC Turns: [Talk Level]({TALK_LEVEL_DOCS_URL})"""
 
-    ALL_CONVERSATIONS_DESCRIPTION = ("Settings that more than one kind of conversation uses. Below Game Master Spoken To Threshold are the talk settings every kind of conversation "
+    ALL_CONVERSATIONS_DESCRIPTION = ("Settings that more than one kind of conversation uses. Below Game Master Spoken To Threshold and Game Master Message Limit are the talk settings every kind of conversation "
                                      "uses, unless its own section has \"Use its own settings\" on.")
 
     @staticmethod

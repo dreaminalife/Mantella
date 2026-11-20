@@ -294,7 +294,7 @@ _JS = r"""
     HIDDEN_TEXT_STYLES.forEach(function (pair) { textarea.style.setProperty(pair[0], pair[1], "important"); });
     textarea.style.position = "relative";
     textarea.style.zIndex = "1";
-    textarea.style.caretColor = style.color;
+    textarea.style.caretColor = backdrop.style.color; // style is live: its colour is already transparent here
     states.push(state);
     const refresh = function () { update(state); };
     ["input", "keyup", "click", "select", "focus", "blur"].forEach(function (name) { textarea.addEventListener(name, refresh); });

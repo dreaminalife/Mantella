@@ -176,7 +176,11 @@ class Skyrim(Gameable):
         if pd.isna(llm_model_value) or str(llm_model_value).strip().lower() == 'nan':
             llm_model_value = ''
 
-        return external_character_info(name, is_generic_npc, expanded_bio, actor_voice_model_name, character_info['voice_model'], character_info['skyrim_voice_folder'], character_info['advanced_voice_model'], character_info.get('voice_accent', None), tts_service_value, llm_service_value, llm_model_value, dynamic_tag_events=dynamic_tag_events)
+        voice_effect_value = character_info.get('voice_effect', '')
+        if pd.isna(voice_effect_value) or str(voice_effect_value).strip().lower() == 'nan':
+            voice_effect_value = ''
+
+        return external_character_info(name, is_generic_npc, expanded_bio, actor_voice_model_name, character_info['voice_model'], character_info['skyrim_voice_folder'], character_info['advanced_voice_model'], character_info.get('voice_accent', None), tts_service_value, llm_service_value, llm_model_value, dynamic_tag_events=dynamic_tag_events, voice_effect=str(voice_effect_value).strip())
     
     @utils.time_it
     def find_best_voice_model(self, actor_race: str | None, actor_sex: int | None, ingame_voice_model: str, library_search:bool = True) -> str:

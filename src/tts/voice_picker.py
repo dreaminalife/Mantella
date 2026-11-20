@@ -61,6 +61,8 @@ class VoiceSpeaker:
     plugin: str | None = None # where the NPC comes from, for a clip of their own
     local_id: str | None = None
     file_voice_type: str | None = None # the voice type in the character file, used when the game has no lines for theirs
+    is_ghost: bool = False # for the voice effect: ghosts share their race with the living
+    voice_effect: str = "" # the voice_effect column of the character file
 
     @staticmethod
     def from_character(character) -> "VoiceSpeaker":
@@ -72,6 +74,8 @@ class VoiceSpeaker:
             plugin=getattr(character, "plugin", None),
             local_id=getattr(character, "local_id", None),
             file_voice_type=file_value(getattr(character, "csv_in_game_voice_model", None)) or file_value(getattr(character, "tts_voice_model", None)),
+            is_ghost=bool(getattr(character, "is_ghost", False)),
+            voice_effect=effect_value(getattr(character, "voice_effect", "")),
         )
 
     def stand_ins(self) -> list[str]:
@@ -86,7 +90,10 @@ def file_value(value) -> str:
     return "" if text.lower() in ("nan", "none") else text
 
 
-TRIAL_PREFIX = "try_" # the voice made when the player hears a clip from the list before using it: try_<clip's key>
+def effect_value(value) -> str:
+    """The voice_effect cell, keeping 'none' (no effect for this NPC), which file_value would read as empty"""
+    text = str(value or "").strip()
+    return "" if text.lower() == "nan" else text
 
 
 @dataclass(frozen=True)

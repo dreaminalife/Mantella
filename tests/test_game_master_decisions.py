@@ -229,7 +229,8 @@ def test_decision_model_logs_full_request_without_api_key(post, caplog):
     assert logged[0].split("\n", 1)[1] == format_decision_request(post.call_args.kwargs["json"])
     assert API_KEY not in caplog.text
     assert "Lydia speaks next (confidence 0.80: Lydia 0.90, Ulfric 0.10)" in caplog.text
-    assert "Game Master Request Parameters: model='typesafe/jev-1.13', url='https://openrouter.ai/api/alpha/decisions'" in caplog.text
+    assert ("Game Master decision request for Skyrim Game Master Prompt and Skyrim Game Master Decision Instructions: "
+            "model='typesafe/jev-1.13', url='https://openrouter.ai/api/alpha/decisions'") in caplog.text
 
 
 @patch("src.conversation.game_master.requests.post")

@@ -29,7 +29,7 @@ from src.config.config_loader import ConfigLoader
 from src.tts.clip_service import ClipVoiceService, clip_hash
 from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_notices import add_notice
-from src.tts.voice_picker import BUILT_IN, TRIAL_PREFIX, VoicePick, VoiceSpeaker
+from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import read_key_file
 from src.voice_clips.preparing import in_background
 
@@ -164,25 +164,6 @@ def _language_folders(save_folder: str) -> list[str]:
     return [os.path.join(parent, name) for name in os.listdir(parent) if os.path.isdir(os.path.join(parent, name))]
 
 
-def use_trial_voice(save_folder: str, key: str, clip_path: str) -> None:
-    """Clone from this clip, right after hearing it: the voice made to hear it becomes the voice NPCs use, so the clip isn't cloned twice.
-    Only when it was made from this very sound; any other trial voice of this clip is removed"""
-    try:
-        wanted = f"{TRIAL_PREFIX}{key}-{clip_hash(clip_path)}.safetensors"
-    except OSError:
-        wanted = ""
-    for folder in _language_folders(save_folder):
-        try:
-            if wanted and os.path.exists(os.path.join(folder, wanted)):
-                for old in os.listdir(folder):
-                    if old.startswith(key + "-"):
-                        os.remove(os.path.join(folder, old))
-                os.replace(os.path.join(folder, wanted), os.path.join(folder, wanted[len(TRIAL_PREFIX):]))
-        except OSError as e:
-            logging.warning(f"Could not keep the voice made to hear this clip, so it will be cloned again: {e}")
-    remove_trial_voices(save_folder, only=key)
-
-
 def move_saved_voice(save_folder: str, from_key: str, to_key: str, clip_path: str) -> None:
     """A clip moved from one voice to another (an NPC's own voice used for their whole voice type): its saved voice moves with it,
     so the same clip isn't cloned again. Only a voice made from this very sound moves"""
@@ -204,29 +185,25 @@ def move_saved_voice(save_folder: str, from_key: str, to_key: str, clip_path: st
 
 
 def remove_saved_voices(save_folder: str, key: str) -> None:
-    """A voice that is gone (an NPC's own voice removed): its saved voice and trial voice (about 4 MB each) go too"""
+    """A voice that is gone (an NPC's own voice removed): its saved voice (about 4 MB) goes too"""
     for folder in _language_folders(save_folder):
         for name in os.listdir(folder):
-            if name.startswith(key + "-") or name.startswith(f"{TRIAL_PREFIX}{key}-"):
+            if name.startswith(key + "-"):
                 try:
                     os.remove(os.path.join(folder, name))
                 except OSError:
                     pass
 
 
-def remove_trial_voices(save_folder: str, only: str | None = None, keep: str | None = None) -> None:
-    """The voices made to hear a clip from the list (about 4 MB each): all of them, or *only* one clip's, or all but *keep*'s"""
+def _remove_old_tries(save_folder: str) -> None:
+    """Saved voices an earlier Mantella made to try a clip on the Voice Clips page (try_<voice>-<hash>.safetensors, about 4 MB each)"""
     for folder in _language_folders(save_folder):
         for name in os.listdir(folder):
-            if not name.startswith(TRIAL_PREFIX):
-                continue
-            key = name[len(TRIAL_PREFIX):].rsplit("-", 1)[0]
-            if (only is not None and key != only) or (keep is not None and key == keep):
-                continue
-            try:
-                os.remove(os.path.join(folder, name))
-            except OSError:
-                pass
+            if name.startswith("try_"):
+                try:
+                    os.remove(os.path.join(folder, name))
+                except OSError:
+                    pass
 
 
 def _clean_download_cache(days: int = 30) -> None:
@@ -464,7 +441,7 @@ class PocketTTS(ClipVoiceService):
             if not has_avx2():
                 raise RuntimeError("Pocket TTS needs a processor with AVX2 (most from 2013 on). This one doesn't have it, so the backup voice service speaks.")
             _remove_other_versions(self.__save_folder)
-            remove_trial_voices(self.__save_folder)
+            _remove_old_tries(self.__save_folder)
             _clean_download_cache()
             self.__token = read_key_file(KEY_FILE)
             self.__access = check_access(self.__token, self.__kyutai_language)

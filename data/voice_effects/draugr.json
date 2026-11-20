@@ -1,0 +1,7 @@
+{
+  "name": "Draugr",
+  "about": "Deeper, dry and a little hollow, like a voice from an old barrow.",
+  "races": ["DraugrRace", "DraugrMagicRace"],
+  "strength": 100,
+  "sliders": {"pitch": -2.5, "muffled": 25, "thin": 15, "echo": 25, "space": 30}
+}

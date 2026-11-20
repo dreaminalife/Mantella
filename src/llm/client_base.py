@@ -3,6 +3,7 @@ from typing import AsyncGenerator, Any
 import asyncio
 from openai import APIConnectionError, APIError, APITimeoutError, BadRequestError, OpenAI, AsyncOpenAI, RateLimitError
 import httpx
+import json
 import logging
 import time
 import tiktoken
@@ -41,6 +42,37 @@ def format_openai_messages(openai_messages: list[dict[str, Any]]) -> str:
             content = "\n".join(parts)
         lines += [f"===== {message.get('role', 'unknown')} =====", str(content or ""), ""]
     return "\n".join(lines).rstrip()
+
+
+def describe_request(messages: Message | message_thread, openai_messages: list[dict[str, Any]]) -> str:
+    """For the log: which prompt the request sends (see src/prompt_label.py), and whether a picture goes with it"""
+    label = messages.prompt_label if isinstance(messages, message_thread) else (getattr(messages.text, "label", "") or "")
+    has_picture = any(isinstance(message.get("content"), list) and any(isinstance(part, dict) and part.get("type") == "image_url" for part in message["content"])
+                      for message in openai_messages)
+    heading = f"LLM request for {label}" if label else "LLM request"
+    return heading + (", with a picture" if has_picture else "")
+
+
+def _tool_name(tool: Any) -> str:
+    function = tool.get("function") if isinstance(tool, dict) else None
+    return str(function.get("name", "?")) if isinstance(function, dict) else "?"
+
+
+def describe_params(request_params: dict[str, Any]) -> str:
+    """For the log: the request settings, with the actions offered to the model by name only (their full descriptions are long, see format_tools)"""
+    text = f"params={ {k: v for k, v in request_params.items() if k != 'tools'} }"
+    tools = request_params.get("tools")
+    if tools:
+        text += f", actions=[{', '.join(_tool_name(tool) for tool in tools)}]"
+    return text
+
+
+def format_tools(request_params: dict[str, Any]) -> str:
+    """For the detailed log: the full descriptions of the actions offered to the model, after the messages. Empty if none"""
+    tools = request_params.get("tools")
+    if not tools:
+        return ""
+    return "\n\n===== actions =====\n" + json.dumps(tools, indent=2, ensure_ascii=False)
 
 
 class ClientBase(AIClient):
@@ -224,8 +256,8 @@ class ClientBase(AIClient):
                 openai_messages = messages.append_decensor_commitment(openai_messages)
 
             # Log LLM parameters being sent to API
-            logging.info(f"LLM Request Parameters: model='{self.model_name}', base_url='{self._base_url}', params={request_params}")
-            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}")
+            logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
+            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
 
             try:
                 chat_completion = sync_client.chat.completions.create(
@@ -317,8 +349,8 @@ class ClientBase(AIClient):
                     openai_messages = messages.append_decensor_commitment(openai_messages)
 
                 # Log LLM parameters being sent to API
-                logging.info(f"LLM Request Parameters: model='{self.model_name}', base_url='{self._base_url}', params={request_params}")
-                logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}")
+                logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
+                logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
 
                 stream_client = async_client.with_options(max_retries=0)
                 while True:
@@ -422,8 +454,8 @@ class ClientBase(AIClient):
             openai_messages = messages.get_openai_messages()
             request_params = self._completion_request_params(self._request_params)
             request_params["tools"] = tools
-            logging.info(f"LLM Request Parameters: model='{self.model_name}', base_url='{self._base_url}', params={ {k: v for k, v in request_params.items() if k != 'tools'} }")
-            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}")
+            logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
+            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
             try:
                 chat_completion = sync_client.chat.completions.create(model=self.model_name, messages=openai_messages, timeout=self._http_timeout(),
                                                                       **request_params)

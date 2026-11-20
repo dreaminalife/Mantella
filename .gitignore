@@ -2,10 +2,14 @@
 data/**/*.wav
 !data/mantella_ready.wav
 !data/no_mic_input_detected.wav
+!data/stt_test_sample.wav
 data/**/*.lip
 data/**/*.json
+!data/stt_whisper_tokenizer.json
+!data/voice_models.json
 data/**/*.txt
 !data/Fallout4/placeholder/*.lip
+!data/voice_effects/*.json
 data/tmp/
 *SECRET_KEY.txt
 logging.log

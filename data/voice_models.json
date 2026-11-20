@@ -1,0 +1,40 @@
+{
+  "about": "Mantella's list of the voice models each online service speaks with. Players add and remove models on the Text-to-Speech page. Only text-to-speech models that speak with cloned voices, checked live, go in. See voice-services-doc.md, Step 11.",
+  "services": {
+    "ElevenLabs": {
+      "default": "eleven_v4_turbo",
+      "models": [
+        {"id": "eleven_v4_turbo", "name": "Eleven v4 Turbo", "price": 40}
+      ]
+    },
+    "Inworld": {
+      "default": "inworld-tts-2",
+      "models": [
+        {"id": "inworld-tts-2", "name": "TTS-2", "price": 25},
+        {"id": "inworld-tts-2-flash", "name": "TTS-2 Flash", "price": 15, "skips": ["inworld_delivery", "inworld_directions"]}
+      ]
+    },
+    "HeyGen": {
+      "default": "heygen-voice-1-turbo",
+      "models": [
+        {"id": "heygen-voice-1-turbo", "name": "Turbo", "price": null, "sound_symbols": true},
+        {"id": "heygen-voice-1-turbo-free", "name": "Turbo Free", "price": 0, "ends": "2026-11-30",
+         "note": "**What it costs:** nothing, until HeyGen ends Turbo Free on Nov 30, 2026. Then pick Turbo."}
+      ]
+    },
+    "Qwen": {
+      "default": "qwen-audio-3.1-tts-plus",
+      "clones_per_model": true,
+      "models": [
+        {"id": "qwen-audio-3.1-tts-plus", "name": "Qwen Audio 3.1 TTS Plus", "price": 30,
+         "voices": {"male": "xunanchuan_v3.1", "female": "longanhuan_v3.1"}}
+      ]
+    },
+    "Boson AI": {
+      "default": "higgs-tts-3",
+      "models": [
+        {"id": "higgs-tts-3", "name": "Higgs TTS 3", "price": 15}
+      ]
+    }
+  }
+}

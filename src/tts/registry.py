@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from src.config.config_loader import ConfigLoader
     from src.games.gameable import Gameable
     from src.tts.ttsable import TTSable
+    from src.tts.voice_tags import VoiceTags
 
 CLIP = "clip"       # copies a voice from a clip taken from the game
 TRAINED = "trained" # has trained voices named after Skyrim's voice types
@@ -48,7 +49,35 @@ class VoiceServiceInfo:
     legacy_enum: TTSEnum | None = None # Piper, XTTS and xVASynth: the TTS Service value they had before this list
     is_setup: bool = False # one of the player's own voice setups
     setup: dict | None = None # the setup's boxes, for a voice setup
-    price_per_million_chars: float | None = None # an online service's list price, for the cost shown on the page
+    volume_setting: str = "" # the config.ini setting with this service's Volume (a voice setup keeps its own in the setup)
+    clip_seconds: float = 0.0 # how much of a voice's chosen clips the service clones from, from the top. 0: the top clip only
+    fill_seconds: float = 0.0 # a voice shorter than this gets more lines from the game, even one whose clips the player chose
+    clip_lines: int = 4 # the lines a new voice gets from the game when this service speaks first
+    # The sounds and directions it takes in square brackets with the current settings (src/tts/voice_tags.py). None: it takes none
+    voice_tags: Callable[["ConfigLoader"], "VoiceTags"] | None = None
+    # The model it speaks with now (Inworld's TTS-2 or TTS-2 Flash). None: it has no choice of model
+    model: Callable[["ConfigLoader"], str] | None = None
+
+    def mode_text(self, config) -> str:
+        """How it speaks now, for the log: "TTS-2, audio tags, directions". Audio tags and directions only when they work with the
+        current settings, as the prompt offers them. Empty for a service with no model choice and no tags"""
+        parts: list[str] = []
+        try:
+            if self.model is not None:
+                parts.append(self.model(config))
+            tags = self.voice_tags(config) if self.voice_tags is not None else None
+        except Exception:
+            return ""
+        if tags is not None and tags.sounds:
+            parts.append("audio tags")
+        if tags is not None and tags.directions:
+            parts.append("directions")
+        return ", ".join(part for part in parts if part)
+
+    @property
+    def uses_clips(self) -> bool:
+        """Clones voices from game clips: Pocket TTS, the online services and voice setups. Piper, XTTS and xVASynth don't"""
+        return self.kind == CLIP and not self.is_legacy
 
     @property
     def is_legacy(self) -> bool:
@@ -100,6 +129,55 @@ def _inworld(config, game, info):
     return Inworld(config, info)
 
 
+def _inworld_voice_tags(config):
+    from src.tts.inworld import voice_tags
+    return voice_tags(config)
+
+
+def _model_name(service: str) -> Callable[["ConfigLoader"], str]:
+    """The name of the model an online service speaks with now (model_catalog.py), for the log"""
+    def model_name(config) -> str:
+        from src.tts.model_catalog import ServiceModels
+        models = ServiceModels.of(service)
+        return models.picked(config).name if models is not None else ""
+    return model_name
+
+
+def _heygen(config, game, info):
+    from src.tts.heygen import HeyGen
+    return HeyGen(config, info)
+
+
+def _heygen_voice_tags(config):
+    from src.tts.heygen import voice_tags
+    return voice_tags(config)
+
+
+def _qwen(config, game, info):
+    from src.tts.qwen import Qwen
+    return Qwen(config, info)
+
+
+def _qwen_voice_tags(config):
+    from src.tts.qwen import voice_tags
+    return voice_tags(config)
+
+
+def _boson(config, game, info):
+    from src.tts.boson import BosonAI
+    return BosonAI(config, info)
+
+
+def _boson_voice_tags(config):
+    from src.tts.boson import voice_tags
+    return voice_tags(config)
+
+
+HEYGEN_LANGUAGES = ["ar", "be", "bg", "ca", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fil", "fr", "he", "hi", "hr", "hu", "id", "it", "ja",
+                    "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv", "ta", "th", "tl", "tr", "uk", "vi", "zh"]
+QWEN_LANGUAGES = ["zh", "en", "ja", "ko", "ru", "fr", "de", "pt", "th", "id", "vi", "es", "it", "ms", "fil", "ar"]
+
+
 def _legacy_services() -> list[VoiceServiceInfo]:
     return [
         VoiceServiceInfo(TTSEnum.PIPER.display_name, _piper, TRAINED, aliases=["piper"], legacy_enum=TTSEnum.PIPER),
@@ -110,9 +188,24 @@ def _legacy_services() -> list[VoiceServiceInfo]:
 
 def _new_services() -> list[VoiceServiceInfo]:
     return [
-        VoiceServiceInfo("Pocket TTS", _pocket_tts, CLIP, aliases=["pockettts", "pocket"], languages=["en", "fr", "de", "it", "pt", "es", "nl"]),
-        VoiceServiceInfo("ElevenLabs", _elevenlabs, CLIP, runs_online=True, aliases=["elevenlabs", "11labs", "eleven"], price_per_million_chars=40.0),
-        VoiceServiceInfo("Inworld", _inworld, CLIP, runs_online=True, aliases=["inworld"], accepts_ipa=True, price_per_million_chars=25.0),
+        VoiceServiceInfo("Pocket TTS", _pocket_tts, CLIP, aliases=["pockettts", "pocket"], languages=["en", "fr", "de", "it", "pt", "es", "nl"],
+                         volume_setting="pocket_tts_volume"),
+        # The online services' models and prices are on Mantella's list of models (model_catalog.py).
+        # ElevenLabs works best with 1-2 minutes of speech; Inworld with 10-30 seconds, and cuts the rest
+        VoiceServiceInfo("ElevenLabs", _elevenlabs, CLIP, runs_online=True, aliases=["elevenlabs", "11labs", "eleven"],
+                         volume_setting="elevenlabs_volume", clip_seconds=120.0, fill_seconds=60.0, clip_lines=10, model=_model_name("ElevenLabs")),
+        VoiceServiceInfo("Inworld", _inworld, CLIP, runs_online=True, aliases=["inworld"], accepts_ipa=True,
+                         volume_setting="inworld_volume", clip_seconds=29.5, fill_seconds=25.0, voice_tags=_inworld_voice_tags,
+                         model=_model_name("Inworld")),
+        # HeyGen clones from one recording (about a minute works best); Qwen and Boson AI use at most 30 seconds of it
+        VoiceServiceInfo("HeyGen", _heygen, CLIP, runs_online=True, aliases=["heygen"], languages=HEYGEN_LANGUAGES, accepts_ipa=True,
+                         volume_setting="heygen_volume", clip_seconds=60.0, fill_seconds=45.0, clip_lines=10, voice_tags=_heygen_voice_tags,
+                         model=_model_name("HeyGen")),
+        VoiceServiceInfo("Qwen", _qwen, CLIP, runs_online=True, aliases=["qwen", "alibaba"], languages=QWEN_LANGUAGES,
+                         volume_setting="qwen_volume", clip_seconds=29.5, fill_seconds=20.0, voice_tags=_qwen_voice_tags, model=_model_name("Qwen")),
+        VoiceServiceInfo("Boson AI", _boson, CLIP, runs_online=True, aliases=["boson", "higgs"],
+                         volume_setting="boson_volume", clip_seconds=29.5, fill_seconds=20.0, voice_tags=_boson_voice_tags,
+                         model=_model_name("Boson AI")),
     ]
 
 

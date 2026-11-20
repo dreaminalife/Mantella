@@ -4,6 +4,12 @@ from src.llm.sentence_content import SentenceContent, has_action
 from src.conversation.action import Action
 
 LOOK = "mantella_npc_vision"
+
+
+def _drop_keyword(content: SentenceContent, keyword: str) -> None:
+    """The keyword goes from the line a voice service with sounds and directions gets, as it went from the text"""
+    if content.voice_text is not None:
+        content.voice_text = " ".join(content.voice_text.replace(keyword, " ").split())
     
 class actions_parser(output_parser):
     def __init__(self, actions: list[Action], other_actions: list[Action] | None = None) -> None:
@@ -29,6 +35,7 @@ class actions_parser(output_parser):
                     if cut_content.text.lstrip().startswith(keyword) and settings.looked:
                         # Already looking: models often start with "Look:" again. It is taken out, and the line is said
                         cut_content.text = cut_content.text.lstrip()[len(keyword):].strip()
+                        _drop_keyword(cut_content, keyword)
                         if not cut_content.text:
                             return None, last_content
                         continue
@@ -41,6 +48,7 @@ class actions_parser(output_parser):
                     continue
                 if keyword in cut_content.text:
                     cut_content.text = cut_content.text.replace(keyword,"").strip()
+                    _drop_keyword(cut_content, keyword)
                     if not has_action(cut_content.actions, action.identifier): # Named twice, done once
                         cut_content.actions.append({'identifier': action.identifier})
                     logging.log(28, f"Action: {action.name} ({cut_content.speaker.name})")
@@ -52,6 +60,7 @@ class actions_parser(output_parser):
                 keyword = action.keyword + ":"
                 if cut_content.text.lstrip().startswith(keyword):
                     cut_content.text = cut_content.text.lstrip()[len(keyword):].strip()
+                    _drop_keyword(cut_content, keyword)
                     logging.log(23, f"{cut_content.speaker.name} used {action.name}, which NPCs can't use in this conversation. Nothing happens")
         return cut_content, last_content
     

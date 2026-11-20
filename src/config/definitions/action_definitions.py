@@ -121,7 +121,7 @@ class ActionDefinitions:
                        "service and model below, so each NPC keeps its own model for speaking, even one that can't pick actions. Off: each NPC's own "
                        "model picks its actions too. That model must be able to pick actions (on OpenRouter, models that can call tools): with one "
                        "that can't, no action happens, and the log says why. Its instructions are the Advanced Actions Prompt on the Prompts tab.")
-        return ConfigValueBool("advanced_actions_own_model", "Separate Model for Advanced Actions", description, False, tags=[ConfigValueTag.share_row])
+        return ConfigValueBool("advanced_actions_own_model", "Separate Model for Advanced Actions", description, False, tags=[ConfigValueTag.basic])
 
     KIND_DESCRIPTIONS = {
         ONE_ON_ONE: "A conversation with one NPC, also one the NPC started (NPC Initiative).",

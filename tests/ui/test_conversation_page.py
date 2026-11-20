@@ -26,7 +26,7 @@ def test_the_conversation_tab_shows_the_live_editor_and_the_settings_below_it(de
     blocks = ui.create_main_block()
     tabs = [component.label for component in blocks.blocks.values() if isinstance(component, gr.Tab)]
     assert "Conversation" in tabs and "Live Conversation" not in tabs
-    assert not {"All Conversations", "Group Conversation", "Shout", "Director Mode", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"} & set(tabs)
+    assert not {"All Conversations", "Group Conversation", "Shout", "Director Mode", "NPC Initiative", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event"} & set(tabs)
 
     shown = ui._StartUI__constructor._SettingsUIConstructor__config_value_to_ui_element
     tab_by_identifier = {config_value.identifier: tab_of(component) for config_value, component in shown.items()}
@@ -57,11 +57,13 @@ def test_each_conversation_section_is_foldable(default_config: ConfigLoader):
     shown = ui._StartUI__constructor._SettingsUIConstructor__config_value_to_ui_element
     accordions_by_identifier = {config_value.identifier: accordions_of(component) for config_value, component in shown.items()}
     sections = [group for group in default_config.definitions.base_groups if group.page == CONVERSATION_PAGE]
-    assert [group.name for group in sections] == ["All Conversations", "Group Conversation", "Shout", "Director Mode", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event", "Actions"]
+    assert [group.name for group in sections] == ["All Conversations", "Group Conversation", "Shout", "Director Mode", "NPC Initiative", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event", "Actions"]
     for group in sections:
         for value in group.value:
-            # Directly in its section's fold, not in an Advanced one. Actions is the last section, under its heading, not folded
-            assert accordions_by_identifier[value.identifier] == ([group.name] if group.foldable else []), value.identifier
+            # Directly in its section's fold, not in an Advanced one. Actions is the last section, under its heading, not folded,
+            # with each kind's list of actions folded under its own name
+            expected = [group.name] if group.foldable else [value.shown_in] if value.shown_in else []
+            assert accordions_by_identifier[value.identifier] == expected, value.identifier
 
 
 # The talk settings: tick boxes, radio buttons, settings that only show while a switch is on, and what is greyed out

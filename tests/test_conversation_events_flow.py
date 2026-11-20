@@ -137,7 +137,7 @@ class FakeMicrophone:
         self.__is_cancelled = False
         self.__text = ""
 
-    def start_listening(self, prompt: str = ""):
+    def start_listening(self, prompt: str = "", names: list[str] | None = None):
         self.is_listening = True
 
     def stop_listening(self):
@@ -826,6 +826,65 @@ def test_ending_while_the_event_is_written_cancels_it(game: FakeGame, model: Fak
     assert "Something happened" not in game.notes
     assert len(model.game_master_choices) == asked_before # Nobody was asked to react
     assert game.manager._GameStateManager__talk is None
+
+
+# Switching the microphone on or off during a conversation
+
+def test_the_microphone_switched_on_during_a_conversation_listens_in_the_next_turn(manager: GameStateManager, model: FakeModel):
+    game = FakeGame(manager, [YSOLDA])
+    game.start(HULDA) # Typing
+    microphone = FakeMicrophone()
+    manager._GameStateManager__stt = microphone
+    game.input_type = comm_consts.KEY_INPUTTYPE_MIC
+    typed_continue = game.continue_request
+    game.continue_request = lambda: {**typed_continue(), comm_consts.KEY_INPUTTYPE: game.input_type} # The game says so in its next request
+    model.picks = [HULDA.name]
+    game.say("Hello.")
+    assert game.is_player_turn
+
+    model.picks = [HULDA.name]
+    listener = threading.Thread(target=game.listen)
+    listener.start()
+    assert microphone.waiting.wait(5) # Not an empty line sent to Hulda
+    microphone.speak("I need your help.")
+    listener.join(5)
+
+    assert not listener.is_alive()
+    assert "I need your help." in model.npc_requests[-1]
+
+
+def test_switching_from_push_to_talk_to_the_open_microphone_turns_push_to_talk_off(manager: GameStateManager):
+    manager._GameStateManager__stt = FakeMicrophone()
+    manager.process_stt_setup({comm_consts.KEY_INPUTTYPE: comm_consts.KEY_INPUTTYPE_PTT})
+    assert manager._GameStateManager__mic_ptt
+    manager.process_stt_setup({comm_consts.KEY_INPUTTYPE: comm_consts.KEY_INPUTTYPE_MIC})
+    assert not manager._GameStateManager__mic_ptt
+    assert manager._GameStateManager__mic_input
+
+
+def test_the_microphone_switched_off_during_a_conversation_takes_typed_lines(manager: GameStateManager, model: FakeModel):
+    microphone = FakeMicrophone()
+    manager._GameStateManager__stt = microphone
+    game = FakeGame(manager, [YSOLDA])
+    game.input_type = comm_consts.KEY_INPUTTYPE_MIC
+    game.start(HULDA)
+    game.input_type = comm_consts.KEY_INPUTTYPE_TEXT
+    typed_continue = game.continue_request
+    game.continue_request = lambda: {**typed_continue(), comm_consts.KEY_INPUTTYPE: game.input_type}
+    model.picks = [HULDA.name]
+    listener = threading.Thread(target=game.listen) # Switched off in the menu while the microphone waited: the player still speaks this turn
+    listener.start()
+    assert microphone.waiting.wait(5)
+    microphone.speak("Hello.")
+    listener.join(5)
+    assert game.is_player_turn
+
+    model.picks = [HULDA.name]
+    game.say("Where is the market?")
+
+    assert manager._GameStateManager__talk.stt is None
+    assert "Where is the market?" in model.npc_requests[-1]
+    assert not microphone.is_listening
 
 
 # Picking an event while the NPCs talk or the microphone waits

@@ -1,0 +1,7 @@
+{
+  "name": "Ghost",
+  "about": "Thin, wavering and far away, with a long echo.",
+  "ghosts": true,
+  "strength": 100,
+  "sliders": {"thin": 45, "waver": 25, "doubled": 20, "echo": 45, "space": 70}
+}

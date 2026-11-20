@@ -4,7 +4,7 @@ from src.games.equipment import Equipment
 class Character:
     """Representation of a character in the game
     """
-    def __init__(self, base_id: str, ref_id: str,  name: str, gender: int, race: str, is_player_character: bool, bio: str, is_in_combat: bool, is_enemy: bool, relationship_rank: int, is_generic_npc: bool, ingame_voice_model:str, tts_voice_model: str, csv_in_game_voice_model: str, advanced_voice_model: str, voice_accent: str, equipment:Equipment, custom_character_values: dict[str, Any], tts_service: str = "", llm_service: str = "", llm_model: str = "", plugin: str = "", local_id: str = ""):
+    def __init__(self, base_id: str, ref_id: str,  name: str, gender: int, race: str, is_player_character: bool, bio: str, is_in_combat: bool, is_enemy: bool, relationship_rank: int, is_generic_npc: bool, ingame_voice_model:str, tts_voice_model: str, csv_in_game_voice_model: str, advanced_voice_model: str, voice_accent: str, equipment:Equipment, custom_character_values: dict[str, Any], tts_service: str = "", llm_service: str = "", llm_model: str = "", plugin: str = "", local_id: str = "", is_ghost: bool = False, voice_effect: str = ""):
         self.__base_id: str = base_id
         self.__ref_id: str = ref_id
         self.__name: str = name
@@ -28,6 +28,8 @@ class Character:
         self.__llm_model: str = llm_model
         self.plugin: str = plugin # where the NPC comes from (Skyrim.esm) and their form ID in it, for a voice clip of their own
         self.local_id: str = local_id
+        self.is_ghost: bool = is_ghost # from the game, for the voice effect
+        self.voice_effect: str = voice_effect # the voice_effect column of the character file
 
     def get_unique_id(self):
         return self.name + self.ref_id

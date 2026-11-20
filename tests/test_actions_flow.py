@@ -310,6 +310,30 @@ def test_when_the_model_only_picks_actions_it_is_asked_again_for_the_line(game: 
     assert "Hulda does this now: Wait." in model.npc_requests[-1].replace("\\'", "'")
 
 
+def test_when_the_models_only_action_isnt_done_it_is_asked_again_for_the_line(game: ActionGame, model: ScriptedModel, advanced: ConfigLoader):
+    game.start(HULDA)
+    model.lines = [picks(("AddToConversation", {"source": [HULDA.name]})), "I'm right here."] # Hulda is in the conversation already
+    game.say("Join us.")
+    assert game.npc_actions == []
+    assert game.lines_of(HULDA.name) == ["I'm right here."] # Not silent
+    assert model.tools_sent[-1] is None # Asked again without the tools
+
+
+def test_asking_for_someone_already_in_the_conversation_is_no_mistake(caplog):
+    from src.actions.function_manager import FunctionManager
+    characters = MagicMock()
+    characters.get_player_name.return_value = PLAYER.name
+    characters.get_all_names_w_nearby.side_effect = lambda include_player=True, include_nearby=False, nearby_only=False: \
+        ["Sven"] if nearby_only else [HULDA.name, PLAYER.name]
+    caplog.set_level("INFO")
+    assert FunctionManager._validate_npc_names([HULDA.name], characters, nearby_only=True) == []
+    FunctionManager._log_skipped("mantella_npc_addtoconversation", "source", [HULDA.name], characters, True)
+    assert "not found" not in caplog.text and "Skipping action" not in caplog.text
+    assert f"{HULDA.name} is already in the conversation" in caplog.text
+    FunctionManager._log_skipped("mantella_npc_addtoconversation", "source", ["Nobody"], characters, True)
+    assert "Skipping action" in caplog.text # Someone who isn't there at all is still a mistake
+
+
 def test_an_action_that_answers_back_the_npc_goes_on_with_the_answer(game: ActionGame, model: ScriptedModel, advanced: ConfigLoader):
     game.answers[DIRECTIONS] = "The way to Dawnstar: three days north, through the pass."
     game.start(HULDA)

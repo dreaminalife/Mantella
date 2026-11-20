@@ -1,0 +1,7 @@
+{
+  "name": "Werewolf",
+  "about": "Low and growling. Werebears get it too.",
+  "races": ["WerewolfBeastRace", "DLC2WerebearBeastRace"],
+  "strength": 100,
+  "sliders": {"pitch": -4, "muffled": 30, "growl": 35}
+}

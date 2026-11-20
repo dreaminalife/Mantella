@@ -1,0 +1,7 @@
+{
+  "name": "Vampire Lord",
+  "about": "Deep and doubled, as if from a cave.",
+  "races": ["DLC1VampireBeastRace"],
+  "strength": 100,
+  "sliders": {"pitch": -3.5, "doubled": 25, "echo": 35, "space": 75}
+}

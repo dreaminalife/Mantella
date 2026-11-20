@@ -285,6 +285,93 @@
     padding: var(--size-2) var(--size-3) !important;
 }
 
+/* Text-to-Speech page: the Settings for list and the picked service's introduction, in one box */
+.tts-service-picker {
+    border: 1px solid var(--border-color-primary) !important;
+    border-radius: var(--radius-lg) !important;
+}
+.tts-service-picker .tts-service-intro {
+    padding: 0 var(--size-3) var(--size-2) var(--size-3) !important;
+    background: var(--block-background-fill) !important;
+}
+/* The Model list's Add, Remove (and Put back Mantella's models) small at its top right, on the line of its name */
+.tts-model-picker {
+    position: relative !important;
+    gap: 0 !important;
+}
+.tts-model-buttons {
+    position: absolute !important;
+    top: var(--size-2) !important;
+    right: var(--size-3) !important;
+    width: auto !important;
+    gap: var(--size-1) !important;
+    flex-wrap: nowrap !important;
+    z-index: 5;
+    background: transparent !important;
+}
+.tts-model-buttons button {
+    padding: 2px var(--size-2) !important;
+    font-size: var(--text-xs) !important;
+    flex: none !important;
+}
+.tts-model-status {
+    padding: 0 var(--size-3) var(--size-2) var(--size-3) !important;
+    background: var(--block-background-fill) !important;
+}
+
+/* Help folds ("How it works", "How to change a voice", How model settings work ...): a small grey help link with the ? icon,
+   not a box like the settings sections */
+.help-fold {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 var(--size-1) !important;
+    align-self: flex-start !important;
+    width: auto !important;
+}
+.help-fold > .label-wrap {
+    width: auto !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 6px !important;
+    color: var(--body-text-color-subdued) !important;
+}
+.help-fold > .label-wrap::before {
+    content: "?";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background-color: #808080;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+.help-fold > .label-wrap span {
+    font-size: var(--text-sm) !important;
+    font-weight: normal !important;
+}
+.help-fold > .label-wrap:hover span:first-child {
+    text-decoration: underline;
+}
+.help-fold > .label-wrap .icon {
+    transform: rotate(-90deg) !important; /* points right while folded */
+}
+.help-fold > .label-wrap.open .icon {
+    transform: none !important; /* points down while open */
+}
+.help-fold .prose,
+.help-fold .prose p,
+.help-fold .prose li {
+    font-size: var(--text-sm) !important;
+    color: var(--body-text-color-subdued) !important;
+}
+.help-fold .prose {
+    padding-left: 21px !important; /* under the words, past the ? icon */
+}
+
 /* Prompt Profiles: Shared sections as their own box below the profile editor, the same look as the Tag Editor's boxes */
 .prompt-editor-subsection {
     border: 1px solid var(--border-color-primary) !important;
@@ -490,6 +577,19 @@
     min-height: 42px !important;
 }
 
+/* Voice Effects (src/ui/voice_effects_ui.py): its buttons line up with the boxes above them, which sit inside panels with padding */
+.voice-effects-buttons {
+    padding: 0 var(--block-padding) !important;
+}
+/* Try it: the two buttons sit at the right of the test sentence, level with its box */
+.voice-effects-try {
+    align-items: flex-end !important;
+}
+/* A message line with nothing in it takes no room, so the page has no empty gaps */
+.voice-effects-note:has(span.md:empty) {
+    display: none !important;
+}
+
 /* Voice Clips: the Prepare all voices count refreshes every 3 seconds. Gradio gives a refreshing part a pulsing green border,
    which shows as a green line while the count is empty */
 .voice-clips-progress .generating {
@@ -497,7 +597,99 @@
     animation: none !important;
 }
 
+/* Voice Clips, Change a voice: one slim line per clip (play button, what the line says, its length) with its button on the right */
+.vc-lists {
+    padding: var(--size-2) var(--size-3) !important;
+    gap: 0 !important;
+}
+.vc-lists .vc-row {
+    align-items: center !important;
+    gap: var(--size-2) !important;
+    padding: 2px 0 !important;
+    border-bottom: 1px solid var(--border-color-primary);
+    min-height: 0 !important;
+}
+.vc-lists .vc-row > div {
+    min-width: 0 !important;
+}
+.vc-lists .vc-row .vc-button {
+    min-height: 30px !important;
+}
+.vc-line {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2);
+    min-width: 0;
+}
+.vc-play {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color-primary);
+    background: var(--button-secondary-background-fill);
+    color: var(--body-text-color);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+.vc-play:hover {
+    background: var(--button-secondary-background-fill-hover);
+}
+.vc-words {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.vc-tag {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--body-text-color-subdued);
+    border: 1px solid var(--border-color-primary);
+    border-radius: var(--radius-sm);
+    padding: 0 6px;
+}
+.vc-secs {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--body-text-color-subdued);
+    font-variant-numeric: tabular-nums;
+}
+.vc-lists .vc-more {
+    margin-top: var(--size-2) !important;
+    align-items: center;
+    gap: var(--size-2);
+}
+.vc-lists .vc-more > * {
+    flex: none !important;
+    width: auto !important;
+}
+.vc-more-label {
+    font-size: var(--text-sm);
+    color: var(--body-text-color-subdued);
+    white-space: nowrap;
+}
+.vc-lists .vc-more-count {
+    width: 72px !important;
+}
+.vc-lists .vc-more-count input {
+    width: 100%;
+}
+
 /* Sound players: no playback speed button (1x). It only changed how fast the page played a line, never the voice in game */
 .playback.icon {
+    display: none !important;
+}
+
+/* Speech-to-Text page: a setting greyed out while it can't change anything (PTT Hotkey while Enable PTT is off) is dimmed as a whole,
+   so it's clear at a glance. Gradio only disables the box, which looks the same */
+.stt-page .panel:has(input:disabled) {
+    opacity: 0.45;
+}
+
+/* Speech-to-Text page: the line under a Key box, empty until Save key is pressed, takes no room */
+.stt-page .stt-key-status:not(:has(p)) {
     display: none !important;
 }

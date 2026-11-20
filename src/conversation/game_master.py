@@ -25,6 +25,7 @@ from src.llm.sentence import Sentence
 from src.llm.sentence_content import SentenceContent, SentenceTypeEnum
 from src.llm.sentence_queue import SentenceQueue
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import describe_prompt, label_of, prompt_display_name
 
 
 def read_decision(text: str | None) -> tuple[str, str] | None:
@@ -795,7 +796,9 @@ class GameMaster:
             "HTTP-Referer": "https://art-from-the-machine.github.io/Mantella/",
             "X-Title": "Mantella",
         }
-        logging.info(f"Game Master Request Parameters: model='{client.model_name}', url='{url}'")
+        instructions = describe_prompt(config.prompt_profile_manager, DECISION_INSTRUCTIONS, {"after_event"} if after_event else set())
+        logging.info(f"Game Master decision request for {label_of(prompt) or prompt_display_name('skyrim_game_master_prompt')} and {instructions}: "
+                     f"model='{client.model_name}', url='{url}'")
         started_at = time.time()
         try:
             response = post_decision_with_retry(url, headers, body, config.llm_response_timeout)
@@ -926,6 +929,7 @@ class GameMasterTurns:
         self.__context = context_for_conversation
         self.__sentences = sentences
         self.__npc_turns_since_player: int = 0
+        self.__said_nothing_before: bool = False # The latest reply said nothing and wasn't counted: the next one that says nothing counts
         self.__turn_id: int = 0 # Bumped when the turn is thrown away, so work from it is thrown away too
         self.__playing: ReplyQueue | None = None # The reply being played. None until an NPC turn starts after the last player input
         self.__replies: list[ReplyQueue] = [] # The replies of the running turn
@@ -955,6 +959,7 @@ class GameMasterTurns:
         """
         with self.__lock:
             self.__npc_turns_since_player = 0
+            self.__said_nothing_before = False
             self.__replies_by_npc = {}
             self.__event_kind = event_kind
             self.__everyone_added = set()
@@ -1536,11 +1541,19 @@ class GameMasterTurns:
         with self.__lock:
             if turn_id != self.__turn_id:
                 return None, None
-            self.__npc_turns_since_player += 1
+            # A reply that said nothing (the model wrote no line) doesn't use up a reply: the NPCs' turn isn't over before anyone spoke.
+            # Two in a row count, so a model that keeps saying nothing still hands the turn back
+            said_nothing = not any(s.text.strip() for s in reply.sentences if s.content.sentence_type != SentenceTypeEnum.THOUGHT)
+            counted = not said_nothing or self.__said_nothing_before
+            self.__said_nothing_before = said_nothing and not self.__said_nothing_before
+            if counted:
+                self.__npc_turns_since_player += 1
+                self.__replies_by_npc[speaker.ref_id] = self.__replies_by_npc.get(speaker.ref_id, 0) + 1
+                if event and is_bystander_scene:
+                    event.npc_lines += 1
+            else:
+                logging.log(26, f"Game Master: {speaker.name} said nothing, so it doesn't count as a reply")
             npc_turns = self.__npc_turns_since_player
-            self.__replies_by_npc[speaker.ref_id] = self.__replies_by_npc.get(speaker.ref_id, 0) + 1
-            if event and is_bystander_scene:
-                event.npc_lines += 1
         next_speaker: Character | EventPerson | None = None
         game_master: GameMaster | None = None
         is_at_reply_limit = False

@@ -16,12 +16,19 @@ from src.config.types.config_value_string import ConfigValueString
 from src.config.definitions.other_definitions import OtherDefinitions
 from src.config.definitions.startup_definitions import StartupDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
-from src.config.definitions.stt_definitions import STTDefinitions
-from src.config.definitions.tts_definitions import TTSDefinitions, TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP, XTTS_PART, XVASYNTH_PART
+from src.config.definitions.stt_definitions import PAGE_DESCRIPTION as STT_PAGE_DESCRIPTION, SERVICE_PART as STT_SERVICE_PART, TALKING_PART as STT_TALKING_PART, STTDefinitions
+from src.stt_backends.presets import MOONSHINE_CHOICE, PARAKEET_CHOICE, PRESETS, WHISPER_CHOICE
+from src.config.definitions.tts_definitions import TTSDefinitions, SERVICE_VOLUMES, PIPER_PART, SPEED_PART, XTTS_PART, XVASYNTH_PART
 from src.config.definitions.vision_definitions import VisionDefinitions
 from src.config.definitions.model_profile_definitions import ModelProfileDefinitions
 import sys
 
+# Folded parts of the LLM page
+THOUGHTS_PART = "Thoughts and Reflections"
+QUALITY_OF_LIFE_PART = "Quality of Life"
+NARRATIONS_PART = "Narrations"
+FEATURE_TOGGLES_PART = "Feature Toggles"
+ADVANCED_PART = "Advanced"
 
 class MantellaConfigValueDefinitionsNew:
     @staticmethod
@@ -144,7 +151,6 @@ class MantellaConfigValueDefinitionsNew:
         llm_category.add_config_value(LLMDefinitions.get_game_master_use_decision_model_config_value())
         llm_category.add_config_value(LLMDefinitions.get_game_master_decision_service_config_value())
         llm_category.add_config_value(LLMDefinitions.get_game_master_decision_model_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_npc_initiative_threshold_config_value())
         llm_category.add_config_value(LLMDefinitions.get_summary_llm_api_config_value())
         llm_category.add_config_value(LLMDefinitions.get_summary_model_config_value())
         # (key, label, can use the Summary model instead). The NPC Event Generator and the Fallback always use their own model
@@ -154,8 +160,9 @@ class MantellaConfigValueDefinitionsNew:
             if has_summary_option:
                 llm_category.add_config_value(LLMDefinitions.get_memory_task_use_summary_model_config_value(key, label))
         llm_category.add_config_value(LLMDefinitions.get_fallback_llm_enabled_config_value())
-        llm_category.add_config_value(ActionDefinitions.get_advanced_actions_own_model_config_value())
         for key, label, has_summary_option in memory_tasks:
+            if key == "advanced_actions": # Its on/off switch sits right above its own service and model
+                llm_category.add_config_value(ActionDefinitions.get_advanced_actions_own_model_config_value())
             llm_category.add_config_value(LLMDefinitions.get_memory_task_llm_api_config_value(key, label, has_summary_option))
             if key == "advanced_actions": # The other tasks' default model can't pick actions
                 llm_category.add_config_value(LLMDefinitions.get_memory_task_model_config_value(key, label, has_summary_option, ADVANCED_ACTIONS_DEFAULT_MODEL))
@@ -163,11 +170,6 @@ class MantellaConfigValueDefinitionsNew:
                 llm_category.add_config_value(LLMDefinitions.get_memory_task_model_config_value(key, label, has_summary_option))
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_single_config_value())
         llm_category.add_config_value(LLMDefinitions.get_max_response_sentences_multi_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_llm_response_timeout_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_read_thoughts_after_sentence_cap_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_turn_thoughts_to_keep_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_drop_last_sentences_single_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_replace_braille_blank_config_value())
         llm_category.add_config_value(LLMDefinitions.get_llm_params_config_value())
         llm_category.add_config_value(LLMDefinitions.get_multi_npc_llm_params_config_value())
         llm_category.add_config_value(LLMDefinitions.get_game_master_llm_params_config_value())
@@ -181,13 +183,64 @@ class MantellaConfigValueDefinitionsNew:
         # llm_category.add_config_value(LLMDefinitions.get_try_filter_narration())
         llm_category.add_config_value(OtherDefinitions.get_conversation_summary_enabled_config_value())
         llm_category.add_config_value(OtherDefinitions.get_inner_monologue_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_inner_monologue_load_count_config_value())
         llm_category.add_config_value(OtherDefinitions.get_personal_reflection_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_personal_reflection_load_mode_config_value())
-        
-        llm_category.add_config_value(LLMDefinitions.get_multi_npc_game_master_mode_config_value())
+        # Folded parts of the page, in the order of the loop below. Switches beside switches and boxes beside boxes
+        thoughts = [
+            OtherDefinitions.get_inner_monologue_load_count_config_value().in_row("thoughts_sending_row"),
+            OtherDefinitions.get_personal_reflection_load_mode_config_value().in_row("thoughts_sending_row"),
+            LLMDefinitions.get_read_thoughts_after_sentence_cap_config_value().in_row("turn_thoughts_switches_row"),
+            LLMDefinitions.get_game_master_include_turn_thoughts_config_value().in_row("turn_thoughts_switches_row"),
+            LLMDefinitions.get_turn_thoughts_to_keep_config_value(),
+        ]
+        quality_of_life = [
+            LLMDefinitions.get_multi_npc_bios_only_config_value(),
+            LLMDefinitions.get_sonnet_prompt_caching_config_value(),
+            LLMDefinitions.get_drop_last_sentences_single_config_value(),
+            LLMDefinitions.get_replace_braille_blank_config_value(),
+            LLMDefinitions.get_enable_decensor_bypass_config_value(),
+            LLMDefinitions.get_decensor_assistant_placement_config_value(),
+            OtherDefinitions.get_random_llm_one_on_one_enabled_config_value(),
+            OtherDefinitions.get_random_llm_multi_npc_enabled_config_value(),
+            OtherDefinitions.get_random_llm_one_on_one_per_request_enabled_config_value(),
+            OtherDefinitions.get_random_llm_multi_npc_per_request_enabled_config_value(),
+            OtherDefinitions.get_llm_pool_one_on_one_config_value(),
+            OtherDefinitions.get_llm_pool_multi_npc_config_value(),
+        ]
+        narrations = [
+            LLMDefinitions.get_narration_handling(),
+            LLMDefinitions.get_narrator_voice(),
+            LLMDefinitions.get_narration_start_indicators(),
+            LLMDefinitions.get_narration_end_indicators(),
+            LLMDefinitions.get_speech_start_indicators(),
+            LLMDefinitions.get_speech_end_indicators(),
+            LLMDefinitions.get_narration_indicators(),
+        ]
+        feature_toggles = [ # Per-Character LLM Overrides on its own row, the two tag settings side by side below it
+            LLMDefinitions.get_allow_per_character_llm_overrides_config_value(),
+            LLMDefinitions.get_enable_character_tag_reading_config_value().in_row("character_tags_row"),
+            LLMDefinitions.get_auto_quest_tag_outcomes_config_value().in_row("character_tags_row"),
+        ]
+        advanced = [ # a folded part of its own, so Narrations can come after it
+            LLMDefinitions.get_llm_response_timeout_config_value(),
+            LLMDefinitions.get_custom_token_count_config_value(),
+            LLMDefinitions.get_multi_npc_custom_token_count_config_value(),
+            LLMDefinitions.get_game_master_custom_token_count_config_value(),
+            LLMDefinitions.get_summary_custom_token_count_config_value(),
+            *(LLMDefinitions.get_memory_task_custom_token_count_config_value(key, label, has_summary_option)
+              for key, label, has_summary_option in memory_tasks),
+        ]
+        for part, settings in ((QUALITY_OF_LIFE_PART, quality_of_life), (FEATURE_TOGGLES_PART, feature_toggles), (THOUGHTS_PART, thoughts),
+                               (ADVANCED_PART, advanced), (NARRATIONS_PART, narrations)):
+            for setting in settings:
+                llm_category.add_config_value(setting.in_folded_part(part))
+
         llm_category.add_config_value(LLMDefinitions.get_multi_conversation_director_mode_config_value())
-        
+        llm_category.add_config_value(LLMDefinitions.get_multi_npc_game_master_mode_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_one_on_one_per_request_enabled_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_multi_npc_per_request_enabled_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_pool_one_on_one_config_value())
+        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_pool_multi_npc_config_value())
+
                
         
         #llm_category.add_config_value(LLMDefinitions.get_llm_custom_service_url_config_value())
@@ -195,54 +248,14 @@ class MantellaConfigValueDefinitionsNew:
         
         
         
-        llm_category.add_config_value(LLMDefinitions.get_enable_decensor_bypass_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_decensor_assistant_placement_config_value())
-
-        # Random LLM Selection (advanced)
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_one_on_one_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_multi_npc_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_one_on_one_per_request_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_random_llm_multi_npc_per_request_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_llm_pool_one_on_one_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_llm_pool_multi_npc_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_one_on_one_per_request_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_multi_npc_per_request_enabled_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_pool_one_on_one_config_value())
-        llm_category.add_config_value(OtherDefinitions.get_sequential_llm_pool_multi_npc_config_value())
-        
         # llm_category.add_config_value(LLMDefinitions.get_stop_llm_generation_on_assist_keyword())
-        
+
         # Multi-NPC LLM Configuration
-        llm_category.add_config_value(LLMDefinitions.get_sonnet_prompt_caching_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_multi_npc_bios_only_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_game_master_history_message_count_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_game_master_include_turn_thoughts_config_value())
         llm_category.add_config_value(LLMDefinitions.get_enable_bio_section_filter_config_value())
         llm_category.add_config_value(LLMDefinitions.get_bio_sections_to_exclude_config_value())
         llm_category.add_config_value(LLMDefinitions.get_enable_bio_section_filter_for_memory_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_allow_per_character_llm_overrides_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_enable_character_tag_reading_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_auto_quest_tag_outcomes_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_wait_time_buffer_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_custom_token_count_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_multi_npc_custom_token_count_config_value())
-        llm_category.add_config_value(LLMDefinitions.get_game_master_custom_token_count_config_value())
-        
-        
-        # Summary LLM Configuration
-        
-        llm_category.add_config_value(LLMDefinitions.get_summary_custom_token_count_config_value())
-        for key, label, has_summary_option in memory_tasks:
-            llm_category.add_config_value(LLMDefinitions.get_memory_task_custom_token_count_config_value(key, label, has_summary_option))
-        
-        
-        llm_category.add_config_value(LLMDefinitions.get_narration_handling())
-        llm_category.add_config_value(LLMDefinitions.get_narrator_voice())
-        llm_category.add_config_value(LLMDefinitions.get_narration_start_indicators())
-        llm_category.add_config_value(LLMDefinitions.get_narration_end_indicators())
-        llm_category.add_config_value(LLMDefinitions.get_speech_start_indicators())
-        llm_category.add_config_value(LLMDefinitions.get_speech_end_indicators())
-        llm_category.add_config_value(LLMDefinitions.get_narration_indicators())
+
+
         result.add_base_group(llm_category)
 
         for group in MantellaConfigValueDefinitionsNew.__conversation_groups(on_value_change_callback, actions):
@@ -251,15 +264,21 @@ class MantellaConfigValueDefinitionsNew:
         tts_category = ConfigValueGroup("TTS", "Text-to-Speech", "Settings for the TTS methods Mantella supports.", on_value_change_callback)
         tts_category.add_config_value(TTSDefinitions.get_tts_service_config_value())
         tts_category.add_config_value(TTSDefinitions.get_tts_backup_service_config_value())
+        for config_value in TTSDefinitions.get_online_service_config_values(): # shown in the service's own part, above its Volume
+            tts_category.add_config_value(config_value)
+        for service in SERVICE_VOLUMES: # shown in the service's own part of the page
+            tts_category.add_config_value(TTSDefinitions.get_service_volume_config_value(service))
         tts_category.add_config_value(TTSDefinitions.get_xvasynth_folder_config_value().in_folded_part(XVASYNTH_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_folder_config_value().in_folded_part(XTTS_PART))
-        tts_category.add_config_value(TTSDefinitions.get_piper_folder_config_value(is_integrated))
-        tts_category.add_config_value(TTSDefinitions.get_lipgen_folder_config_value(is_integrated))
-        tts_category.add_config_value(TTSDefinitions.get_facefx_folder_config_value(is_integrated))
-        tts_category.add_config_value(TTSDefinitions.get_number_words_tts_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_lip_generation_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_config_value())
-        tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_volume_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_piper_folder_config_value(is_integrated).in_folded_part(PIPER_PART))
+        # Speed and lip sync: for every service, folded at the top of the page
+        tts_category.add_config_value(TTSDefinitions.get_number_words_tts_config_value().in_folded_part(SPEED_PART))
+        tts_category.add_config_value(TTSDefinitions.get_lip_generation_config_value().in_folded_part(SPEED_PART))
+        tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_config_value().in_folded_part(SPEED_PART))
+        tts_category.add_config_value(TTSDefinitions.get_fast_response_mode_volume_config_value().in_folded_part(SPEED_PART))
+        tts_category.add_config_value(TTSDefinitions.get_lipgen_folder_config_value(is_integrated).in_folded_part(SPEED_PART))
+        tts_category.add_config_value(TTSDefinitions.get_facefx_folder_config_value(is_integrated).in_folded_part(SPEED_PART))
+        tts_category.add_config_value(LLMDefinitions.get_wait_time_buffer_config_value().in_folded_part(SPEED_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_url_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_default_model_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_device_config_value().in_folded_part(XTTS_PART))
@@ -267,47 +286,38 @@ class MantellaConfigValueDefinitionsNew:
         tts_category.add_config_value(TTSDefinitions.get_xtts_lowvram_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_data_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_accent_config_value().in_folded_part(XTTS_PART))
-        tts_category.add_config_value(TTSDefinitions.get_tts_print_config_value())
+        tts_category.add_config_value(TTSDefinitions.get_tts_print_config_value().in_folded_part(SPEED_PART))
         tts_category.add_config_value(TTSDefinitions.get_tts_process_device_config_value().in_folded_part(XVASYNTH_PART))
         tts_category.add_config_value(TTSDefinitions.get_pace_config_value().in_folded_part(XVASYNTH_PART))
         tts_category.add_config_value(TTSDefinitions.get_use_cleanup_config_value().in_folded_part(XVASYNTH_PART))
         tts_category.add_config_value(TTSDefinitions.get_use_sr_config_value().in_folded_part(XVASYNTH_PART))
-        result.add_base_group(tts_category)
-        # Shown at the end of the Text-to-Speech page. They keep their own files next to config.ini, not settings
-        result.add_base_group(ConfigValueGroup("TryAVoice", TRY_A_VOICE_GROUP, "", on_value_change_callback, page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("VoiceSetups", VOICE_SETUPS_GROUP, TTSDefinitions.VOICE_SETUPS_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("WordsToSayDifferently", WORD_LISTS_GROUP, TTSDefinitions.WORD_LISTS_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("VoiceClips", VOICE_CLIPS_GROUP, TTSDefinitions.VOICE_CLIPS_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("PocketTTS", POCKET_TTS_GROUP, TTSDefinitions.POCKET_TTS_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("ElevenLabs", ELEVENLABS_GROUP, TTSDefinitions.ELEVENLABS_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
-        result.add_base_group(ConfigValueGroup("Inworld", INWORLD_GROUP, TTSDefinitions.INWORLD_DESCRIPTION, on_value_change_callback,
-                                               page=tts_category.name, foldable=True))
+        result.add_base_group(tts_category) # the voice parts of the page, with files of their own next to config.ini, are drawn with it
 
-        stt_category = ConfigValueGroup("STT", "Speech-to-Text", "Settings for the STT methods Mantella supports.", on_value_change_callback)
-        stt_category.add_config_value(STTDefinitions.get_audio_threshold_config_value())
-        stt_category.add_config_value(STTDefinitions.get_allow_interruption_config_value()) 
-        stt_category.add_config_value(STTDefinitions.get_ptt_enabled_config_value())
-        stt_category.add_config_value(STTDefinitions.get_ptt_hotkey_config_value())
-        stt_category.add_config_value(STTDefinitions.get_save_mic_input_config_value())
-        stt_category.add_config_value(STTDefinitions.get_stt_service_config_value())
-        stt_category.add_config_value(STTDefinitions.get_pause_threshold_config_value())
-        stt_category.add_config_value(STTDefinitions.get_play_cough_sound_config_value())
-        stt_category.add_config_value(STTDefinitions.get_listen_timeout_config_value())
-        stt_category.add_config_value(STTDefinitions.get_moonshine_model_size_config_value())
-        stt_category.add_config_value(STTDefinitions.get_whisper_model_size_config_value())
-        stt_category.add_config_value(STTDefinitions.get_proactive_mic_mode_config_value())
-        stt_category.add_config_value(STTDefinitions.get_min_refresh_secs_config_value())
-        stt_category.add_config_value(STTDefinitions.get_external_whisper_service_config_value())
-        stt_category.add_config_value(STTDefinitions.get_whisper_url_config_value())
-        stt_category.add_config_value(STTDefinitions.get_stt_language_config_value())
-        stt_category.add_config_value(STTDefinitions.get_stt_translate_config_value())
-        stt_category.add_config_value(STTDefinitions.get_process_device_config_value())
-        stt_category.add_config_value(STTDefinitions.get_moonshine_folder_config_value(is_integrated))
+        # The Speech-to-Text page: Talking, then Service with the Test button at its end (settings_ui_constructor draws them)
+        stt_category = ConfigValueGroup("STT", "Speech-to-Text", STT_PAGE_DESCRIPTION, on_value_change_callback)
+        talking = [ # switches beside switches and boxes beside boxes, so no panel is stretched to its neighbour's height
+            STTDefinitions.get_ptt_enabled_config_value(), STTDefinitions.get_proactive_mic_mode_config_value(),
+            STTDefinitions.get_ptt_hotkey_config_value(), STTDefinitions.get_min_refresh_secs_config_value(), # each under the switch that greys it out
+            STTDefinitions.get_audio_threshold_config_value().in_row("stt_waiting"), STTDefinitions.get_pause_threshold_config_value().in_row("stt_waiting"),
+            STTDefinitions.get_listen_timeout_config_value().in_row("stt_waiting"),
+            STTDefinitions.get_allow_interruption_config_value().in_row("stt_switches"), STTDefinitions.get_play_cough_sound_config_value().in_row("stt_switches"),
+            STTDefinitions.get_save_mic_input_config_value().in_row("stt_switches"),
+        ]
+        models = {preset.name: STTDefinitions.get_model_config_value(preset) for preset in PRESETS} # one Model setting per choice, each shown only while its choice is picked
+        service = [
+            STTDefinitions.get_stt_service_config_value(), STTDefinitions.get_stt_language_config_value(),
+            STTDefinitions.get_stt_online_service_config_value(), # its Key box is drawn right under it
+            *(models[preset.name] for preset in PRESETS if preset.online),
+            models[MOONSHINE_CHOICE], STTDefinitions.get_moonshine_folder_config_value(is_integrated),
+            models[WHISPER_CHOICE], STTDefinitions.get_process_device_config_value(), STTDefinitions.get_stt_translate_config_value(),
+            models[PARAKEET_CHOICE],
+            STTDefinitions.get_custom_format_config_value(), STTDefinitions.get_custom_address_config_value(),
+            STTDefinitions.get_custom_model_config_value(), STTDefinitions.get_custom_timeout_config_value(), # Custom Service's Key box is drawn under these two
+            STTDefinitions.get_stt_first_names_config_value(),
+        ]
+        for part, settings in ((STT_TALKING_PART, talking), (STT_SERVICE_PART, service)):
+            for setting in settings:
+                stt_category.add_config_value(setting.in_folded_part(part))
         result.add_base_group(stt_category)
 
         vision_category = ConfigValueGroup("Vision", "Vision", "Vision settings.", on_value_change_callback)
@@ -369,6 +379,7 @@ class MantellaConfigValueDefinitionsNew:
         prompts_category.add_config_value(PromptDefinitions.get_personal_reflection_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_vision_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_advanced_actions_prompt_config_value())
+        prompts_category.add_config_value(PromptDefinitions.get_stt_names_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_start_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_radiant_end_prompt_config_value())
         prompts_category.add_config_value(PromptDefinitions.get_decensor_handshake_prompt_config_value())
@@ -441,14 +452,16 @@ class MantellaConfigValueDefinitionsNew:
 
         all_conversations = section("Conversation", "All Conversations", ConversationDefinitions.ALL_CONVERSATIONS_DESCRIPTION)
         all_conversations.add_config_value(LLMDefinitions.get_game_master_addressed_threshold_config_value())
+        all_conversations.add_config_value(LLMDefinitions.get_game_master_history_message_count_config_value())
         for value in ConversationDefinitions.get_talk_config_values(SHARED):
             all_conversations.add_config_value(value)
 
         actions_section = ConfigValueGroup("ConversationActions", "Actions", ActionDefinitions.section_description(actions), on_value_change_callback,
                                            page=CONVERSATION_PAGE)
         actions_section.add_config_value(ActionDefinitions.get_advanced_actions_enabled_config_value())
-        for kind in ACTION_KINDS:
-            actions_section.add_config_value(ActionDefinitions.get_actions_config_value(actions, kind))
+        for kind in ACTION_KINDS: # each kind's list folded, under its own name
+            kind_actions = ActionDefinitions.get_actions_config_value(actions, kind)
+            actions_section.add_config_value(kind_actions.in_folded_part(kind_actions.name))
 
         def own_talk_settings(target: ConfigValueGroup, kind: str):
             """A kind's "Use its own settings" switch, then its own talk settings, which only show while it is on"""
@@ -478,6 +491,10 @@ class MantellaConfigValueDefinitionsNew:
         director.add_config_value(ConversationDefinitions.get_most_replies_config_value(DIRECTOR, "Director Mode"))
         director.add_config_value(LLMDefinitions.get_multi_npc_game_master_director_max_npc_turns_config_value())
 
+        npc_initiative = section("ConversationNpcInitiative", "NPC Initiative", "A nearby NPC walks up to you and starts a conversation. Switch it "
+                                 "on in the Mantella MCM. Once started, it works like any conversation with one NPC.")
+        npc_initiative.add_config_value(LLMDefinitions.get_npc_initiative_threshold_config_value())
+
         uses_conversations = ("Max NPC Turns per Player Turn, below, is the most NPC replies in a row to the event, also in Director Mode. "
                               "It uses the Most Replies per Person of the conversation it happens in.")
         event_sections = []
@@ -506,4 +523,4 @@ class MantellaConfigValueDefinitionsNew:
         npc_event.add_config_value(LLMDefinitions.get_npc_event_player_notice_delay_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_max_lines_without_player_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_wind_down_lines_config_value())
-        return [all_conversations, group, shout, director, *event_sections, npc_event, actions_section]
+        return [all_conversations, group, shout, director, npc_initiative, *event_sections, npc_event, actions_section]

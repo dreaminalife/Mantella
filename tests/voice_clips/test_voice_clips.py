@@ -93,14 +93,16 @@ def test_an_npcs_own_voice_can_become_their_voice_types(store, tmp_path):
     store.set_clip(VOICE_TYPES, "femaleeventoned", a_wav(tmp_path), ClipInfo(name="FemaleEvenToned", path=GAME_PATH, turned_down=["skyrim.esm|000dd609"]))
     store.set_clip(NPCS, lydia, a_wav(tmp_path, "b.wav"), ClipInfo(name="Lydia", path=other_path(1), voice_type="FemaleEvenToned",
                                                                    npc_plugin="Skyrim.esm", npc_local_id="000A2C94"))
-    store.add_candidate(NPCS, lydia, a_wav(tmp_path, "c.wav"), ClipInfo(path=other_path(2)))
+    store.add_candidate(NPCS, lydia, a_wav(tmp_path, "c.wav"), ClipInfo(path=other_path(2), order=1))
+    store.add_candidate(VOICE_TYPES, "femaleeventoned", a_wav(tmp_path, "d.wav"), ClipInfo(path=other_path(3), order=1))
     assert store.use_npc_clip_for_voice_type(lydia) == "femaleeventoned"
     info = store.info(VOICE_TYPES, "femaleeventoned")
     assert info.path == other_path(1) and info.how == CHOSEN and info.name == "FemaleEvenToned" and info.turned_down == ["skyrim.esm|000dd609"]
     assert not info.npc_plugin and not info.voice_type
     assert store.npc_clip("Skyrim.esm", "000A2C94") is None # Lydia shares her voice type's voice again
-    # The voice type's old clip is in its list, so the player can switch back
-    assert [line_id(c.path) for _, c in store.candidates(VOICE_TYPES, "femaleeventoned")] == ["skyrim.esm|000dd60f"]
+    # Her chosen clips came with her voice; the voice type's old clips are other clips, so the player can switch back
+    assert [line_id(c.path) for _, c in store.voice_lines(VOICE_TYPES, "femaleeventoned")] == ["skyrim.esm|000dd601", "skyrim.esm|000dd602"]
+    assert sorted(line_id(c.path) for _, c in store.other_lines(VOICE_TYPES, "femaleeventoned")) == ["skyrim.esm|000dd603", "skyrim.esm|000dd60f"]
 
 
 def test_an_npc_without_a_voice_of_their_own_cant_give_it_to_their_voice_type(store):
@@ -179,7 +181,7 @@ def test_a_line_to_hear_from_the_clips_own_line_is_left_out(store, tmp_path):
 
 
 def test_an_npc_whose_voice_type_has_no_lines_gets_the_next_voice_in_line(requests):
-    requests.ask_for("MyFollowerVoice", "MyFollower.esp", "00000D62", "Auri", stand_ins=["NotAVoiceType", "FemaleYoungEager"])
+    requests.ask_for("MyFollowerVoice", "MyFollower.esp", "00000D62", "Auri", stand_ins=["NotAVoiceType", "FemaleYoungEager"], count=10)
     [sent] = requests.requests_for_reply()
     assert json.loads(sent)["voice_type"] == "MyFollowerVoice" # nothing else is asked for while their own voice type may have lines
     deliver(requests, sent, [], status="nothing_found")
@@ -190,6 +192,7 @@ def test_an_npc_whose_voice_type_has_no_lines_gets_the_next_voice_in_line(reques
     requests.collect()
     [sent] = requests.requests_for_reply()
     assert json.loads(sent)["voice_type"] == "FemaleYoungEager"
+    assert json.loads(sent)["count"] == 10 # as many lines as the service speaking takes, for a stand-in too
     deliver(requests, sent, [{"for": "voice_type", "path": other_path(1)}])
     requests.collect()
     assert requests.requests_for_reply() == []
@@ -422,6 +425,134 @@ def test_an_npcs_own_clip_never_starts_as_their_voice_types_line(requests, store
     requests.ask_for_own_clip("Skyrim.esm", "00013BAB", "Ysolda", "FemaleYoungEager")
     [sent] = requests.requests_for_reply()
     assert json.loads(sent)["exclude"] == ["skyrim.esm|000dd60f"]
-    requests.ask_for_own_clip("Skyrim.esm", "00013BAC", "Someone", "MaleNord") # no clip for the voice type yet: nothing to leave out
+    requests.ask_for_own_clip("Skyrim.esm", "00013BAC", "Someone", "MaleNord", count=10) # no clip for the voice type yet: nothing to leave out
     [sent] = requests.requests_for_reply()
-    assert json.loads(sent)["exclude"] == []
+    assert json.loads(sent)["exclude"] == [] and json.loads(sent)["count"] == 10
+
+
+# ---- several clips per voice ----
+
+def chosen(store, kind=VOICE_TYPES, key="femaleeventoned") -> list[str]:
+    return [line_id(c.path) for _, c in store.voice_lines(kind, key)]
+
+
+def a_voice_with_lines(store, tmp_path, chosen_count: int, others: int = 0) -> None:
+    store.set_clip(VOICE_TYPES, "femaleeventoned", a_wav(tmp_path), ClipInfo(name="FemaleEvenToned", path=GAME_PATH))
+    for n in range(1, chosen_count + others + 1):
+        store.add_candidate(VOICE_TYPES, "femaleeventoned", a_wav(tmp_path, f"{n}.wav"),
+                            ClipInfo(path=other_path(n), order=n if n <= chosen_count else 0))
+
+
+def test_a_new_voice_gets_all_its_lines_chosen_in_order(requests, store):
+    requests.ask_for("FemaleEvenToned", count=10) # ElevenLabs speaks first
+    [sent] = requests.requests_for_reply()
+    assert json.loads(sent)["count"] == 10
+    deliver(requests, sent, [{"for": "voice_type", "path": GAME_PATH},
+                             {"for": "voice_type", "path": other_path(2)}, {"for": "voice_type", "path": other_path(1)}])
+    requests.collect()
+    assert chosen(store) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd602", "skyrim.esm|000dd601"]
+    assert not store.is_hand_picked(VOICE_TYPES, "femaleeventoned")
+
+
+def test_add_and_take_out(store, tmp_path):
+    a_voice_with_lines(store, tmp_path, chosen_count=2, others=2)
+    other = next(p for p, c in store.other_lines(VOICE_TYPES, "femaleeventoned") if c.line == "skyrim.esm|000dd604")
+    store.add_line(VOICE_TYPES, "femaleeventoned", other, 2) # right below the clips the service uses
+    assert chosen(store) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd601", "skyrim.esm|000dd604", "skyrim.esm|000dd602"]
+    assert store.is_hand_picked(VOICE_TYPES, "femaleeventoned") # the player chose: Mantella changes none of their clips by itself
+    second = store.voice_lines(VOICE_TYPES, "femaleeventoned")[1][0]
+    store.take_out(VOICE_TYPES, "femaleeventoned", second)
+    assert chosen(store) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd604", "skyrim.esm|000dd602"]
+    assert "skyrim.esm|000dd601" in [c.line for _, c in store.other_lines(VOICE_TYPES, "femaleeventoned")] # there to add again
+    # Taking out the top clip puts the next one on top
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.clip(VOICE_TYPES, "femaleeventoned"))
+    assert chosen(store) == ["skyrim.esm|000dd604", "skyrim.esm|000dd602"]
+    assert store.info(VOICE_TYPES, "femaleeventoned").name == "FemaleEvenToned" and store.is_hand_picked(VOICE_TYPES, "femaleeventoned")
+    store.take_out(VOICE_TYPES, "femaleeventoned", store.voice_lines(VOICE_TYPES, "femaleeventoned")[1][0])
+    with pytest.raises(ValueError): # a voice always keeps one clip
+        store.take_out(VOICE_TYPES, "femaleeventoned", store.clip(VOICE_TYPES, "femaleeventoned"))
+
+
+def test_use_this_one_swaps_two_clips_and_nothing_else(store, tmp_path):
+    a_voice_with_lines(store, tmp_path, chosen_count=2, others=1)
+    other = next(p for p, c in store.other_lines(VOICE_TYPES, "femaleeventoned"))
+    store.choose_candidate(VOICE_TYPES, "femaleeventoned", other)
+    assert chosen(store) == ["skyrim.esm|000dd603", "skyrim.esm|000dd601", "skyrim.esm|000dd602"]
+    assert [c.line for _, c in store.other_lines(VOICE_TYPES, "femaleeventoned")] == ["skyrim.esm|000dd60f"]
+    second = store.voice_lines(VOICE_TYPES, "femaleeventoned")[2][0]
+    store.choose_candidate(VOICE_TYPES, "femaleeventoned", second) # a chosen one: the top clip takes its place
+    assert chosen(store) == ["skyrim.esm|000dd602", "skyrim.esm|000dd601", "skyrim.esm|000dd603"]
+
+
+def test_each_service_takes_what_fits_from_the_top():
+    from src.voice_clips.clip_store import lines_within
+    assert lines_within([7.0, 8.0, 9.0, 6.0], 0) == 1 # Pocket TTS and setups: the top clip
+    assert lines_within([7.0, 8.0, 9.0, 6.0], 29.5) == 3 # Inworld: 7 + 8 + 9 and the gaps; a fourth would pass 30 s
+    assert lines_within([7.0, 8.0, 6.0, 6.0], 29.5) == 4 # 27 s and 1.5 s of gaps
+    assert lines_within([10.0] * 20, 120.0) == 11 # ElevenLabs: 2 minutes
+    assert lines_within([5.0] * 20, 120.0) == 16 # and 16 clips at most
+    assert lines_within([], 30.0) == 0
+
+
+def test_find_more_clips_swaps_the_other_clips_and_keeps_the_chosen_ones(requests, store, tmp_path):
+    a_voice_with_lines(store, tmp_path, chosen_count=1, others=2)
+    requests.ask_for_more(VOICE_TYPES, "femaleeventoned")
+    [sent] = requests.requests_for_reply()
+    assert set(json.loads(sent)["exclude"]) == {"skyrim.esm|000dd60f", "skyrim.esm|000dd601", "skyrim.esm|000dd602", "skyrim.esm|000dd603"}
+    deliver(requests, sent, [{"for": "voice_type", "path": other_path(7)}, {"for": "voice_type", "path": other_path(8)}])
+    requests.collect()
+    assert chosen(store) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd601"]
+    assert sorted(c.line for _, c in store.other_lines(VOICE_TYPES, "femaleeventoned")) == ["skyrim.esm|000dd607", "skyrim.esm|000dd608"]
+    # The game has no new lines left: the ones swapped out come back, as many as the player asked for
+    requests.ask_for_more(VOICE_TYPES, "femaleeventoned", 9)
+    [sent] = requests.requests_for_reply()
+    assert json.loads(sent)["count"] == 9
+    deliver(requests, sent, [], status="nothing_found")
+    requests.collect()
+    assert requests.waiting_for_more(VOICE_TYPES, "femaleeventoned") and not requests.no_more_lines(VOICE_TYPES, "femaleeventoned")
+    [again] = requests.requests_for_reply()
+    assert "skyrim.esm|000dd602" not in json.loads(again)["exclude"] and json.loads(again)["count"] == 9
+    deliver(requests, again, [], status="nothing_found")
+    requests.collect()
+    assert requests.no_more_lines(VOICE_TYPES, "femaleeventoned") and not requests.waiting_for_more(VOICE_TYPES, "femaleeventoned")
+
+
+def test_a_short_voice_is_topped_up_once_with_chosen_lines(requests, store, tmp_path):
+    a_voice_with_lines(store, tmp_path, chosen_count=3)
+    assert requests.ask_to_top_up(VOICE_TYPES, "femaleeventoned", 6)
+    assert not requests.ask_to_top_up(VOICE_TYPES, "femaleeventoned", 6) # once per run
+    [sent] = requests.requests_for_reply()
+    request = json.loads(sent)
+    assert request["count"] == 6 and "skyrim.esm|000dd603" in request["exclude"]
+    deliver(requests, sent, [{"for": "voice_type", "path": other_path(9)}])
+    assert requests.collect() == 1
+    assert chosen(store) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd601", "skyrim.esm|000dd602", "skyrim.esm|000dd603", "skyrim.esm|000dd609"]
+
+
+def test_every_chosen_line_is_copied_again_after_a_voice_mod_and_a_gone_one_goes(requests, store, tmp_path):
+    a_voice_with_lines(store, tmp_path, chosen_count=2)
+    requests.ask_for("FemaleEvenToned")
+    [sent] = requests.requests_for_reply()
+    assert [l["path"] for l in json.loads(sent)["lines"]] == [GAME_PATH, other_path(1), other_path(2)]
+    deliver(requests, sent, [{"for": "voice_type", "path": GAME_PATH}, {"for": "voice_type", "path": other_path(2), "size": 99, "source": "loose"}],
+            missing=[other_path(1)])
+    requests.collect()
+    lines = store.voice_lines(VOICE_TYPES, "femaleeventoned")
+    assert [c.line for _, c in lines] == ["skyrim.esm|000dd60f", "skyrim.esm|000dd602"] and lines[1][1].source == "loose"
+
+
+def test_a_voices_file_carries_the_chosen_clips_in_order(tmp_path):
+    mine = ClipStore(str(tmp_path / "mine"))
+    a_voice_with_lines(mine, tmp_path, chosen_count=2, others=1)
+    picks = json.loads(json.dumps(export_picks(mine)))
+    assert picks[VOICE_TYPES]["femaleeventoned"]["lines"] == [other_path(1), other_path(2)]
+    theirs = ClipStore(str(tmp_path / "theirs"))
+    requests = ClipRequests(theirs)
+    import_picks(theirs, requests, picks, TAKE_THEIRS)
+    [sent] = requests.requests_for_reply()
+    assert [l["path"] for l in json.loads(sent)["lines"]] == [GAME_PATH, other_path(1), other_path(2)]
+    deliver(requests, sent, [{"for": "voice_type", "path": GAME_PATH}, {"for": "voice_type", "path": other_path(1)},
+                             {"for": "voice_type", "path": other_path(2)}])
+    requests.collect()
+    assert chosen(theirs) == ["skyrim.esm|000dd60f", "skyrim.esm|000dd601", "skyrim.esm|000dd602"]
+    assert import_picks(mine, ClipRequests(mine), picks, TAKE_THEIRS) == (0, 0) # the same clips: nothing to ask for

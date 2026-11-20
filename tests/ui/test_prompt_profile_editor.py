@@ -79,9 +79,9 @@ def test_prompts_tab_shows_a_preview_under_each_merged_prompt(tmp_path):
     with gr.Blocks() as demo:
         prompts_group.accept_visitor(constructor)
     previews = [d for d in demo.fns if getattr(d.fn, "__name__", "") == "refresh"]
-    assert len(previews) == 2 * 8 # The situation and the text each refresh the preview, for each of the 8 merged prompts
+    assert len(previews) == 2 * 13 # The situation and the text each refresh the preview, for each of the 13 merged prompts
     textboxes = [block for block in demo.blocks.values() if isinstance(block, gr.Textbox) and block.label and block.label.startswith("Text sent in this situation")]
-    assert len(textboxes) == 8
+    assert len(textboxes) == 13
     assert any("You are the game master of a group conversation" in box.value for box in textboxes)
 
 

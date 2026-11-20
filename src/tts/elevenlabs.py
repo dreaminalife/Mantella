@@ -1,12 +1,16 @@
-"""ElevenLabs, online. Each clip is cloned once as an instant voice clone on the player's account, then every line uses that voice.
-Model Eleven v4 Turbo: real-time, 90+ languages, $0.04 per 1,000 characters on ElevenLabs' price list (2026-11-17)."""
+"""ElevenLabs, online. Each voice is cloned once as an instant voice clone on the player's account, from its chosen clips (up to
+2 minutes, sent as separate files), then every line uses that voice.
+Model (Mantella's list, model_catalog.py) Eleven v4 Turbo: real-time, 90+ languages, $0.04 per 1,000 characters on ElevenLabs' price list (2026-11-17)."""
 from __future__ import annotations
 
 import os
+from contextlib import ExitStack
 
 import requests
 
-from src.tts.online_service import BadKey, CantSpeak, CloneRefused, OnlineCloneService, VoiceGone
+from src.tts.model_catalog import ELEVENLABS_MODELS
+from src.tts.online_service import BadKey, CantSpeak, CloneRefused, OnlineCloneService, PlanFull, VoiceGone, says_plan_full
+from src.tts.voice_picker import VoicePick
 
 NAME = "ElevenLabs"
 KEY_FILE = "ELEVENLABS_SECRET_KEY.txt"
@@ -14,7 +18,7 @@ API_URL = "https://api.elevenlabs.io"
 KEYS_PAGE = "https://elevenlabs.io/app/settings/api-keys"
 WEBSITE = "https://elevenlabs.io/app/voice-lab"
 SIGN_UP_PAGE = "https://elevenlabs.io/sign-up"
-MODEL = "eleven_v4_turbo"
+MODELS = ELEVENLABS_MODELS # Mantella's list (model_catalog.py): Eleven v4 Turbo
 MALE_VOICE = "JBFqnCBsd6RMkjVDRZzb" # George, one of ElevenLabs' own voices every account has
 FEMALE_VOICE = "EXAVITQu4vr4xnZQbJtg" # Sarah
 
@@ -48,15 +52,17 @@ class ElevenLabs(OnlineCloneService):
     KEY_FILE = KEY_FILE
     API_URL = API_URL
     WEBSITE = WEBSITE
+    MODELS = MODELS
 
     def built_in_voice(self, gender: int | None) -> str:
         return FEMALE_VOICE if gender == 1 else MALE_VOICE
 
-    def clone(self, name: str, clip_path: str, language: str) -> str:
-        with open(clip_path, "rb") as clip:
+    def clone(self, name: str, clip_paths: list[str], language: str, pick: VoicePick | None = None) -> str:
+        with ExitStack() as stack:
+            files = [("files", (os.path.basename(path), stack.enter_context(open(path, "rb")), "audio/wav")) for path in clip_paths]
             answer = requests.post(f"{type(self).API_URL}/v1/voices/add", headers={"xi-api-key": self._api_key},
-                                   data={"name": name, "description": "Cloned by Mantella from a Skyrim voice line", "remove_background_noise": "false"},
-                                   files={"files": (os.path.basename(clip_path), clip, "audio/wav")}, timeout=self.request_timeout)
+                                   data={"name": name, "description": "Cloned by Mantella from Skyrim voice lines", "remove_background_noise": "false"},
+                                   files=files, timeout=max(self.request_timeout, 60.0))
         status = _status(answer)
         if status == "quota_exceeded":
             raise CloneRefused(f"ElevenLabs won't clone another voice: your account has no characters left this month ({_detail(answer)}). "
@@ -67,7 +73,8 @@ class ElevenLabs(OnlineCloneService):
         if answer.status_code == 401:
             raise BadKey(_detail(answer))
         if _refusal(answer):
-            raise CloneRefused(f"ElevenLabs won't clone another voice: {_detail(answer)}. Your plan may not include voice cloning, or its "
+            refused = PlanFull if says_plan_full(status, _detail(answer)) else CloneRefused
+            raise refused(f"ElevenLabs won't clone another voice: {_detail(answer)}. Your plan may not include voice cloning, or its "
                                f"voices are all used: delete some at {WEBSITE} or upgrade your plan. Until then NPCs without a cloned voice "
                                "use ElevenLabs' built-in voices.")
         if answer.status_code != 200:
@@ -80,9 +87,10 @@ class ElevenLabs(OnlineCloneService):
         if answer.status_code not in (200, 204, 404):
             raise RuntimeError(f"ElevenLabs answered {answer.status_code}: {_detail(answer)}")
 
-    def speak_with(self, text: str, voice_id: str, out_path: str) -> None:
+    def speak_with(self, text: str, voice_id: str, out_path: str, pick: VoicePick | None = None) -> None:
         answer = requests.post(f"{type(self).API_URL}/v1/text-to-speech/{voice_id}", params={"output_format": "mp3_44100_128"},
-                               headers={"xi-api-key": self._api_key}, json={"text": text, "model_id": MODEL}, timeout=self.request_timeout)
+                               headers={"xi-api-key": self._api_key}, json=self._request_body({"text": text, "model_id": self.model.id}),
+                               timeout=self.line_wait(text))
         status = _status(answer)
         if voice_id not in (MALE_VOICE, FEMALE_VOICE) and (answer.status_code == 404 or status == "voice_not_found"):
             raise VoiceGone(_detail(answer))
@@ -96,12 +104,25 @@ class ElevenLabs(OnlineCloneService):
             raise CantSpeak(f"ElevenLabs wants a payment before it speaks again ({_detail(answer)}). See your account at {WEBSITE}.")
         if answer.status_code == 401:
             raise CantSpeak(f"ElevenLabs doesn't accept your key ({_detail(answer)}). Make a new one at {KEYS_PAGE} and press Save key.")
+        self._check_model_refusal(answer.status_code, _detail(answer))
         if answer.status_code != 200:
             raise RuntimeError(f"ElevenLabs answered {answer.status_code}: {_detail(answer)}")
         if not answer.content:
             raise RuntimeError("ElevenLabs sent back no sound")
         with open(out_path, "wb") as file:
             file.write(answer.content)
+
+    @classmethod
+    def plan_is_full(cls, api_key: str) -> bool | None:
+        try:
+            answer = requests.get(f"{cls.API_URL}/v1/user/subscription", headers={"xi-api-key": api_key}, timeout=15)
+            plan = answer.json() if answer.status_code == 200 else {}
+        except (requests.RequestException, ValueError):
+            return None
+        limit, used = plan.get("voice_limit"), plan.get("voice_slots_used")
+        if not isinstance(limit, int) or not isinstance(used, int):
+            return None
+        return used >= limit
 
     @classmethod
     def voice_exists(cls, api_key: str, voice_id: str) -> bool | None:

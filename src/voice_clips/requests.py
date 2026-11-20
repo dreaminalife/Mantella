@@ -18,24 +18,26 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.voice_clips import fuz
-from src.voice_clips.clip_store import (AUTOMATIC, NPCS, OWN_LINES, VOICE_TYPES, ClipInfo, ClipStore, line_id, npc_key,
-                                        voice_key)
+from src.voice_clips.clip_store import (AUTOMATIC, MOST_CHOSEN, NPCS, OWN_LINES, VOICE_TYPES, ClipInfo, ClipStore, line_id,
+                                        npc_key, voice_key)
 
 INCOMING = "incoming"
 REQUEST_FILE = "request.json"
 RESULT_FILE = "result.json"
 ASK_AGAIN_SECONDS = 300 # while nothing comes back, the same clip is asked for at most this often
 LINES_TO_HEAR = 4 # the line picked, plus others to choose from in the list
+MOST_MORE = 16 # Find more clips brings at most this many at a time (about 2 minutes of game lines, as many as a voice is cloned from)
 SKIP_WORDS = ["bardsongs"] # voice file names with these words are never picked (every bard song starts with bardsongs_)
 MIN_SECONDS = 5.0
 MAX_SECONDS = 10.0
 
 # Why a request was made, which decides what the delivered lines become
-FIRST = "first" # no clip yet: the first line becomes the clip
+FIRST = "first" # no clip yet: the first line becomes the clip, all of them are chosen
 OWN = "own" # the player gave an NPC a clip of their own
-MORE = "more" # pick another line ran out of lines: they all become lines to choose from
-REFRESH = "refresh" # the same line again, to notice a voice replacer
-IMPORT = "import" # lines from someone's exported picks
+MORE = "more" # Find more clips: the new lines take the place of the ones not chosen
+TOP_UP = "top up" # the voice is too short for the service speaking: the new lines are chosen, at the end
+REFRESH = "refresh" # the same lines again, to notice a voice replacer
+IMPORT = "import" # lines from someone's voices file, in their order
 REPLACE = "replace" # a clip's game line is gone: the first new line becomes the clip
 LIST = "list" # no lines: the voice types the game's NPCs use, for Prepare all voices
 STALE_SECONDS = 3600 # a request folder with no result after this long is given up (the add-on or its DLL is missing)
@@ -58,6 +60,7 @@ class ClipRequest:
     keys: list[str] = field(default_factory=list) # what this request is waiting for, for asking again
     count: int = LINES_TO_HEAR # lines to copy of each kind
     stand_ins: list[str] = field(default_factory=list) # voice types to ask for instead, in turn, when the game has no lines for this one
+    again: bool = False # Find more clips asked a second time, with the lines it skipped before
 
     def to_game(self, dest: str) -> dict[str, Any]:
         if self.why == LIST:
@@ -81,6 +84,7 @@ class ClipRequests:
         self.__nothing_found: set[str] = set() # voice types the game has no lines for (an unvoiced follower's): not asked again this run
         self.__more_asked: set[str] = set() # clips the player asked more lines for, until the game answers
         self.__no_more: set[str] = set() # clips the game had no more lines for, the last time the player asked
+        self.__topped_up: set[str] = set() # voices topped up this run: at most once each
         self.__counter = itertools.count(1)
         self.__in_turn: list[str] = [] # voice types waiting their turn (Prepare all voices)
         self.__in_turn_sent: dict[str, float] = {} # request id -> when it was handed to the game
@@ -93,14 +97,15 @@ class ClipRequests:
     # ---- asking ----
 
     def ask_for(self, voice_type: str | None, npc_plugin: str | None = None, npc_local_id: str | None = None, npc_name: str = "",
-                stand_ins: list[str] | None = None) -> None:
+                stand_ins: list[str] | None = None, count: int = LINES_TO_HEAR) -> None:
         """Called when an NPC (or the narrator, with only a voice type) speaks with a service that copies voices.
         stand_ins: the voice types the NPC uses when theirs has no lines (an unvoiced follower): the one in their character file,
-        then their race and gender's. Each is asked for once the game says the one before has no lines"""
+        then their race and gender's. Each is asked for once the game says the one before has no lines.
+        count: the lines a new voice gets, as many as the service speaking takes (10 for ElevenLabs)"""
         stand_ins = [v for v in dict.fromkeys(v for v in (stand_ins or []) if voice_key(v)) if voice_key(v) != voice_key(voice_type)]
         if not voice_type:
             if stand_ins:
-                self.ask_for(stand_ins[0], stand_ins=stand_ins[1:])
+                self.ask_for(stand_ins[0], stand_ins=stand_ins[1:], count=count)
             return
         type_key = voice_key(voice_type)
         own_key = npc_key(npc_plugin, npc_local_id)
@@ -115,34 +120,57 @@ class ClipRequests:
                 keys.append(f"{NPCS}/{own_key}") # their own lines may come from a voice mod for just them
             if keys:
                 self.__queue(ClipRequest(self.__new_id(), FIRST, voice_type, npc_plugin or "", npc_local_id or "", npc_name,
-                                         voice_type_lines=True, npc_lines="if_different" if own_key else "none", keys=keys, stand_ins=stand_ins))
+                                         voice_type_lines=True, npc_lines="if_different" if own_key else "none", keys=keys, stand_ins=stand_ins,
+                                         count=max(1, count)))
         if needs_voice_type and no_lines and stand_ins:
-            self.ask_for(stand_ins[0], stand_ins=stand_ins[1:]) # the game has no lines for their voice type: the next voice in line instead
+            # the game has no lines for their voice type: the next voice in line instead
+            self.ask_for(stand_ins[0], stand_ins=stand_ins[1:], count=count)
         self.__refresh(VOICE_TYPES, type_key)
         if own_key:
             self.__refresh(NPCS, own_key)
 
-    def ask_for_own_clip(self, npc_plugin: str, npc_local_id: str, npc_name: str, voice_type: str) -> None:
+    def ask_for_own_clip(self, npc_plugin: str, npc_local_id: str, npc_name: str, voice_type: str, count: int = LINES_TO_HEAR) -> None:
         """Give this NPC their own clip: from their own lines if they have any, else from their voice type's lines (the voice type's clip stays as it is).
-        The line their voice type already uses is left out, or the new clip would sound the same"""
+        The line their voice type already uses is left out, or the new clip would sound the same. count: as for ask_for"""
         shared_line = self.__store.info(VOICE_TYPES, voice_key(voice_type)).line if self.__store.voice_type_clip(voice_type) else ""
         self.__queue(ClipRequest(self.__new_id(), OWN, voice_type, npc_plugin, npc_local_id, npc_name, voice_type_lines=True, npc_lines="always",
-                                 exclude=[shared_line] if shared_line else [], keys=[f"{NPCS}/{npc_key(npc_plugin, npc_local_id)}"]))
+                                 exclude=[shared_line] if shared_line else [], keys=[f"{NPCS}/{npc_key(npc_plugin, npc_local_id)}"],
+                                 count=max(1, count)))
 
-    def ask_for_more(self, kind: str, key: str) -> None:
-        """Pick another line found no lines left to hear: ask the game for others, leaving out the ones turned down"""
-        info = self.__store.info(kind, key)
-        exclude = self.__store.turn_down_all(kind, key) + [line_id(c.path) for _, c in self.__store.candidates(kind, key)]
-        if kind == NPCS:
-            # Their voice type's lines too: an NPC whose clip was made from those has no lines of their own to pick from
-            request = ClipRequest(self.__new_id(), MORE, info.voice_type, info.npc_plugin, info.npc_local_id, info.name,
-                                  voice_type_lines=True, npc_lines="always", exclude=exclude, keys=[f"{kind}/{key}"])
-        else:
-            request = ClipRequest(self.__new_id(), MORE, info.name or key, voice_type_lines=True, npc_lines="none", exclude=exclude, keys=[f"{kind}/{key}"])
+    def ask_for_more(self, kind: str, key: str, count: int = LINES_TO_HEAR, again: bool = False) -> None:
+        """Find more clips: *count* new lines (1 to MOST_MORE), which take the place of the ones not chosen. Lines the voice has,
+        or had before, are left out; when the game has none left, it is asked once more with only the lines the voice has left out (again)"""
+        if again:
+            self.__store.bring_back_turned_down(kind, key)
+        request = self.__lines_request(kind, key, MORE, max(1, min(int(count), MOST_MORE)))
+        request.again = again
         with self.__lock:
             self.__more_asked.add(f"{kind}/{key}")
             self.__no_more.discard(f"{kind}/{key}")
         self.__queue(request)
+
+    def ask_to_top_up(self, kind: str, key: str, count: int) -> bool:
+        """The voice is shorter than the service speaking wants: *count* more lines, added to its chosen clips. At most once per
+        voice per run. True when asked"""
+        name = f"{kind}/{key}"
+        with self.__lock:
+            if name in self.__topped_up or count <= 0:
+                return False
+            self.__topped_up.add(name)
+        self.__queue(self.__lines_request(kind, key, TOP_UP, count))
+        logging.info(f"Voice clips: asking the game for {count} more lines for {self.__store.info(kind, key).name or key}, so the voice is long enough")
+        return True
+
+    def __lines_request(self, kind: str, key: str, why: str, count: int) -> ClipRequest:
+        """New lines for a voice: not the ones it has, nor the ones it left out"""
+        info = self.__store.info(kind, key)
+        exclude = list(dict.fromkeys(self.__store.turn_down_all(kind, key) + [line_id(c.path) for _, c in self.__store.candidates(kind, key)]))
+        if kind == NPCS:
+            # Their voice type's lines too: an NPC whose clip was made from those has no lines of their own to pick from
+            return ClipRequest(self.__new_id(), why, info.voice_type, info.npc_plugin, info.npc_local_id, info.name,
+                               voice_type_lines=True, npc_lines="always", exclude=exclude, keys=[f"{kind}/{key}"], count=count)
+        return ClipRequest(self.__new_id(), why, info.name or key, voice_type_lines=True, npc_lines="none", exclude=exclude, keys=[f"{kind}/{key}"],
+                           count=count)
 
     def waiting_for_more(self, kind: str, key: str) -> bool:
         """The player asked for more lines and the game hasn't answered yet"""
@@ -264,6 +292,10 @@ class ClipRequests:
             logging.warning(f"Voice clips: the game could not copy lines for {request.voice_type or request.npc_name}: {result.get('message', '')}")
         if request.why == MORE:
             for key in request.keys:
+                kind, _, clip_key = key.partition("/")
+                if not delivered and result.get("status") != "error" and not request.again and self.__store.info(kind, clip_key).turned_down:
+                    self.ask_for_more(kind, clip_key, request.count, again=True) # no new lines left: the ones skipped before come back
+                    continue
                 self.__more_asked.discard(key)
                 if not delivered and result.get("status") != "error":
                     self.__no_more.add(key) # an NPC with no lines of their own gets voice type lines, so any line delivered counts
@@ -293,7 +325,7 @@ class ClipRequests:
             logging.info(f"Voice clips: the game has no lines for {request.voice_type}" + (f", so {request.stand_ins[0]} stands in" if request.stand_ins else ""))
             if request.stand_ins:
                 # Goes with the reply to this delivery, so the stand-in arrives before the NPC's next line
-                self.ask_for(request.stand_ins[0], stand_ins=request.stand_ins[1:])
+                self.ask_for(request.stand_ins[0], stand_ins=request.stand_ins[1:], count=request.count)
         return changed
 
     @staticmethod
@@ -310,7 +342,7 @@ class ClipRequests:
         return converted
 
     def __file(self, kind: str, key: str, request: ClipRequest, converted: list[tuple[str, dict[str, Any]]]) -> int:
-        """Puts the delivered lines where they belong: the clip, or lines to choose from"""
+        """Puts the delivered lines where they belong: the clip, the chosen clips below it, or the voice's other lines"""
         current = self.__store.info(kind, key)
         has_clip = self.__store.clip(kind, key) is not None
         def info_for(clip: dict[str, Any], how: str) -> ClipInfo:
@@ -321,54 +353,113 @@ class ClipRequests:
                             voice_type=request.voice_type,
                             npc_plugin=request.npc_plugin if kind == NPCS else "", npc_local_id=request.npc_local_id if kind == NPCS else "")
         if request.why == REFRESH:
-            wav, clip = converted[0]
-            if has_clip and (int(clip.get("size", 0) or 0), str(clip.get("source", ""))) == (current.size, current.source):
-                return 0
-            new = info_for(clip, current.how)
-            self.__store.set_clip(kind, key, wav, new)
-            logging.info(f"Voice clips: the game line for {current.name or key} changed (a voice mod?), so its clip was copied again")
-            return 1
+            return self.__refresh_files(kind, key, converted, info_for)
         if request.why == MORE:
-            self.__add_lines_to_hear(kind, key, converted, lambda clip: info_for(clip, AUTOMATIC))
+            self.__store.drop_other_lines(kind, key)
+            self.__add_lines(kind, key, converted, lambda clip: info_for(clip, AUTOMATIC), chosen=False)
             return 0
+        if request.why == TOP_UP:
+            if not has_clip:
+                return 0
+            self.__add_lines(kind, key, converted, lambda clip: info_for(clip, AUTOMATIC), chosen=True)
+            return 1
         first, rest = converted[0], converted[1:]
         changed = 0
+        chosen = True # a new voice: every line is chosen, and each service takes what it can
         if not has_clip or request.why in (OWN, IMPORT, REPLACE):
             how = OWN_LINES if kind == NPCS and request.why == FIRST else AUTOMATIC
-            self.__store.set_clip(kind, key, first[0], info_for(first[1], how))
+            new = info_for(first[1], how)
+            if request.why == REPLACE:
+                new.hand_picked = current.hand_picked
+                chosen = False # the voice keeps the clips chosen below its gone line
+            if request.why in (OWN, IMPORT):
+                for path, info in self.__store.candidates(kind, key): # the lines chosen before make way for the new ones
+                    if info.order:
+                        info.order = 0
+                        self.__store.set_candidate_info(path, info)
+            self.__store.set_clip(kind, key, first[0], new)
             self.__refreshed.add(f"{kind}/{key}")
             logging.info(f"Voice clips: {request.npc_name if kind == NPCS else request.voice_type} now speaks with the game line {first[1].get('path')}")
             changed = 1
         elif self.__store.candidates(kind, key):
-            return 0 # a check for another NPC of this voice type: there are already lines to hear
+            return 0 # a check for another NPC of this voice type: the voice already has its lines
         else:
-            rest = converted
-        self.__add_lines_to_hear(kind, key, rest, lambda clip: info_for(clip, AUTOMATIC))
+            rest = converted # a voice made with one line (Prepare all voices): the others join it
+            chosen = not current.hand_picked
+            changed = 1 if chosen and rest else 0
+        self.__add_lines(kind, key, rest, lambda clip: info_for(clip, AUTOMATIC), chosen=chosen)
         return changed
 
-    def __add_lines_to_hear(self, kind: str, key: str, lines: list[tuple[str, dict[str, Any]]], info_for: Any) -> None:
-        """Each game line once. The game splits a long line into numbered files (_1, _2, ...) that are one line to Mantella, so another file of
-        the clip's own line, or of a line already in the list, is left out: picking it would turn down the line the clip then uses"""
-        taken = {self.__store.info(kind, key).line} | {info.line for _, info in self.__store.candidates(kind, key)}
+    def __add_lines(self, kind: str, key: str, lines: list[tuple[str, dict[str, Any]]], info_for: Any, chosen: bool) -> None:
+        """Each game line once, chosen at the end of the voice's clips or not. The game splits a long line into numbered files
+        (_1, _2, ...) that are one line to Mantella, so another file of the clip's own line, or of a line the voice has, is left out"""
+        clip_line = self.__store.info(kind, key).line
+        held = {info.line: (path, info) for path, info in self.__store.candidates(kind, key)}
+        order = max([info.order for _, info in held.values()] + [0])
+        added: set[str] = set()
         for wav, clip in lines:
             line = line_id(str(clip.get("path", "")))
-            if line in taken:
+            if line == clip_line or line in added:
                 continue
-            taken.add(line)
-            self.__store.add_candidate(kind, key, wav, info_for(clip))
+            added.add(line)
+            if line in held:
+                if chosen and held[line][1].order <= 0 and order < MOST_CHOSEN - 1: # someone's voices file chose a line this voice has
+                    order += 1
+                    held[line][1].order = order
+                    self.__store.set_candidate_info(*held[line])
+                continue
+            info = info_for(clip)
+            if chosen and order < MOST_CHOSEN - 1:
+                order += 1
+                info.order = order
+            self.__store.add_candidate(kind, key, wav, info)
+
+    def __refresh_files(self, kind: str, key: str, converted: list[tuple[str, dict[str, Any]]], info_for: Any) -> int:
+        """The voice's lines copied again: a file that changed (a voice replacer installed since) takes the place of the old one"""
+        current = self.__store.info(kind, key)
+        lines = {info.path.lower(): (path, info) for path, info in self.__store.candidates(kind, key)}
+        changed = 0
+        for wav, clip in converted:
+            game_path = str(clip.get("path", "")).lower()
+            new_file = (int(clip.get("size", 0) or 0), str(clip.get("source", "")))
+            if game_path == current.path.lower():
+                if self.__store.clip(kind, key) is not None and new_file == (current.size, current.source):
+                    continue
+                new = info_for(clip, current.how)
+                new.hand_picked = current.hand_picked
+                self.__store.set_clip(kind, key, wav, new)
+                changed = 1
+            elif game_path in lines:
+                path, old = lines[game_path]
+                if new_file == (old.size, old.source):
+                    continue
+                new = info_for(clip, old.how)
+                new.order, new.turned_down = old.order, []
+                self.__store.add_candidate(kind, key, wav, new)
+                changed = 1 if old.order else changed
+            else:
+                continue
+            logging.info(f"Voice clips: the game line {clip.get('path')} for {current.name or key} changed (a voice mod?), so it was copied again")
+        return changed
 
     @staticmethod
     def __for_npc_only(request: ClipRequest) -> bool:
         """A request for one NPC's own clip, where voice type lines stand in when the NPC has no lines of their own"""
-        return request.why == OWN or (request.why in (REPLACE, MORE) and bool(request.npc_plugin and request.npc_local_id))
+        return request.why == OWN or (request.why in (REPLACE, MORE, TOP_UP) and bool(request.npc_plugin and request.npc_local_id))
 
     def __line_gone(self, request: ClipRequest, path: str) -> None:
-        """A clip's game line no longer exists: pick another"""
+        """A voice's game line no longer exists: one of its other lines goes; for the clip itself, another line is picked"""
         if request.why != REFRESH:
             return
-        logging.info(f"Voice clips: the game line {path} is gone, so another one is picked")
         for_npc = bool(request.npc_plugin and request.npc_local_id)
         kind, key = (NPCS, npc_key(request.npc_plugin, request.npc_local_id)) if for_npc else (VOICE_TYPES, voice_key(request.voice_type))
+        if line_id(path) != self.__store.info(kind, key).line:
+            gone = [p for p, info in self.__store.candidates(kind, key) if info.line == line_id(path)]
+            if gone:
+                self.__store.drop_line(kind, key, gone[0])
+                logging.info(f"Voice clips: the game line {path} is gone, so the voice no longer uses it")
+            return
+        logging.info(f"Voice clips: the game line {path} is gone, so another one is picked")
         exclude = list(dict.fromkeys(self.__store.turn_down_all(kind, key) + [line_id(path)]))
         self.__queue(ClipRequest(self.__new_id(), REPLACE, request.voice_type, request.npc_plugin, request.npc_local_id, request.npc_name,
                                  voice_type_lines=True, npc_lines="always" if for_npc else "none", exclude=exclude, keys=[]))
@@ -385,8 +476,9 @@ class ClipRequests:
         info = self.__store.info(kind, key)
         if not info.path or not self.__store.clip(kind, key):
             return
-        self.ask_for_lines(REFRESH, [{"path": info.path, "for": "npc" if kind == NPCS else "voice_type"}], info.voice_type or info.name,
-                           info.npc_plugin, info.npc_local_id, info.name)
+        for_value = "npc" if kind == NPCS else "voice_type"
+        lines = [{"path": line.path, "for": for_value} for _, line in self.__store.voice_lines(kind, key) if line.path]
+        self.ask_for_lines(REFRESH, lines, info.voice_type or info.name, info.npc_plugin, info.npc_local_id, info.name)
 
     def __can_ask(self, key: str) -> bool:
         asked = self.__asked.get(key)

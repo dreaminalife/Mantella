@@ -18,6 +18,8 @@ class SentenceContent:
         self.__sentence_type: SentenceTypeEnum = sentence_type
         self.__actions: list[dict] = [] if actions is None else actions # Each {'identifier': ..., 'arguments': {...}}, arguments only for advanced actions
         self.__is_system_generated_sentence: bool = is_system_generated_sentence
+        # The line as a voice service that takes sounds and directions gets it ([laugh], [say angrily]). None: the same as text
+        self.voice_text: str | None = None
 
     @property
     def speaker(self) -> Character:
@@ -51,7 +53,9 @@ class SentenceContent:
     def is_system_generated_sentence(self) -> bool:
         return self.__is_system_generated_sentence
     
-    def append_other_sentence_content(self, text_to_append: str, actions_to_append: list[dict]):
+    def append_other_sentence_content(self, text_to_append: str, actions_to_append: list[dict], voice_text_to_append: str | None = None):
+        if self.voice_text is not None or voice_text_to_append is not None:
+            self.voice_text = (self.voice_text if self.voice_text is not None else self.__text) + " " + (voice_text_to_append if voice_text_to_append is not None else text_to_append)
         self.__text += " " + text_to_append
         for action in actions_to_append:
             if not action in self.__actions:

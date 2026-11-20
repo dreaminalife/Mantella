@@ -30,12 +30,13 @@ CLIP_MODES = {
 }
 
 FIELDS = ["name", "style", "url", "key_file", "model", "male_voice", "female_voice", "clip_field", "clip_mode",
-          "languages", "extra_fields", "runs_online"]
+          "languages", "extra_fields", "runs_online", "volume"]
+MIN_VOLUME, MAX_VOLUME = 10, 300
 
 
 def empty_setup() -> dict[str, Any]:
     return {"name": "", "style": OPENAI, "url": "http://127.0.0.1:8080", "key_file": "", "model": "", "male_voice": "", "female_voice": "",
-            "clip_field": "", "clip_mode": CLIP_BASE64, "languages": [], "extra_fields": {}, "runs_online": False}
+            "clip_field": "", "clip_mode": CLIP_BASE64, "languages": [], "extra_fields": {}, "runs_online": False, "volume": 100}
 
 
 def normalized(setup: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +58,10 @@ def normalized(setup: dict[str, Any]) -> dict[str, Any]:
         text = result["extra_fields"].strip()
         result["extra_fields"] = json.loads(text) if text else {}
     result["runs_online"] = bool(result["runs_online"])
+    try:
+        result["volume"] = int(min(MAX_VOLUME, max(MIN_VOLUME, round(float(result["volume"])))))
+    except (TypeError, ValueError):
+        result["volume"] = 100
     return result
 
 
@@ -83,6 +88,12 @@ def problems(setup: dict[str, Any], other_names: list[str]) -> list[str]:
         found.append("Fill in the name of the box that carries the clip, for example speaker_ref_b64.")
     if style == XTTS and clip_mode == CLIP_BASE64:
         found.append("XTTS-style programs can't take the clip itself: pick the clip's place on this PC or the voice type's name.")
+    try:
+        volume = float(setup.get("volume", 100) if setup.get("volume", 100) not in (None, "") else 100)
+        if not MIN_VOLUME <= volume <= MAX_VOLUME:
+            found.append(f"Volume must be from {MIN_VOLUME}% to {MAX_VOLUME}%.")
+    except (TypeError, ValueError):
+        found.append(f"Volume must be a number from {MIN_VOLUME} to {MAX_VOLUME}.")
     extra = setup.get("extra_fields", {})
     if isinstance(extra, str) and extra.strip():
         try:

@@ -23,11 +23,13 @@ class ConfigValueSelection(ConfigValue[str]):
     def options(self) -> list[str]:
         return self.__options
 
-    def set_options(self, options: list[str], corresponding_enums: list[Enum] | None = None) -> None:
-        """For a list that changes while Mantella runs (the voice services, with the player's own voice setups)"""
+    def set_options(self, options: list[str], corresponding_enums: list[Enum] | None = None, option_labels: dict[str, str] | None = None) -> None:
+        """For a list that changes while Mantella runs (the voice services, with the player's own voice setups; a service's models)"""
         self.__options = options
         if corresponding_enums is not None:
             self.__corresponding_enums = corresponding_enums
+        if option_labels is not None:
+            self.__option_labels = option_labels
 
     @property
     def option_descriptions(self) -> dict[str, str]:

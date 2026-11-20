@@ -83,6 +83,12 @@ class VoicePreparation:
         with self.__lock:
             return bool(self.__services)
 
+    def services_in_use(self) -> list[Any]:
+        """What each service that copies voices and has spoken a line in game this run is (its VoiceServiceInfo). A service only
+        heard with a button on the page doesn't count"""
+        with self.__lock:
+            return [s.info for s in self.__services if getattr(s, "info", None) is not None and getattr(s, "spoke_in_game", False)]
+
     def __makers(self) -> list[Any]:
         with self.__lock:
             return [s for s in self.__services if not s.info.runs_online]

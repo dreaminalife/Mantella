@@ -30,8 +30,10 @@ from src.conversation.ingame_event_tidy import tidy_events
 from src.character_manager import Character
 from src.http.communication_constants import communication_constants as comm_consts
 from src.stt import Transcriber
+from src.stt_backends import names as stt_names
 import src.utils as utils
 from src.config.config_loader import ConfigLoader
+from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.prompt_profile_manager import PromptSectionError
 
 class conversation_continue_type(Enum):
@@ -59,7 +61,9 @@ class Conversation:
         self.__awaiting_action_answer: bool = False # An action the NPC picked answers back (Advanced Actions): the game sends its answer next
         self.__action_asker: Character | None = None # The NPC whose action answers back
         self.__is_ending: bool = False
+        self.__is_stopping: bool = False # The game ended the conversation, from the thread of another request. See stop_now
         self.__stt: Transcriber | None = stt
+        self.__mic_names: stt_names.MicNames | None = None # built ahead of time, whenever the game sends new details (see __build_mic_names)
         self.__events_refresh_time: float = context_for_conversation.config.events_refresh_time  # Time in seconds before events are considered stale
         self.__transcribed_text: str | None = None
         if not self.__context.npcs_in_conversation.contains_player_character(): # TODO: fix this being set to a radiant conversation because of NPCs in conversation not yet being added
@@ -104,6 +108,11 @@ class Conversation:
         return self.__has_already_ended
     
     @property
+    def is_stopping(self) -> bool:
+        """The game ended the conversation (see stop_now). It ends here once the request still running is done"""
+        return self.__is_stopping
+
+    @property
     def ended_unanswered(self) -> bool:
         """Just saying something: the player said something to the room, nobody answered, and the conversation ended"""
         return self.__ended_unanswered
@@ -123,6 +132,13 @@ class Conversation:
     @property
     def stt(self) -> Transcriber | None:
         return self.__stt
+
+    def set_mic_setup(self, stt: Transcriber | None, mic_input: bool, mic_ptt: bool) -> None:
+        """The microphone was switched on or off, or between push-to-talk and listening on its own, during the conversation.
+        The player's next turn uses the new setup"""
+        self.__stt = stt
+        self.__mic_input = mic_input and stt is not None
+        self.__mic_ptt = mic_ptt
 
     def npc_actions(self) -> list[Action]:
         """The actions the NPCs can use now, by the kind of conversation (Conversation page, Actions section)"""
@@ -406,7 +422,7 @@ class Conversation:
         Returns:
             tuple[str, sentence | None]: Returns a tuple consisting of a reply type and an optional sentence
         """
-        if self.has_already_ended:
+        if self.has_already_ended or self.__is_stopping:
             return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
         if isinstance(self.__conversation_type, radiant) and self.__conversation_type.prompt_unusable:
             self.__has_already_ended = True
@@ -428,8 +444,8 @@ class Conversation:
         # restart mic listening as soon as NPC's first sentence is processed
         # Not while the player is not in the conversation (radiant, or a bystander of an NPC Event): what they say would interrupt a conversation they are not part of
         if self.__mic_input and self.__allow_interruption and not self.__mic_ptt and not self.__stt.is_listening and self.__allow_mic_input and not isinstance(self.__conversation_type, radiant) and self.__context.npcs_in_conversation.contains_player_character():
-            mic_prompt = self.__get_mic_prompt()
-            self.__stt.start_listening(mic_prompt)
+            mic_names = self.__get_mic_names()
+            self.__stt.start_listening(mic_names.hint, mic_names.names)
         
         #Grab the next sentence from the queue. Private thoughts stay in history and are not spoken.
         #A spoken sentence is only added to the history once it is sent to the game: an interruption while waiting below throws it away unspoken
@@ -437,6 +453,8 @@ class Conversation:
         while next_sentence is not None and next_sentence.content.sentence_type == SentenceTypeEnum.THOUGHT:
             self.add_sentence_to_history(next_sentence)
             next_sentence = self.retrieve_sentence_from_queue(add_to_history=False)
+        if self.__is_stopping: # The game ended the conversation while this waited
+            return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
         # The hotkey stopped the wait before the LLM answered
         if next_sentence is None and self.__interrupt_for_player():
             return comm_consts.KEY_REPLYTYPE_PLAYERTALK, None
@@ -461,6 +479,8 @@ class Conversation:
                 logging.debug(f'Waiting {round(self.last_sentence_audio_length, 1)} seconds for last voiceline to play')
             # before immediately sending the next voiceline, give the player the chance to interrupt
             while time.time() - self.last_sentence_start_time < self.last_sentence_audio_length:
+                if self.__is_stopping:
+                    return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
                 if self.__stt and self.__stt.has_player_spoken:
                     self.__cancel_game_master_turn()
                     self.__stop_generation()
@@ -484,10 +504,14 @@ class Conversation:
                 return comm_consts.KEY_REPLYTYPE_NPCTALK, None
             elif isinstance(self.__conversation_type, multi_npc_game_master):
                 # The next reply is generated while the last one is played, so it is usually ready by now
-                has_player_interrupted = lambda: bool(self.__stt and self.__stt.has_player_spoken) or self.__is_interrupt_requested
+                has_player_interrupted = lambda: bool(self.__stt and self.__stt.has_player_spoken) or self.__is_interrupt_requested or self.__is_stopping
                 has_next_reply = self.__game_master_turns.play_next_reply(self.__context.config.llm_response_timeout, has_player_interrupted)
+                if self.__is_stopping:
+                    return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
+                if self.__interrupt_for_player(): # The interrupt hotkey: the NPCs stop now
+                    return comm_consts.KEY_REPLYTYPE_PLAYERTALK, None
                 if has_player_interrupted():
-                    # The next continue request handles the interruption
+                    # The next continue request handles the interruption (the player spoke into the mic)
                     return comm_consts.KEY_REPLYTYPE_NPCTALK, None
                 if has_next_reply:
                     return comm_consts.KEY_REPLYTYPE_NPCTALK, None
@@ -612,12 +636,14 @@ class Conversation:
             if self.__mic_input and len(player_text) == 0:
                 player_text = None
                 if not self.__stt.is_listening and self.__allow_mic_input:
-                    self.__stt.start_listening(self.__get_mic_prompt())
+                    mic_names = self.__get_mic_names()
+                    self.__stt.start_listening(mic_names.hint, mic_names.names)
                 
                 # Start tracking how long it has taken to receive a player response
                 input_wait_start_time = time.time()
                 with self.__speech_wait_lock:
-                    self.__is_waiting_for_speech = not self.__is_event_picked # An event picked just before: no wait
+                    # An event picked just before, or the conversation ended: no wait
+                    self.__is_waiting_for_speech = not self.__is_event_picked and not self.__is_stopping
                     if self.__is_waiting_for_speech:
                         self.__stt.reset_cancel_wait()
                 try:
@@ -688,10 +714,29 @@ class Conversation:
 
         return player_text, events_need_updating, player_voiceline
 
-    def __get_mic_prompt(self):
-        mic_prompt = f"This is a conversation with {self.__context.get_character_names_as_text(False)} in {self.__context.location}."
-        #logging.log(23, f'Context for mic transcription: {mic_prompt}')
-        return mic_prompt
+    def __get_mic_names(self) -> stt_names.MicNames:
+        """The names sent with the player's recording. Built when the game sent its details; the microphone starts before this turn's details
+        arrive, so these are the last turn's"""
+        if self.__mic_names is None:
+            self.__build_mic_names()
+        return self.__mic_names or stt_names.MicNames()
+
+    def __build_mic_names(self) -> None:
+        """Fills the Speech-to-Text Names prompt: the NPCs in the conversation, the other NPCs nearby, the location and the player's name"""
+        if not self.__mic_input or self.__stt is None:
+            return
+        try:
+            characters = self.__context.npcs_in_conversation
+            self.__mic_names = stt_names.build(
+                getattr(self.__context.config, "stt_names_prompt", PromptDefinitions.STT_NAMES_PROMPT),
+                self.__context.get_characters_excluding_player().get_all_names(),
+                characters.get_nearby_npc_names(),
+                self.__context.location or "",
+                characters.get_player_name() or "",
+                first_names=bool(getattr(self.__context.config, "stt_first_names", False)),
+            )
+        except Exception as e:
+            logging.warning(f"Could not make the speech-to-text names: {e}")
     
     @utils.time_it
     def __get_player_voiceline(self, player_character: Character | None, player_text: str) -> Sentence | None:
@@ -724,6 +769,7 @@ class Conversation:
         old_player_equipment = self.__context.get_player_equipment_snapshot()
 
         self.__context.update_context(location, time, custom_ingame_events, weather, custom_context_values)
+        self.__build_mic_names() # the game sends who is nearby and the location just before this
         if self.__announce_private:
             self.__announce_private = False
             self.__add_private_event()
@@ -842,8 +888,8 @@ class Conversation:
         Returns:
             sentence | None: The next sentence from the queue or None if the queue is empty
         """
-        # The interrupt hotkey stops the wait, e.g. while the LLM has not answered yet
-        is_interrupted = lambda: self.__is_interrupt_requested and not self.__is_ending
+        # The interrupt hotkey stops the wait, e.g. while the LLM has not answered yet. So does the end of the conversation
+        is_interrupted = lambda: (self.__is_interrupt_requested and not self.__is_ending) or self.__is_stopping
         next_sentence: Sentence | None = self.__sentences.get_next_sentence(is_interrupted) #This is a blocking call. Execution will wait here until queue is filled again
         if next_sentence and add_to_history:
             self.add_sentence_to_history(next_sentence)
@@ -918,11 +964,35 @@ class Conversation:
         return True
 
     def request_interrupt(self):
-        """Interrupt hotkey. The NPCs stop and the player gets the turn, like when the player interrupts with the mic.
-        Called while a continue request may still be running, which picks the interruption up.
-        During an NPC Event it is also how a bystander player steps in: the game sends them with their input, after the interruption"""
+        """Stops the NPCs when an event is picked on the Conversation Wheel, or cancelled.
+        Called while a continue request may still be running, which picks the interruption up"""
         if self.__context.npcs_in_conversation.contains_player_character() or self.__context.npc_event:
             self.__is_interrupt_requested = True
+
+    def interrupt_now(self) -> bool:
+        """Interrupt hotkey. The NPCs stop and the player gets the turn, like when the player interrupts with the mic.
+        Called while a request may still be running: the game is told it is the player's turn right away, without waiting for it.
+        That request picks the interruption up and stops the NPCs.
+        During an NPC Event it is also how a bystander player steps in: the game sends them with their input, after the interruption
+
+        Returns:
+            bool: False if there is nothing to interrupt: the player isn't part of it, or the goodbye that ends the conversation is being said
+        """
+        if self.__is_ending or self.__has_already_ended or self.__is_stopping:
+            return False
+        if not (self.__context.npcs_in_conversation.contains_player_character() or self.__context.npc_event):
+            return False
+        self.__is_interrupt_requested = True
+        self.__is_player_interrupting = True # Also when the request still running never gets to stop the NPCs (it waits for a Game Master turn)
+        return True
+
+    def stop_now(self):
+        """The game ended the conversation. Called while a request may still be running: whatever it waits for (the AI model, the
+        player's voice, a Game Master turn) stops waiting, so it ends right away. The conversation itself ends with end(), after it"""
+        with self.__speech_wait_lock:
+            self.__is_stopping = True
+            if self.__is_waiting_for_speech and self.__stt:
+                self.__stt.cancel_wait()
 
     def __interrupt_for_player(self) -> bool:
         """Stops the NPCs' response if the interrupt hotkey was pressed

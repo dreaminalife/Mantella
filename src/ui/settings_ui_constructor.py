@@ -16,16 +16,28 @@ from src.config.types.config_value_selection import ConfigValueSelection
 from src.config.types.config_value_multi_selection import ConfigValueMultiSelection
 from src.config.types.config_value_string import ConfigValueString
 from src.config.config_value_constraint import ConfigValueConstraintResult
-from src.config.types.config_value import ConfigValue, ConfigValueTag
+from src.config.types.config_value import ConfigValue, ConfigValueTag, condition_holds, shown_when_conditions
 from src.config.types.config_value_group import ConfigValueGroup
 from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_visitor import ConfigValueVisitor
 from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, EXTRA_ROUNDS, REPLIES_IN_BETWEEN, SHARED, TALK_KINDS, WHO_MUST_SPEAK,
                                                              greyed_choices, talk_key, who_still_speaks_now)
-from src.config.definitions.tts_definitions import TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP, TTSDefinitions
-from src.ui.voice_ui import render_voice_setups_editor, render_voice_test, render_word_lists_editor
-from src.ui.voice_clips_ui import render_pocket_tts_panel, render_voice_clips_editor
-from src.ui.online_voices_ui import render_online_service_panel
+from src.config.definitions.tts_definitions import (HEAR_IT_PART, NPC_VOICES_PART, ONLINE_SERVICE_GROUPS, PIPER_PART, POCKET_TTS_GROUP,
+                                                    SERVICE_PARTS, SERVICE_VOLUMES, SPEED_PART, VOICE_EFFECTS_GROUP, VOICE_SETUPS_PART,
+                                                    WORD_LISTS_GROUP, TTSDefinitions, every_npc_part, service_part_id, sound_part_id)
+from src.tts.model_catalog import ServiceModel, ServiceModels
+from src.tts.registry import voice_services
+from src.tts.voice_style import EXTRA_REQUEST_LABEL, EXTRA_REQUESTS, ServiceStyle
+from src.ui.voice_ui import QUICKEST_WAY, render_voice_setups_editor, render_voice_test, render_word_lists_editor
+from src.ui.voice_clips_ui import pocket_tts_language_note, pocket_tts_signed_in, render_pocket_tts_panel, render_voice_clips_editor
+from src.ui.online_voices_ui import (HOW_MODELS_WORK, SERVICES as ONLINE_SERVICES, ModelListUI, ModelSettingsUI, has_key,
+                                     render_online_service_panel)
+from src.ui.voice_effects_ui import render_voice_effects_editor
+from src.config.definitions.stt_definitions import (GREYED_UNLESS_ON, SERVICE_DESCRIPTION as STT_SERVICE_DESCRIPTION, SERVICE_PART as STT_SERVICE_PART,
+                                                    TALKING_DESCRIPTION as STT_TALKING_DESCRIPTION, TALKING_PART as STT_TALKING_PART)
+from src.stt_backends.model_lists import speech_models
+from src.stt_backends.presets import ONLINE_PRESETS, takes_name_list
+from src.ui.stt_ui import render_key_box, render_stt_test
 
 # Global reference to the game manager for character data reload functionality
 _game_manager_ref = None
@@ -34,6 +46,26 @@ def set_game_manager_reference(game_manager):
     """Set the global game manager reference for UI access"""
     global _game_manager_ref
     _game_manager_ref = game_manager
+
+def part_of_service(value: str | None) -> str:
+    """The choice under Settings for that shows this TTS Service's settings: Your voice setups for a setup, Piper for one that's gone"""
+    info = voice_services.find(value)
+    if info is not None and info.is_setup:
+        return VOICE_SETUPS_PART
+    return info.name if info is not None and info.name in SERVICE_PARTS else PIPER_PART
+
+def two_by_two(settings: list[ConfigValue]) -> list[list[ConfigValue]]:
+    """Settings in rows of two, kept in their order: tick boxes side by side, the others side by side, and a tick box and another
+    setting left over share a row. E.g. Similarity, Audio tags, Volume -> [Similarity, Volume], [Audio tags]"""
+    ticks = [cf for cf in settings if isinstance(cf, ConfigValueBool)]
+    others = [cf for cf in settings if not isinstance(cf, ConfigValueBool)]
+    rows = [group[i:i + 2] for group in (ticks, others) for i in range(0, len(group), 2)]
+    alone = [row for row in rows if len(row) == 1]
+    if len(alone) == 2:
+        rows.remove(alone[1])
+        alone[0].append(alone[1][0])
+        alone[0].sort(key=settings.index)
+    return sorted(rows, key=lambda row: settings.index(row[0]))
 
 class SettingUIComponents(NamedTuple):
     input_ui: Any
@@ -67,6 +99,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__config_loader = config_loader
         self.__prompt_profile_manager: PromptProfileManager | None = None
         self.__picked_option_description_ui: dict[str, gr.Markdown] = {} # By identifier: the line under a setting's choices
+        self.__inside_setting: dict[str, Callable[[], None]] = {} # By identifier: draws more inside that setting's box, under its controls
+        self.__second_in_row = False # The setting drawn now is the right one of two side by side: its help opens to the left
 
     @property
     def config_value_to_ui_element(self) -> dict[ConfigValue, gr.Column]:
@@ -384,7 +418,9 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 self.__embed_picked_option_description(setting.config_value, input_ui)
             if setting.config_value.identifier == "save_summary_now":
                 self.__embed_save_summary_now_toggles()
-                
+            if setting.config_value.identifier in self.__inside_setting:
+                self.__inside_setting.pop(setting.config_value.identifier)()
+
         error_message = self.__construct_initial_error_message(setting.config_value)
         
         self.__setup_event_handlers(
@@ -485,7 +521,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
     def __create_single_setting(self, setting: SettingConfig):
         """Creates a single setting taking up the full row"""
         with gr.Column(variant="panel", scale=1):
-            components = self.__create_setting_components(setting)
+            components = self.__create_setting_components(setting, self.__second_in_row)
             self.__identifier_to_config_value[setting.config_value.identifier] = setting.config_value
             self.__config_value_to_ui_element[setting.config_value] = components.input_ui
 
@@ -1178,38 +1214,185 @@ class SettingsUIConstructor(ConfigValueVisitor):
         for trigger in (situation_ui.change, input_ui.change):
             trigger(refresh, inputs=[input_ui, situation_ui], outputs=[preview_ui], show_progress="hidden")
 
-    def __render_voice_group(self, config_value: ConfigValueGroup) -> bool:
-        """The voice parts of the Text-to-Speech page, which keep their own files instead of settings. False for any other group"""
-        if config_value.name not in (TRY_A_VOICE_GROUP, VOICE_SETUPS_GROUP, WORD_LISTS_GROUP, VOICE_CLIPS_GROUP, POCKET_TTS_GROUP, ELEVENLABS_GROUP, INWORLD_GROUP) or self.__config_loader is None:
+    def __render_tts_page(self, config_value: ConfigValueGroup) -> bool:
+        """The Text-to-Speech page (see tts_definitions for its order): its settings, and the voice parts that keep their own files next
+        to config.ini. A list (Settings for) shows one service's part at a time, and follows the TTS Service: Global settings (with Your
+        key) and the Model, or its program settings. Under it, folded: Hear it and Customization per voice type and per NPC. False for any other group"""
+        if config_value.identifier != "TTS" or self.__config_loader is None:
             return False
         config_loader = self.__config_loader
         chat_manager_getter = lambda: getattr(_game_manager_ref, "chat_manager", None) if _game_manager_ref is not None else None
-        with gr.Accordion(label=config_value.name, open=False):
-            if config_value.description:
-                gr.Markdown(config_value.description.replace("\n", "<br>"))
-            if config_value.name == TRY_A_VOICE_GROUP:
-                render_voice_test(config_loader, chat_manager_getter)
-            elif config_value.name == VOICE_SETUPS_GROUP:
-                dropdowns = []
-                for identifier in ("tts_service", "tts_backup_service"):
-                    selection = self.__identifier_to_config_value.get(identifier)
-                    component = self.__config_value_to_ui_element.get(selection) if selection is not None else None
-                    if isinstance(selection, ConfigValueSelection) and component is not None:
-                        dropdowns.append((selection, component))
-                render_voice_setups_editor(config_loader, dropdowns)
-            elif config_value.name == VOICE_CLIPS_GROUP:
-                render_voice_clips_editor(config_loader, chat_manager_getter)
-            elif config_value.name == POCKET_TTS_GROUP:
-                render_pocket_tts_panel(config_loader)
-            elif config_value.name in (ELEVENLABS_GROUP, INWORLD_GROUP):
-                render_online_service_panel(config_loader, config_value.name)
-            else:
-                render_word_lists_editor(config_loader, chat_manager_getter)
+        if config_value.description:
+            gr.Markdown(config_value.description)
+        parts: dict[str, list[ConfigValue]] = {} # e.g. XTTS: its settings, in the order they were added
+        main_settings: list[ConfigValue] = []
+        for cf in config_value.value:
+            if not cf.is_hidden:
+                if cf.shown_in:
+                    parts.setdefault(cf.shown_in, []).append(cf)
+                else:
+                    main_settings.append(cf)
+
+        with gr.Accordion(label=SPEED_PART, open=False):
+            gr.Markdown(TTSDefinitions.SPEED_DESCRIPTION)
+            self.__render_settings(parts.get(SPEED_PART, []))
+        # TTS Service and the Model it speaks with (only for a service with models) side by side, then Backup Voice Service on its own row
+        service_cf = next((cf for cf in main_settings if cf.identifier == "tts_service"), None)
+        backup_cf = next((cf for cf in main_settings if cf.identifier == "tts_backup_service"), None)
+        speaking_part = part_of_service(str(service_cf.value)) if service_cf is not None else ""
+        used_models: dict[str, tuple[Any, gr.Markdown, gr.Column]] = {} # by service: its Model, the note under it, and its column
+        with gr.Row(equal_height=True):
+            if service_cf is not None:
+                self.__render_settings([service_cf])
+            for part in SERVICE_PARTS:
+                models = ServiceModels.of(part)
+                model_cf = next((cf for cf in parts.get(part, []) if models is not None and cf.identifier == models.setting), None)
+                if model_cf is None:
+                    continue
+                drawn: dict[str, Any] = {}
+
+                def under_model(part=part, models=models, drawn=drawn) -> None: # inside the Model's box
+                    note = ModelSettingsUI.note(part, models.picked(config_loader))
+                    drawn["note"] = gr.Markdown(note, visible=bool(note))
+
+                with gr.Column(visible=part == speaking_part, scale=1, min_width=160) as column:
+                    self.__inside_setting[model_cf.identifier] = under_model
+                    self.__second_in_row = True
+                    self.__render_settings([model_cf])
+                    self.__second_in_row = False
+                used_models[part] = (self.__config_value_to_ui_element.get(model_cf), drawn["note"], column)
+        if backup_cf is not None:
+            self.__render_settings([backup_cf])
+        how_models: list[gr.Accordion] = [] # under Backup Voice Service, for the service the TTS Service picks
+        for part in used_models:
+            with gr.Accordion("How model settings work", open=False, visible=part == speaking_part, elem_classes="help-fold") as how:
+                gr.Markdown(HOW_MODELS_WORK.format(name=part))
+            how_models.append(how)
+        self.__render_settings([cf for cf in main_settings if cf is not service_cf and cf is not backup_cf])
+
+        dropdowns = [] # the TTS Service and Backup Voice Service lists, which list the voice setups too
+        for identifier in ("tts_service", "tts_backup_service"):
+            selection = self.__identifier_to_config_value.get(identifier)
+            component = self.__config_value_to_ui_element.get(selection) if selection is not None else None
+            if isinstance(selection, ConfigValueSelection) and component is not None:
+                dropdowns.append((selection, component))
+        service_ui = dropdowns[0][1] if dropdowns and dropdowns[0][0].identifier == "tts_service" else None
+        tts_service = str(service_ui.value) if service_ui is not None else config_loader.tts_service_name
+        picked = part_of_service(tts_service)
+
+        notes = {POCKET_TTS_GROUP: pocket_tts_language_note(config_loader), VOICE_SETUPS_PART: QUICKEST_WAY} # in the box of the Settings for list
+        notes = {part: note for part, note in notes.items() if note}
+        intros: list[gr.Column] = []
+        edit_models: dict[str, gr.Dropdown] = {} # by service: the model whose settings show, next to Settings for
+        model_lists: dict[str, ModelListUI] = {} # by service: Add, Remove at the top right of its Model
+        with gr.Group(elem_classes="tts-service-picker"):
+            with gr.Row():
+                picker_ui = gr.Dropdown(choices=list(SERVICE_PARTS), value=picked, label="Settings for", allow_custom_value=False, scale=1)
+                for part in used_models:
+                    models = ServiceModels.of(part)
+                    shown = models.picked(config_loader) # opens on the model the service speaks with
+                    ServiceStyle(config_loader, part).show_model(shown.id)
+                    choices = models.choices(shown.id, config_loader)
+                    if all(value != shown.id for _, value in choices): # a model typed in
+                        choices.append((shown.id, shown.id))
+                    edit_models[part] = gr.Dropdown(choices=choices, value=shown.id, label="Model", allow_custom_value=True, render=False)
+                    model_lists[part] = ModelListUI(config_loader, part, part == picked, edit_models[part])
+            for part, note in notes.items():
+                with gr.Column(visible=part == picked, elem_classes="tts-service-intro") as intro:
+                    gr.Markdown(note)
+                intros.append(intro)
+
+        columns: list[gr.Column] = []
+        edit_ui = None # Setup to edit, under Your voice setups
+        shown_model_ui = gr.Textbox(value="", visible=False) # changes when a Model is picked, so the voice under Customization per voice type and per NPC redraws
+        model_settings_uis: list[ModelSettingsUI] = []
+        for part in SERVICE_PARTS:
+            module = ONLINE_SERVICES.get(part, (None, None))[0]
+            sign_in = getattr(module, "WORKSPACE_SETTING", None) # Qwen's Workspace ID goes with the key
+            settings = parts.get(part, [])
+            with gr.Column(visible=part == picked, elem_id=service_part_id(part), elem_classes="tts-service-part") as column:
+                if part == VOICE_SETUPS_PART:
+                    edit_ui = render_voice_setups_editor(config_loader, dropdowns, selected=tts_service)
+                # Your key (Turn on voice cloning for Pocket TTS), at the top of Global settings for <service>, which is open until it's saved
+                key_panel, key_missing = None, False
+                if part == POCKET_TTS_GROUP:
+                    key_panel, key_missing = (lambda fold: render_pocket_tts_panel(config_loader)), not pocket_tts_signed_in()
+                elif part in ONLINE_SERVICE_GROUPS:
+                    key_settings = [cf for cf in settings if cf.identifier == sign_in]
+                    key_panel = lambda fold, part=part, key_settings=key_settings: render_online_service_panel(
+                        config_loader, part, lambda: self.__render_settings(key_settings), fold)
+                    key_missing = not has_key(part)
+                if part in SERVICE_VOLUMES: # Global settings for <service>, then the Model
+                    self.__render_every_npc(config_loader, part, [cf for cf in settings if cf.identifier != sign_in], key_panel, key_missing,
+                                            shown_model_ui, model_settings_uis, used_models.get(part), edit_models.get(part))
+                    if part in model_lists:
+                        model_lists[part].wire(next(ui for ui in model_settings_uis if ui.name == part))
+                else:
+                    self.__render_settings(settings) # e.g. XTTS's folder and server
+            columns.append(column)
+
+        def shown_service(part: str, setup: str | None) -> str:
+            """The service whose part is shown: Hear it and Customization per voice type and per NPC use it. Under Your voice setups, the saved setup being edited"""
+            if part != VOICE_SETUPS_PART:
+                return part
+            info = voice_services.find(setup)
+            return info.name if info is not None and info.is_setup else ""
+
+        def clones(service: str) -> bool:
+            info = voice_services.find(service)
+            return info is not None and info.uses_clips
+
+        def no_cloning_note(service: str) -> str:
+            if not service:
+                return "Save a setup above to change the voices it clones."
+            return TTSDefinitions.NO_CLONING_NOTE.format(name=service)
+
+        first_shown = shown_service(picked, edit_ui.value if edit_ui is not None else None)
+        shown_service_ui = gr.Textbox(value=first_shown, visible=False) # the service Hear it and Customization per voice type and per NPC use
+
+        # a voice setup has its own Hear it, with the boxes as they are now
+        with gr.Accordion(label=HEAR_IT_PART, open=False, visible=picked != VOICE_SETUPS_PART) as hear_part:
+            render_voice_test(config_loader, chat_manager_getter, shown_service_ui)
+
+        with gr.Accordion(label=NPC_VOICES_PART, open=False):
+            no_cloning_ui = gr.Markdown(no_cloning_note(first_shown), visible=not clones(first_shown))
+            with gr.Column(visible=clones(first_shown), elem_id=service_part_id(NPC_VOICES_PART)) as clips_part:
+                gr.Markdown(TTSDefinitions.VOICE_CLIPS_DESCRIPTION)
+                # redraws when another service is shown, or another model picked
+                render_voice_clips_editor(config_loader, chat_manager_getter, shown_service_ui, shown_model_ui)
+
+        with gr.Accordion(label=VOICE_EFFECTS_GROUP, open=False):
+            gr.Markdown(TTSDefinitions.VOICE_EFFECTS_DESCRIPTION)
+            render_voice_effects_editor(config_loader, chat_manager_getter)
+        with gr.Accordion(label=WORD_LISTS_GROUP, open=False):
+            gr.Markdown(TTSDefinitions.WORD_LISTS_DESCRIPTION)
+            render_word_lists_editor(config_loader, chat_manager_getter)
+
+        def on_pick(part: str, setup: str | None):
+            return [*(gr.update(visible=p == part) for p in (*notes, *SERVICE_PARTS, *model_lists)),
+                    gr.update(visible=part != VOICE_SETUPS_PART), shown_service(part, setup)]
+
+        def on_shown(service: str):
+            return gr.update(value=no_cloning_note(service), visible=not clones(service)), gr.update(visible=clones(service))
+
+        setup_inputs = [edit_ui] if edit_ui is not None else []
+        picker_ui.change(lambda part, *setup: on_pick(part, setup[0] if setup else None), inputs=[picker_ui, *setup_inputs],
+                         outputs=[*intros, *columns, *(tools.column for tools in model_lists.values()), hear_part,
+                                  shown_service_ui], show_progress="hidden", show_api=False)
+        if edit_ui is not None: # another setup picked, saved or deleted under Your voice setups
+            edit_ui.change(lambda part, setup: shown_service(part, setup) if part == VOICE_SETUPS_PART else gr.update(), inputs=[picker_ui, edit_ui],
+                           outputs=[shown_service_ui], show_progress="hidden", show_api=False)
+        shown_service_ui.change(on_shown, inputs=[shown_service_ui], outputs=[no_cloning_ui, clips_part], show_progress="hidden", show_api=False)
+        if service_ui is not None and hasattr(service_ui, "_id"): # a new TTS Service shows its settings
+            service_ui.change(part_of_service, inputs=[service_ui], outputs=[picker_ui], show_progress="hidden", show_api=False)
+            # and the Model it speaks with, next to it, and How model settings work for that service
+            service_ui.change(lambda value: [gr.update(visible=part_of_service(value) == p) for p in used_models] * 2, inputs=[service_ui],
+                              outputs=[*(column for _, _, column in used_models.values()), *how_models], show_progress="hidden", show_api=False)
         return True
 
     def visit_ConfigValueGroup(self, config_value: ConfigValueGroup):
         if not config_value.is_hidden:
-            if self.__render_voice_group(config_value):
+            if self.__render_tts_page(config_value) or self.__render_stt_page(config_value):
                 return
             if config_value.name == "Prompt Profiles":
                 self.render_prompt_profile_editor(config_value)
@@ -1270,21 +1453,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 for group_id in list(self.__row_groups.keys()):
                     self.__render_row_group(group_id)
 
-        # Settings that only show while a switch is on (shown_when) are kept in a column of their own, which the switch shows and hides
-        columns_by_switch: dict[str, list[gr.Column]] = {}
-        open_column: gr.Column | None = None
-        shown_when: str | None = None
-        for i, cf in enumerate(regular_settings):
-            if cf.shown_when != shown_when:
-                self.__close_shown_when_column(open_column)
-                open_column, shown_when = None, cf.shown_when
-                if shown_when:
-                    switch = self.__identifier_to_config_value.get(shown_when)
-                    open_column = gr.Column(visible=bool(switch.value) if switch else True)
-                    open_column.__enter__()
-                    columns_by_switch.setdefault(shown_when, []).append(open_column)
-            cf.accept_visitor(self)
-        self.__close_shown_when_column(open_column)
+        columns_by_switch = self.__render_settings_in_columns(regular_settings)
         if config_value.page and self.__pending_shared_setting is not None:
             # A section of a page (e.g. the Conversation page): its last setting stays in it, instead of sharing a row with the next section's first
             self.__create_single_setting(self.__pending_shared_setting)
@@ -1306,23 +1475,187 @@ class SettingsUIConstructor(ConfigValueVisitor):
         if has_advanced_values:
             self.__render_folded_part("Advanced", advanced_settings)
 
+    def __render_settings_in_columns(self, settings: list[ConfigValue]) -> dict[tuple[str, ...], list[gr.Column]]:
+        """Settings drawn in order. Those that only show while a switch is on or a list has a choice picked (shown_when) are kept in a column
+        of their own, which those settings show and hide. Settings in a row with the same conditions share the column, so two can share a row.
+        Returns the columns, for __show_columns_with_their_switch once every setting is drawn"""
+        columns_by_switch: dict[tuple[str, ...], list[gr.Column]] = {}
+        open_column: gr.Column | None = None
+        shown_when: tuple[str, ...] = ()
+        for cf in settings:
+            conditions = shown_when_conditions(cf.shown_when)
+            if conditions != shown_when:
+                self.__close_shown_when_column(open_column)
+                open_column, shown_when = None, conditions
+                if shown_when:
+                    open_column = gr.Column(visible=all(condition_holds(c, self.__current_value(c)) for c in shown_when))
+                    open_column.__enter__()
+                    columns_by_switch.setdefault(shown_when, []).append(open_column)
+            cf.accept_visitor(self)
+            self.__embed_after_setting(cf)
+        self.__close_shown_when_column(open_column)
+        return columns_by_switch
+
+    def __render_stt_page(self, config_value: ConfigValueGroup) -> bool:
+        """The Speech-to-Text page: Talking, then Service, each a fold (open at first) with a line on what it is for. Settings sit side by side.
+        Service ends with the Test button. False for any other group"""
+        if config_value.identifier != "STT" or self.__config_loader is None:
+            return False
+        config_loader = self.__config_loader
+        parts: dict[str, list[ConfigValue]] = {STT_TALKING_PART: [], STT_SERVICE_PART: []}
+        for cf in config_value.value:
+            if not cf.is_hidden:
+                parts.setdefault(cf.shown_in or STT_SERVICE_PART, []).append(cf)
+        columns_by_switch: dict[tuple[str, ...], list[gr.Column]] = {}
+        with gr.Column(elem_classes="stt-page"): # style.css dims the settings greyed out here
+            if config_value.description:
+                gr.Markdown(config_value.description)
+            for part, description in ((STT_TALKING_PART, STT_TALKING_DESCRIPTION), (STT_SERVICE_PART, STT_SERVICE_DESCRIPTION)):
+                with gr.Accordion(label=part, open=True):
+                    gr.Markdown(description)
+                    for conditions, columns in self.__render_settings_in_columns(parts[part]).items():
+                        columns_by_switch.setdefault(conditions, []).extend(columns)
+                    if self.__pending_shared_setting is not None: # a part's last setting stays in it
+                        self.__create_single_setting(self.__pending_shared_setting)
+                        self.__pending_shared_setting = None
+                    if self.__last_row_group is not None: # so does a part's last row
+                        self.__render_row_group(self.__last_row_group)
+                        self.__last_row_group = None
+                    if part == STT_SERVICE_PART:
+                        render_stt_test(config_loader, lambda: getattr(_game_manager_ref, "stt", None) if _game_manager_ref is not None else None)
+            self.__show_columns_with_their_switch(columns_by_switch)
+            self.__grey_out_stt_settings()
+        return True
+
+    def __grey_out_stt_settings(self) -> None:
+        """On the Speech-to-Text page, settings that can't change anything are greyed out (not hidden, so the pairs stay side by side), as soon
+        as the page loads and after each change: PTT Hotkey while Enable PTT is off, Refresh Frequency while Proactive Mode is off, and
+        Catch First Names unless the chosen service takes the names as separate words"""
+        def ui_of(identifier: str) -> Any:
+            component = self.__config_value_to_ui_element.get(self.__setting(identifier))
+            return component if component is not None and hasattr(component, "_id") else None
+
+        root = gr.context.Context.root_block
+        for target, switch in GREYED_UNLESS_ON.items():
+            target_ui, switch_ui = ui_of(target), ui_of(switch)
+            if target_ui is None or switch_ui is None:
+                continue
+            def stt_greying(on):
+                return gr.update(interactive=bool(on))
+            switch_ui.change(stt_greying, switch_ui, target_ui, show_progress="hidden")
+            if root is not None:
+                root.load(stt_greying, switch_ui, target_ui, show_progress="hidden")
+
+        names_ui = ui_of("stt_first_names")
+        lists = [ui_of(identifier) for identifier in ("stt_service", "stt_online_service", "stt_custom_format")]
+        if names_ui is None or any(ui is None for ui in lists):
+            return
+        def stt_names_greying(service, online_service, custom_format):
+            return gr.update(interactive=takes_name_list(service, online_service, custom_format))
+        for list_ui in lists:
+            list_ui.change(stt_names_greying, lists, names_ui, show_progress="hidden")
+        if root is not None:
+            root.load(stt_names_greying, lists, names_ui, show_progress="hidden")
+
+    def __render_every_npc(self, config_loader: ConfigLoader, part: str, settings: list[ConfigValue], key_panel: Callable[[Any], None] | None,
+                           key_missing: bool, shown_model_ui: Any, model_settings_uis: list[ModelSettingsUI], used_model: tuple | None = None,
+                           edit_ui: Any = None) -> None:
+        """A service's Global settings for <service> (folded; open while *key_missing*), with *key_panel* drawing Your key at its top. For
+        an online service, the model's own settings follow (see __render_model_settings)"""
+        models = ServiceModels.of(part)
+        with gr.Column(elem_id=sound_part_id(part)):
+            if models is None or used_model is None or edit_ui is None:
+                with gr.Accordion(every_npc_part(part), open=key_missing) as fold:
+                    if key_panel is not None:
+                        key_panel(fold)
+                    self.__render_settings(settings)
+            else:
+                model_settings_uis.append(self.__render_model_settings(config_loader, part, models, settings, shown_model_ui, used_model,
+                                                                       edit_ui, key_panel, key_missing))
+
+    def __render_model_settings(self, config_loader: ConfigLoader, part: str, models: ServiceModels, settings: list[ConfigValue],
+                                shown_model_ui: Any, used_model: tuple, edit_ui: Any, key_panel: Callable[[Any], None] | None = None,
+                                key_missing: bool = False) -> ModelSettingsUI:
+        """An online service's Global settings for <service> (folded): Your key (folded, drawn by *key_panel*) and the settings for every
+        model (Audio tags, Directions, Volume), hidden when the Model it speaks with (*used_model*, next to TTS Service) skips them.
+        Then Settings for <model> (folded) for the model picked next to Settings for (*edit_ui*): Use <model> for <service> when the
+        service speaks with another, the settings each model keeps its own value of, and Settings Mantella doesn't have yet (folded)"""
+        style = ServiceStyle(config_loader, part)
+        used = models.picked(config_loader)
+        shown = style.shown_model() or used
+        per_model_names = {setting.name for setting in style.per_model_settings()}
+        extra = EXTRA_REQUESTS.get(part)
+        extra_cf = next((cf for cf in settings if extra is not None and cf.identifier == extra.name), None)
+        for_every_model = [cf for cf in settings if cf.identifier != models.setting and cf.identifier not in per_model_names]
+        per_model = [cf for cf in settings if cf.identifier in per_model_names and cf is not extra_cf]
+        every_model_columns: dict[str, Any] = {}
+        columns: dict[str, Any] = {}
+
+        def in_column(cf: ConfigValue, model: ServiceModel, found: dict[str, Any]) -> None:
+            with gr.Column(visible=model.takes(cf.identifier)) as column:
+                self.__render_settings([cf])
+            found[cf.identifier] = column
+
+        def in_rows(row_settings: list[ConfigValue], model: ServiceModel, found: dict[str, Any]) -> None: # two to a row (two_by_two)
+            for row in two_by_two(row_settings):
+                with gr.Row():
+                    for i, cf in enumerate(row):
+                        self.__second_in_row = i > 0
+                        in_column(cf, model, found)
+                self.__second_in_row = False
+
+        extra_intro_ui = None
+        with gr.Accordion(every_npc_part(part), open=key_missing) as fold:
+            if key_panel is not None:
+                key_panel(fold)
+            in_rows(for_every_model, used, every_model_columns)
+        with gr.Accordion(ModelSettingsUI.heading(shown), open=False) as heading_ui:
+            use_btn = gr.Button(ModelSettingsUI.use_label(part, shown), size="sm", visible=shown.id != used.id)
+            in_rows(per_model, shown, columns)
+            if extra_cf is not None:
+                with gr.Accordion(EXTRA_REQUEST_LABEL, open=False, elem_classes="voice-clips-subsection"):
+                    extra_intro_ui = gr.Markdown(ModelSettingsUI.extra_intro(part, shown))
+                    in_column(extra_cf, shown, columns)
+        values = {cf.identifier: self.__config_value_to_ui_element.get(cf) for cf in [*per_model, *([extra_cf] if extra_cf else [])]}
+        used_ui, note_ui, _ = used_model
+        ui = ModelSettingsUI(config_loader, part, used_ui, note_ui, every_model_columns, edit_ui, heading_ui, extra_intro_ui, use_btn, columns,
+                             {name: component for name, component in values.items() if component is not None}, shown_model_ui)
+        ui.wire()
+        return ui
+
     def __render_folded_part(self, name: str, settings: list[ConfigValue]):
         """Settings in a part of the page that starts folded, e.g. XTTS or Advanced"""
         if self.__pending_shared_setting is not None: # a setting from above doesn't share a row with this part's first
             self.__create_single_setting(self.__pending_shared_setting)
             self.__pending_shared_setting = None
         with gr.Accordion(label=name, open=False):
-            for cf in settings:
-                cf.accept_visitor(self)
-            # A setting waiting to share a row, and row groups, stay in this part
-            if self.__pending_shared_setting is not None:
-                self.__create_single_setting(self.__pending_shared_setting)
-                self.__pending_shared_setting = None
-            if self.__last_row_group is not None:
-                self.__render_row_group(self.__last_row_group)
-                self.__last_row_group = None
-            for group_id in list(self.__row_groups.keys()):
-                self.__render_row_group(group_id)
+            self.__render_settings(settings)
+
+    def __render_settings(self, settings: list[ConfigValue]):
+        """Settings drawn where the page is now. A setting waiting to share a row, and row groups, stay here.
+        A setting that only shows while another has a value (shown_when) gets a column of its own, as in a section"""
+        columns_by_switch: dict[tuple[str, ...], list[gr.Column]] = {}
+        for cf in settings:
+            conditions = shown_when_conditions(cf.shown_when)
+            column = None
+            if conditions:
+                if self.__pending_shared_setting is not None:
+                    self.__create_single_setting(self.__pending_shared_setting)
+                    self.__pending_shared_setting = None
+                column = gr.Column(visible=all(condition_holds(c, self.__current_value(c)) for c in conditions))
+                column.__enter__()
+                columns_by_switch.setdefault(conditions, []).append(column)
+            cf.accept_visitor(self)
+            self.__close_shown_when_column(column)
+        if self.__pending_shared_setting is not None:
+            self.__create_single_setting(self.__pending_shared_setting)
+            self.__pending_shared_setting = None
+        self.__show_columns_with_their_switch(columns_by_switch)
+        if self.__last_row_group is not None:
+            self.__render_row_group(self.__last_row_group)
+            self.__last_row_group = None
+        for group_id in list(self.__row_groups.keys()):
+            self.__render_row_group(group_id)
 
     def __close_shown_when_column(self, column: gr.Column | None):
         """Ends a column of settings that only show while a switch is on. Its last setting stays in it"""
@@ -1333,17 +1666,52 @@ class SettingsUIConstructor(ConfigValueVisitor):
             self.__pending_shared_setting = None
         column.__exit__(None, None, None)
 
-    def __show_columns_with_their_switch(self, columns_by_switch: dict[str, list[gr.Column]]):
-        """Shows the settings that depend on a switch while it is on, and hides them while it is off"""
-        for identifier, columns in columns_by_switch.items():
-            switch = self.__identifier_to_config_value.get(identifier)
-            switch_ui = self.__config_value_to_ui_element.get(switch) if switch else None
-            if switch_ui is not None and hasattr(switch_ui, "_id"):
-                def show_or_hide(on, count=len(columns)):
-                    # Gradio takes a single output's value as it is, so one column gets a single update, not a list of one
-                    updates = [gr.update(visible=bool(on))] * count
-                    return updates[0] if count == 1 else updates
-                switch_ui.change(show_or_hide, switch_ui, columns, show_progress="hidden")
+    def __embed_after_setting(self, config_value: ConfigValue) -> None:
+        """Controls drawn right under a setting: the Key box under the Online Service list, and under Custom Service's Model and Time Limit"""
+        if self.__config_loader is None or config_value.identifier not in ("stt_online_service", "stt_custom_timeout"):
+            return
+        def refresh_running_key():
+            if _game_manager_ref is not None and hasattr(_game_manager_ref, "refresh_stt_key"):
+                _game_manager_ref.refresh_stt_key()
+        def llm_api() -> str:
+            setting = self.__setting("llm_api")
+            return str(setting.value) if setting is not None else ""
+        if config_value.identifier == "stt_online_service":
+            render_key_box(self.__config_value_to_ui_element.get(config_value), refresh_running_key, llm_api)
+        else:
+            render_key_box(None, refresh_running_key, llm_api, custom=True)
+
+    def __current_value(self, condition: str) -> Any:
+        """The value of the setting a shown_when condition looks at"""
+        setting = self.__setting(condition.partition("=")[0])
+        return setting.value if setting is not None else None
+
+    def __setting(self, identifier: str) -> ConfigValue | None:
+        """A setting by its identifier, also before it is drawn"""
+        setting = self.__identifier_to_config_value.get(identifier)
+        if setting is None and self.__config_loader is not None:
+            try:
+                setting = self.__config_loader.definitions.get_config_value_definition(identifier)
+            except Exception:
+                setting = None
+        return setting
+
+    def __show_columns_with_their_switch(self, columns_by_switch: dict[tuple[str, ...], list[gr.Column]]):
+        """Shows the settings that depend on switches and lists while every condition holds, and hides them otherwise"""
+        for conditions, columns in columns_by_switch.items():
+            components = []
+            for condition in conditions:
+                switch = self.__identifier_to_config_value.get(condition.partition("=")[0])
+                components.append(self.__config_value_to_ui_element.get(switch) if switch else None)
+            if any(component is None or not hasattr(component, "_id") for component in components):
+                continue
+            def show_or_hide(*values, conditions=conditions, count=len(columns)):
+                visible = all(condition_holds(c, v) for c, v in zip(conditions, values))
+                # Gradio takes a single output's value as it is, so one column gets a single update, not a list of one
+                updates = [gr.update(visible=visible)] * count
+                return updates[0] if count == 1 else updates
+            for component in dict.fromkeys(components): # each setting once, even when two conditions look at it
+                component.change(show_or_hide, components, columns, show_progress="hidden")
 
     def __grey_out_talk_settings(self, group: ConfigValueGroup):
         """The talk settings of each set in the section: "who still speaks", Replies in between and Extra rounds are greyed out (not hidden)
@@ -1383,9 +1751,12 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__create_config_value_ui_element(config_value, create_input_component)
 
     def visit_ConfigValueFloat(self, config_value: ConfigValueFloat):
-        def create_input_component(raw_config_value: ConfigValue) -> gr.Number:
+        def create_input_component(raw_config_value: ConfigValue) -> gr.Number | gr.Slider:
             config_value = typing.cast(ConfigValueFloat, raw_config_value)
-            return gr.Number(value=config_value.value, 
+            if ConfigValueTag.slider in config_value.tags:
+                return gr.Slider(value=config_value.value, minimum=config_value.min_value, maximum=config_value.max_value, step=0.1,
+                                 show_label=False, container=False)
+            return gr.Number(value=config_value.value,
                     precision=2,
                     show_label=False, 
                     container=False,
@@ -1470,6 +1841,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     placeholder=f"Enter JSON array for {pool_kind}{pool_type} LLM pool...\nExample:\n[\n  {{\"service\": \"OpenRouter\", \"model\": \"deepseek/deepseek-chat\"}},\n  {{\"service\": \"OpenAI\", \"model\": \"gpt-4o-mini\"}}\n]"
                 )
             
+            # An online service's Settings Mantella doesn't have yet: fields written as JSON
+            if config_value.identifier.endswith("_extra_request"):
+                return gr.Text(value=config_value.value, show_label=False, container=False, lines=3, max_lines=12,
+                               elem_classes="multiline-textbox", placeholder='{"speed": 1.1}')
+
             count_rows = self.__count_rows_in_text(config_value.value)
             if PromptProfileManager.is_known_type(config_value.identifier):
                 # A prompt: always a text area, so its tags, variables and sections can be coloured (also a one-line prompt, which grows as it wraps)
@@ -1776,6 +2152,14 @@ class SettingsUIConstructor(ConfigValueVisitor):
             current_config = self.__identifier_to_config_value[config_value.identifier]
             return create_input_component(current_config)
 
+        stt_preset = next((p for p in ONLINE_PRESETS if p.model_setting == config_value.identifier), None)
+
+        def update_speech_model_list() -> gr.Dropdown:
+            """An online speech-to-text choice: the speech models its service lists, with the recommended ones first"""
+            llm_api = self.__setting("llm_api")
+            choices = speech_models(stt_preset, llm_api.value if llm_api is not None else "")
+            return gr.Dropdown(value=config_value.value, choices=choices, multiselect=False, allow_custom_value=True, show_label=False, container=False)
+
         def create_input_component(raw_config_value: ConfigValue) -> gr.Dropdown:
             config_value = typing.cast(ConfigValueSelection, raw_config_value)
             
@@ -1820,8 +2204,12 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 TTSDefinitions.refresh_voice_service_options(config_value) # the player's voice setups are listed too
             choices = config_value.options
             if config_value.option_labels:
-                # (shown text, saved option): the dropdown shows the label, and the option is still what is saved
-                choices = [(config_value.option_labels.get(option, option), option) for option in config_value.options]
+                # (shown text, saved option): the dropdown shows the label, and the option is still what is saved. A saved value no
+                # longer offered (a model that has ended) still shows its label
+                shown = list(config_value.options)
+                if config_value.value not in shown and config_value.value in config_value.option_labels:
+                    shown.append(config_value.value)
+                choices = [(config_value.option_labels.get(option, option), option) for option in shown]
             if ConfigValueTag.radio_buttons in config_value.tags:
                 return gr.Radio(value=config_value.value, choices=choices, show_label=False, container=False)
             return gr.Dropdown(
@@ -1837,6 +2225,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
         additional_buttons: list[tuple[str, Callable[[], Any]]] = []
         if config_value.identifier in special_handlers:
             additional_buttons = [("Update", update_model_list)]
+        elif stt_preset is not None and stt_preset.model_list: # ElevenLabs keeps its fixed list
+            additional_buttons = [("Update", update_speech_model_list)]
         
 
 

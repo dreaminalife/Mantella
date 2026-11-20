@@ -188,31 +188,6 @@ def a_voice_file(folder: str, name: str) -> str:
     return path
 
 
-def test_the_voice_made_to_hear_a_clip_becomes_the_npcs_voice_when_that_clip_is_used(tmp_path):
-    clip = str(tmp_path / "clip.wav")
-    with open(clip, "wb") as file:
-        file.write(b"the chosen clip")
-    folder = pocket_tts.voices_folder(str(tmp_path), "english")
-    digest = pocket_tts.clip_hash(clip)
-    old = a_voice_file(folder, "femaleeventoned-0000000000000000.safetensors")
-    trial = a_voice_file(folder, f"try_femaleeventoned-{digest}.safetensors")
-    other_trial = a_voice_file(folder, "try_femaleeventoned-1111111111111111.safetensors")
-    pocket_tts.use_trial_voice(str(tmp_path), "femaleeventoned", clip)
-    assert sorted(os.listdir(folder)) == [f"femaleeventoned-{digest}.safetensors"]
-    assert not any(os.path.exists(p) for p in (old, trial, other_trial))
-
-
-def test_a_trial_voice_from_another_clip_is_only_removed(tmp_path):
-    clip = str(tmp_path / "clip.wav")
-    with open(clip, "wb") as file:
-        file.write(b"the chosen clip")
-    folder = pocket_tts.voices_folder(str(tmp_path), "english")
-    current = a_voice_file(folder, "femaleeventoned-0000000000000000.safetensors")
-    a_voice_file(folder, "try_femaleeventoned-1111111111111111.safetensors")
-    pocket_tts.use_trial_voice(str(tmp_path), "femaleeventoned", clip)
-    assert os.listdir(folder) == [os.path.basename(current)] # the NPCs' voice is made from the new clip as usual
-
-
 def test_a_saved_voice_moves_with_its_clip(tmp_path):
     clip = str(tmp_path / "clip.wav")
     with open(clip, "wb") as file:
@@ -227,23 +202,10 @@ def test_a_saved_voice_moves_with_its_clip(tmp_path):
 
 def test_a_removed_voices_saved_voices_go(tmp_path):
     folder = pocket_tts.voices_folder(str(tmp_path), "english")
-    for name in ("skyrimesm000a2c94-1.safetensors", "try_skyrimesm000a2c94-2.safetensors", "femaleeventoned-3.safetensors"):
+    for name in ("skyrimesm000a2c94-1.safetensors", "skyrimesm000a2c94-2.safetensors", "femaleeventoned-3.safetensors"):
         a_voice_file(folder, name)
     pocket_tts.remove_saved_voices(str(tmp_path), "skyrimesm000a2c94")
     assert os.listdir(folder) == ["femaleeventoned-3.safetensors"]
-
-
-def test_trial_voices_are_removed(tmp_path):
-    folder = pocket_tts.voices_folder(str(tmp_path), "english")
-    names = ["femaleeventoned-1.safetensors", "try_femaleeventoned-2.safetensors", "try_skyrimesm00013bab-3.safetensors", "try_malenord-4.safetensors"]
-    for name in names:
-        a_voice_file(folder, name)
-    pocket_tts.remove_trial_voices(str(tmp_path), only="malenord")
-    assert sorted(os.listdir(folder)) == sorted(names[:3])
-    pocket_tts.remove_trial_voices(str(tmp_path), keep="skyrimesm00013bab")
-    assert sorted(os.listdir(folder)) == sorted([names[0], names[2]])
-    pocket_tts.remove_trial_voices(str(tmp_path))
-    assert os.listdir(folder) == [names[0]]
 
 
 def test_a_saved_voice_removed_from_disk_is_made_again(monkeypatch, voice_config, tmp_path):

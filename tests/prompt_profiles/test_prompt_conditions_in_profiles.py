@@ -39,8 +39,8 @@ def test_variables_in_every_branch_are_checked(tmp_path):
     (GAME_MASTER, "{if shout}\nA", "{if shout} has no matching {end if}."),
     (GAME_MASTER, "{if talk_event}A{end if}", "'talk_event' is not a condition this prompt knows. Use one of: director, npc_event, say_to_room, shout."),
     (NPC, "{if say_to_room}A{end if}", "'say_to_room' is never true in this prompt: whoever answers has joined the conversation"),
-    ("skyrim_prompt", "{if shout}A{end if}", "Conditional blocks like {if ...} only work in the Game Master"),
-    ("resummarize_prompt", "{if after_event}A{end if}", "Conditional blocks like {if ...} only work in the Game Master"),
+    ("skyrim_prompt", "{if shout}A{end if}", "'shout' is not a condition this prompt knows. Use one of: audio_tags, directions, moods."),
+    ("resummarize_prompt", "{if after_event}A{end if}", "Conditional blocks like {if ...} only work in the Skyrim, Skyrim Multi-NPC"),
 ])
 def test_broken_tags_and_wrong_conditions_are_explained(tmp_path, prompt_type, text, message):
     result = manager(tmp_path).validate_text(prompt_type, text)
@@ -86,7 +86,7 @@ def test_a_section_with_tags_is_checked_where_it_is_used(tmp_path):
     profiles = manager(tmp_path)
     assert profiles.validate_section_text("{if shout}\n{nearby}\n{end if}").is_success
     assert profiles.save_section("crowd", "{if shout}\n{nearby}\n{end if}")[0]
-    assert not profiles.validate_text("skyrim_prompt", "You are {name}.\n{crowd}").is_success # Not a merged prompt
+    assert not profiles.validate_text("skyrim_prompt", "You are {name}.\n{crowd}").is_success # The Skyrim Prompt has no {if shout}
 
 
 def test_the_merged_prompts_are_the_profile_types_and_the_absorbed_ones_are_gone(tmp_path):
@@ -105,7 +105,7 @@ def test_the_editor_explains_the_conditions_of_each_merged_prompt():
         assert "**Conditional blocks:**" in about, prompt_type
         for condition in conditions:
             assert f"- `{condition}`:" in about, (prompt_type, condition)
-    assert "**Conditional blocks:**" not in PromptProfileManager.about_markdown("skyrim_prompt")
+    assert "**Conditional blocks:**" not in PromptProfileManager.about_markdown("resummarize_prompt")
 
 
 def test_a_merged_prompt_edited_on_the_prompts_tab_uses_its_branches(tmp_path):

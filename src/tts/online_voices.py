@@ -1,7 +1,7 @@
 """The voices an online service cloned on the player's account, remembered so each clip is uploaded once.
 
-voice_clips/online_voices/<service>.json holds, by voice (a voice type's or an NPC's key, or try_<key> for a clip being tried on the
-Voice Clips page), the voice's ID on the service and the hash of the clip it was cloned from. It also holds a fingerprint of the key:
+voice_clips/online_voices/<service>.json holds, by voice (a voice type's or an NPC's key), the voice's ID on the service and the hash
+of the clips it was cloned from. It also holds a fingerprint of the key:
 voices cloned with another key belong to another account, so they are forgotten when the key changes.
 """
 from __future__ import annotations
@@ -13,11 +13,10 @@ import os
 import threading
 from typing import Any, Callable
 
-from src.tts.clip_service import clip_hash
 from src.tts.voice_folders import voice_clips_folder
-from src.tts.voice_picker import TRIAL_PREFIX
 
 FOLDER = "online_voices"
+OLD_TRY_PREFIX = "try_" # voices an earlier Mantella made to try a clip before using it
 
 
 def key_fingerprint(api_key: str) -> str:
@@ -68,7 +67,7 @@ class ClonedVoices:
             return list(self.__read()["voices"].keys())
 
     def count(self) -> int:
-        return len([k for k in self.keys() if not k.startswith(TRIAL_PREFIX)])
+        return len(self.keys())
 
     def use_account(self, fingerprint: str) -> int:
         """The key in use now. Voices from another key's account are forgotten (they can't be used or deleted with this key).
@@ -147,57 +146,25 @@ class VoiceKeeper:
         thread.start()
         return thread
 
-    def use_trial_voice(self, save_folder: str, key: str, clip_path: str) -> None:
-        """Clone from this clip, right after hearing it: the voice made to hear it becomes the voice NPCs use, so the clip isn't cloned again"""
-        store = self.__store(save_folder)
-        trial = store.pop(f"{TRIAL_PREFIX}{key}")
-        if trial is None:
-            return
-        try:
-            same = bool(clip_path) and trial.get("clip") == clip_hash(clip_path)
-        except OSError:
-            same = False
-        if not same:
-            self.delete_later([trial.get("voice_id", "")])
-            return
-        old = store.get(key)
-        store.set(key, trial["voice_id"], trial["clip"])
-        if old is not None and old.get("voice_id") != trial["voice_id"]:
-            self.delete_later([old.get("voice_id", "")])
-
     def move_saved_voice(self, save_folder: str, from_key: str, to_key: str, clip_path: str) -> None:
-        """An NPC's own voice used for their whole voice type: the voice moves with the clip, so it isn't cloned again"""
+        """An NPC's own voice used for their whole voice type: the voice moves with the clips. If the voice type's clips differ
+        from what it was cloned from, the next line clones it again and deletes this one"""
         store = self.__store(save_folder)
-        moved = store.get(from_key)
-        try:
-            same = moved is not None and moved.get("clip") == clip_hash(clip_path)
-        except OSError:
-            same = False
-        if not same:
+        moved = store.pop(from_key)
+        if moved is None:
             return
-        store.pop(from_key)
         old = store.get(to_key)
         store.set(to_key, moved["voice_id"], moved["clip"])
         if old is not None and old.get("voice_id") != moved["voice_id"]:
             self.delete_later([old.get("voice_id", "")])
 
-    def remove_saved_voices(self, save_folder: str, key: str) -> None:
-        """A voice that is gone (an NPC's own voice removed): deleted on the service too, with its trial voice"""
+    def remove_old_tries(self, save_folder: str, api_key: str) -> None:
+        """Voices an earlier Mantella made to try a clip on the Voice Clips page (named try_<voice>): deleted on the service"""
         store = self.__store(save_folder)
-        gone = [store.pop(key), store.pop(f"{TRIAL_PREFIX}{key}")]
-        self.delete_later([g.get("voice_id", "") for g in gone if g])
+        gone = [store.pop(k) for k in store.keys() if k.startswith(OLD_TRY_PREFIX)]
+        self.delete_later([g.get("voice_id", "") for g in gone if g], api_key)
 
-    def remove_trial_voices(self, save_folder: str, only: str | None = None, keep: str | None = None) -> None:
-        """The voices made to hear a clip from the list: all of them, or *only* one clip's, or all but *keep*'s"""
-        store = self.__store(save_folder)
-        gone = []
-        for name in store.keys():
-            if not name.startswith(TRIAL_PREFIX):
-                continue
-            key = name[len(TRIAL_PREFIX):]
-            if (only is not None and key != only) or (keep is not None and key == keep):
-                continue
-            found = store.pop(name)
-            if found:
-                gone.append(found.get("voice_id", ""))
-        self.delete_later(gone)
+    def remove_saved_voices(self, save_folder: str, key: str) -> None:
+        """A voice that is gone (an NPC's own voice removed): deleted on the service too"""
+        gone = self.__store(save_folder).pop(key)
+        self.delete_later([gone.get("voice_id", "")] if gone else [])

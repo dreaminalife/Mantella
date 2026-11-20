@@ -13,10 +13,12 @@ from src.utils import get_time_group
 from src.character_manager import Character
 from src.config.config_loader import ConfigLoader
 from src.config.definitions.prompt_definitions import PromptDefinitions
+from src.prompt_label import label_prompt
 from src.llm.llm_client import LLMClient
 from src.config.definitions.game_definitions import GameEnum
 from src.lorebook_manager import LorebookManager
 from src.prompt_profile_manager import PromptSectionError
+from src.tts import voice_tags
 from src.bio_section_filter import apply_bio_section_filter, should_filter_conversation_bios
 
 NOBODY_DESCRIBED = "nobody" # {nearby_bios} when none of the people nearby the Game Master may pick are described
@@ -820,6 +822,11 @@ class context:
         actions = self.__get_action_texts(actions_for_prompt, tools_offered)
         event = self.npc_event.text if self.npc_event else ""
         nearby = self.__get_nearby_text()
+        # Sounds, moods and directions in square brackets, for an NPC whose voice service takes them ({if audio_tags}, {if moods}, {if directions})
+        speakers = prompt_characters.get_all_characters()
+        voice_sounds = voice_tags.sounds_text(self.__config, speakers)
+        voice_moods = voice_tags.moods_text(self.__config, speakers)
+        conditions = set(conditions or ()) | voice_tags.conditions_for(self.__config, speakers)
         variable_values = {
             "player_name": player_name,
             "player_description": player_description,
@@ -846,6 +853,8 @@ class context:
             "game": self.__game.display_name,
             "event": event,
             "nearby": nearby,
+            "voice_sounds": voice_sounds,
+            "voice_moods": voice_moods,
         }
         if prompt_type:
             prompt = self.__config.prompt_profile_manager.resolve_prompt(prompt_type, prompt)
@@ -895,6 +904,8 @@ class context:
                 lorebook=lorebook_text,
                 event=event,
                 nearby=nearby,
+                voice_sounds=voice_sounds,
+                voice_moods=voice_moods,
                 nearby_bios=nearby_bios if step < 2 else "", # Dropped along with the memories when the prompt is too long, also when nobody is in the conversation yet
                 )
             if self.__client.is_too_long(result, self.TOKEN_LIMIT_PERCENT):
@@ -914,6 +925,9 @@ class context:
             logging.log(logging.WARNING, f'The summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations.')
         if nearby_bios and nearby_bios != NOBODY_DESCRIBED and step >= 2:
             logging.log(logging.WARNING, f'The bios and memories of the people nearby could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. The Game Master only knows their names.')
+        if prompt_type:
+            # So the log can say which prompt each request sent
+            return label_prompt(result, self.__config.prompt_profile_manager, prompt_type, conditions, focus_character.name if focus_character else "")
         return result
     
     def __get_nearby_bios_text(self, player_name: str) -> str:

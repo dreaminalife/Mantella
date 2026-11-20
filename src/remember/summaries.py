@@ -18,6 +18,7 @@ from src.character_manager import Character
 from src.remember.remembering import Remembering
 from src.lorebook_manager import LorebookManager
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import label_prompt
 from src.bio_section_filter import apply_bio_section_filter, should_filter_memory_bios
 from src import utils
 
@@ -909,6 +910,7 @@ class Summaries(Remembering):
                     player_name=player_name,
                     lorebook=lorebook_text,
                 )
+        prompt = label_prompt(prompt, self.__config.prompt_profile_manager, "memory_prompt", {"director"} if was_directed else set(), names)
         while True:
             try:
                 if len(npcInfo.messages) >= 5:
@@ -1012,6 +1014,7 @@ class Summaries(Remembering):
                         player_name=player_name,
                         lorebook=lorebook_text,
                     )
+                    prompt = label_prompt(prompt, self.__config.prompt_profile_manager, "resummarize_prompt", speaker=npc.name)
                     long_conversation_summary = self.summarize_conversation(sanitized_summaries, prompt)
                     break
                 except:

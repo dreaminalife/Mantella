@@ -4,7 +4,7 @@ from typing import List, Tuple
 class external_character_info:
     """_summary_
     """
-    def __init__(self, name: str, is_generic_npc: bool, bio: str, ingame_voice_model: str, tts_voice_model: str, csv_in_game_voice_model: str, advanced_voice_model: str, voice_accent: str, tts_service: str = "", llm_service: str = "", llm_model: str = "", dynamic_tag_events: List[Tuple[int, str]] | None = None) -> None:
+    def __init__(self, name: str, is_generic_npc: bool, bio: str, ingame_voice_model: str, tts_voice_model: str, csv_in_game_voice_model: str, advanced_voice_model: str, voice_accent: str, tts_service: str = "", llm_service: str = "", llm_model: str = "", dynamic_tag_events: List[Tuple[int, str]] | None = None, voice_effect: str = "") -> None:
         self.__name: str = name
         self.__is_generic_npc: bool = is_generic_npc
         self.__bio: str = bio
@@ -17,6 +17,7 @@ class external_character_info:
         self.__llm_service: str = llm_service
         self.__llm_model: str = llm_model
         self.__dynamic_tag_events: List[Tuple[int, str]] = dynamic_tag_events if dynamic_tag_events is not None else []
+        self.voice_effect: str = voice_effect # the voice_effect column: one NPC's voice effect, or none
     
     @property
     def name(self) -> str:

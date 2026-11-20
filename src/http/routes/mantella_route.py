@@ -42,6 +42,10 @@ class mantella_route(routeable):
         self.__image_secret_key_file: str = image_secret_key_file
         self.__game: GameStateManager | None = None
         self.__request_lock: threading.Lock = threading.Lock()
+        # The conversation requests the game is waiting for an answer to, oldest first, by request type. The interrupt hotkey and the end
+        # of the conversation answer them right away, without waiting for them to finish. Only used in the server's event loop
+        self.__waiting: list[tuple[str, asyncio.Future]] = []
+        self.__background_tasks: set[asyncio.Future] = set() # Requests answered early, and ends, still running. See __keep_running
 
         # if not self._can_route_be_used():
         #     error_message = "MantellaSoftware settings faulty. Please check MantellaSoftware's window or log."
@@ -89,7 +93,8 @@ class mantella_route(routeable):
             llm_client = LLMClient(self._config, self.__secret_key_file, self.__image_secret_key_file)
             
             chat_manager = ChatManager(self._config, tts, llm_client, None, self.__secret_key_file, current_game)
-            
+            chat_manager.start_backup_voice_service() # before the old one stops, so a backup both use keeps running
+
             # Try to hot-swap the GameStateManager components with the existing game instance
             success = self.__game.hot_swap_settings(
                 game=current_game,  # Pass the existing game instance instead of creating new one
@@ -105,6 +110,7 @@ class mantella_route(routeable):
                 return True
             else:
                 logging.warning("Hot-swap failed, falling back to full reinitialization")
+                chat_manager.stop_voice_services(keep=tts) # the backup started above: the full reinitialization starts its own
                 return False
                 
         except Exception as e:
@@ -138,6 +144,7 @@ class mantella_route(routeable):
         summary_client = SummaryLLMCLient(self._config, self.__secret_key_file, self.__image_secret_key_file)
         
         chat_manager = ChatManager(self._config, tts, llm_client, None, self.__secret_key_file, game)
+        chat_manager.start_backup_voice_service()
         self.__game = GameStateManager(game, chat_manager, self._config, self.__language_info, llm_client, summary_client, self.__stt_secret_key_file, self.__secret_key_file)
 
         # Set the global reference for UI access
@@ -157,10 +164,13 @@ class mantella_route(routeable):
         async def mantella(request: Request):
             received_json: dict[str, Any] | None = await request.json()
             if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_INTERRUPT:
-                # Handled right away, while the continue request that is still running picks the interruption up
-                if self.__game:
-                    self.__game.interrupt_conversation(received_json)
+                # Handled right away. With the interrupt hotkey, the request the game is waiting for is answered with the player's turn
+                # now. That request goes on until it has picked the interruption up, and its own answer is thrown away
+                if self.__game and self.__game.interrupt_conversation(received_json):
+                    self.__answer_waiting(self.INTERRUPTIBLE_REQUESTS, self.__game.player_turn_reply())
                 return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_INTERRUPTRECEIVED}
+            if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_ENDCONVERSATION:
+                return await self.__end(received_json)
             if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_SHOW:
                 # Handled right away, so the picture is of the moment the player pressed Show, even while the NPCs are talking
                 return await asyncio.to_thread(self.__process_show, received_json)
@@ -171,7 +181,97 @@ class mantella_route(routeable):
                 # Not queued either, for the same reason
                 return await asyncio.to_thread(self.__process_npc_event_check, received_json)
             # Handled in a worker thread, so the server stays free to receive an interruption
-            return await asyncio.to_thread(self.__process_request, received_json)
+            request_type = received_json.get(comm_consts.KEY_REQUESTTYPE) if received_json else None
+            if request_type not in self.ENDABLE_REQUESTS:
+                return await self.__with_extras(await asyncio.to_thread(self.__process_request, received_json))
+            arrival = (self.__game, self.__game.ends_requested if self.__game else 0)
+            worker = asyncio.ensure_future(asyncio.to_thread(self.__process_request, received_json, arrival))
+            answered_early = asyncio.get_running_loop().create_future()
+            self.__waiting.append((request_type, answered_early))
+            try:
+                await asyncio.wait({worker, answered_early}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                self.__waiting = [(t, f) for t, f in self.__waiting if f is not answered_early]
+            if answered_early.done():
+                self.__keep_running(worker) # Its own answer comes too late
+                return await self.__with_extras(answered_early.result())
+            return await self.__with_extras(worker.result())
+
+    def __keep_running(self, task: asyncio.Future):
+        """Keeps a task nobody waits for until it is done. Its error, if any, was logged where it happened"""
+        self.__background_tasks.add(task)
+        def done(t: asyncio.Future):
+            self.__background_tasks.discard(t)
+            if not t.cancelled():
+                t.exception()
+        task.add_done_callback(done)
+
+    # The requests the game waits for while a conversation runs. The end of the conversation answers them right away
+    ENDABLE_REQUESTS = {comm_consts.KEY_REQUESTTYPE_STARTCONVERSATION, comm_consts.KEY_REQUESTTYPE_CONTINUECONVERSATION,
+                        comm_consts.KEY_REQUESTTYPE_PLAYERINPUT, comm_consts.KEY_REQUESTTYPE_CONVERSATIONEVENT}
+    # The ones the interrupt hotkey answers right away, with the player's turn. The game sends it only while the NPCs have the turn.
+    # Not the player's line: it is quick, and it may hold a goodbye, which must still end the conversation. The continue request after it
+    # picks the interruption up
+    INTERRUPTIBLE_REQUESTS = {comm_consts.KEY_REQUESTTYPE_CONTINUECONVERSATION}
+
+    def __answer_waiting(self, request_types: set[str], reply: dict[str, Any]) -> bool:
+        """Answers the oldest request of these types the game is waiting for with this reply, and any others with a reply the game
+        ignores, so it acts on the reply only once. Called in the server's event loop
+
+        Returns:
+            bool: False if the game is waiting for none of them
+        """
+        answered = False
+        for request_type, answered_early in self.__waiting:
+            if request_type not in request_types or answered_early.done():
+                continue
+            answered_early.set_result(dict(reply) if not answered else {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_INTERRUPTRECEIVED})
+            answered = True
+        return answered
+
+    async def __end(self, received_json: dict[str, Any]) -> dict[str, Any]:
+        """The game ended the conversation. A request it is still waiting for is answered right away with the end, and the end request
+        itself with a reply the game ignores. Otherwise the end request is answered with the end right away.
+        The conversation ends here once the requests before are done, without the game waiting: what the NPCs remember of it is saved
+        then. A conversation started meanwhile waits for that"""
+        if self._show_debug_messages:
+            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        end_reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
+        game = self.__game
+        if game:
+            game.stop_conversation_now()
+        answered_early = self.__answer_waiting(self.ENDABLE_REQUESTS, end_reply)
+        self.__keep_running(asyncio.ensure_future(asyncio.to_thread(self.__end_after_requests_before)))
+        reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_INTERRUPTRECEIVED} if answered_early else end_reply
+        return await self.__with_extras(reply)
+
+    def __end_after_requests_before(self):
+        with self.__request_lock:
+            try:
+                if not self._can_route_be_used() or not self.__game:
+                    return
+                self.__game.end_requested_conversation()
+            except Exception:
+                logging.exception("Ending the conversation failed")
+
+    async def __with_extras(self, reply: dict[str, Any]) -> dict[str, Any]:
+        """Puts the voice clip requests and voice notices on the reply the game gets, whatever it is"""
+        return await asyncio.to_thread(self.__add_extras, reply)
+
+    def __add_extras(self, reply: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(reply, dict):
+            try:
+                voice_clip_requests = self.__voice_clip_requests().requests_for_reply()
+                if voice_clip_requests:
+                    reply[comm_consts.KEY_VOICECLIP_REQUESTS] = voice_clip_requests # The add-on hands these to MantellaVoiceClips.dll, whatever the reply is
+            except Exception as e:
+                logging.warning(f"Voice clips: could not add the requests to the reply: {e}")
+            notices = take_notices()
+            if notices:
+                reply[comm_consts.KEY_VOICE_NOTICES] = notices
+        if self._show_debug_messages:
+            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+        return reply
 
     def __process_show(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """Show: never replies with an error, which would end the conversation"""
@@ -219,7 +319,12 @@ class mantella_route(routeable):
             logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
         return reply
 
-    def __process_request(self, received_json: dict[str, Any] | None) -> dict[str, Any]:
+    def __process_request(self, received_json: dict[str, Any] | None, arrival: tuple[GameStateManager | None, int] | None = None) -> dict[str, Any]:
+        """
+        Args:
+            arrival (tuple[GameStateManager | None, int] | None): the game manager when the request arrived, and how often the game had
+                ended a conversation by then (see GameStateManager.start_conversation)
+        """
         with self.__request_lock: # Requests other than interruptions are still handled one at a time
             if not self._can_route_be_used():
                 error_message = "MantellaSoftware settings faulty. Please check MantellaSoftware's window or log."
@@ -242,7 +347,9 @@ class mantella_route(routeable):
                             logging.debug('Mantella settings initialized')
                             reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTTYPE_INITCOMPLETED}
                         case comm_consts.KEY_REQUESTTYPE_STARTCONVERSATION:
-                            reply = self.__game.start_conversation(received_json)
+                            # Not after the settings changed meanwhile: the new game manager counts the ends from 0
+                            ends_before = arrival[1] if arrival and arrival[0] is self.__game else None
+                            reply = self.__game.start_conversation(received_json, ends_before)
                         case comm_consts.KEY_REQUESTTYPE_CONTINUECONVERSATION:
                             reply = self.__game.continue_conversation(received_json)
                         case comm_consts.KEY_REQUESTTYPE_PLAYERINPUT:
@@ -267,16 +374,7 @@ class mantella_route(routeable):
                     raise
             else:
                 reply = self.error_message(f"Request did not contain properly formatted json!")
-
-            voice_clip_requests = self.__voice_clip_requests().requests_for_reply()
-            if voice_clip_requests and isinstance(reply, dict):
-                reply[comm_consts.KEY_VOICECLIP_REQUESTS] = voice_clip_requests # The add-on hands these to MantellaVoiceClips.dll, whatever the reply is
-            notices = take_notices()
-            if notices and isinstance(reply, dict):
-                reply[comm_consts.KEY_VOICE_NOTICES] = notices
-            if self._show_debug_messages:
-                logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
-            return reply
+            return reply # The route adds the voice clip requests and notices, on the reply that reaches the game (see __with_extras)
 
     def __voice_clip_requests(self):
         return clip_requests_for(shared_clip_store(voice_clips_folder(self._config.save_folder)))

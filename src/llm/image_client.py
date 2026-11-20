@@ -7,6 +7,7 @@ from src.image.image_manager import ImageManager
 from src.llm.client_base import ClientBase
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import label_prompt
 from src.llm.messages import ImageMessage
 
 class VisionCapture:
@@ -117,6 +118,7 @@ class ImageClient(ClientBase):
                     vision_prompt = f"{self.__vision_prompt}\n{vision_hints}"
                 else:
                     vision_prompt = self.__vision_prompt
+                vision_prompt = label_prompt(vision_prompt, self.__config.prompt_profile_manager, "vision_prompt")
                 image_msg_instance = ImageMessage(self.__config, image, vision_prompt, self.__detail, True)
                 image_transcription = self.request_call(image_msg_instance)
                 if image_transcription:

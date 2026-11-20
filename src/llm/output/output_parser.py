@@ -23,6 +23,9 @@ class sentence_generation_settings:
         self.vision_requested: bool = False # The NPC used Look: the reply is asked for again, with a screenshot
         self.looked: bool = False # The reply already comes with a screenshot: a "Look:" before the line is only taken out
         self.thought_speakers: set[str] = set()
+        # Sounds and directions (src/tts/voice_tags.py) of a sentence that had no words, by speaker's name:
+        # put in front of the speaker's next sentence
+        self.held_voice_tags: dict[str, str] = {}
     
     @property
     def sentence_type(self) -> SentenceTypeEnum:

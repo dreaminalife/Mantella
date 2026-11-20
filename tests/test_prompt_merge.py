@@ -42,6 +42,14 @@ ADDED_SINCE = {
 }
 
 
+# Changed in a merged prompt's branch after the merge: merged prompt -> (old text, new text)
+OLD_EXAMPLE = "Ysolda: Keep your voice down. We're here to close the deal,  we don't want to draw the attention of the town guard.\n"
+NEW_EXAMPLE = "Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.\n"
+CHANGED_SINCE = {
+    "skyrim_game_master_npc_prompt": [(OLD_EXAMPLE, NEW_EXAMPLE)], # The reply example, written to show sounds, moods and directions
+}
+
+
 def default(prompt_type: str) -> str:
     return getattr(P, f"get_{prompt_type}_config_value")().default_value
 
@@ -50,6 +58,9 @@ def default(prompt_type: str) -> str:
 def test_each_branch_is_the_old_prompt(merged, old, conditions):
     old_text = (FIXTURES / f"{old}.txt").read_text(encoding="utf-8")
     text = P.apply_prompt_conditions(merged, default(merged), conditions)
+    for before, after in CHANGED_SINCE.get(merged, []):
+        assert old_text.count(before) == 1
+        old_text = old_text.replace(before, after)
     added = ADDED_SINCE.get((merged, old))
     if added:
         assert text.count(added) == 1

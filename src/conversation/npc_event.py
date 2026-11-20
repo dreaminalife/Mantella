@@ -11,6 +11,7 @@ from src.llm.ai_client import AIClient
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
 from src.prompt_profile_manager import PromptSectionError
+from src.prompt_label import label_prompt
 from src.utils import get_time_group
 
 GENERATOR_PROMPT = "skyrim_npc_event_generator_prompt"
@@ -191,7 +192,7 @@ def request_event(config: ConfigLoader, client: AIClient, prompt_type: str, prom
                 history_lines = drop_oldest_lines(history_lines, budget, lambda line: count_tokens(line) + 1) or []
             if history_lines:
                 request_text = header + "".join(line + "\n" for line in history_lines) + "\n" + EVENT_REPLY_FORMAT
-        request = message_thread(config, prompt)
+        request = message_thread(config, label_prompt(prompt, config.prompt_profile_manager, prompt_type, conditions))
         request.add_message(UserMessage(config, request_text, "", True))
         if is_cancelled():
             return None

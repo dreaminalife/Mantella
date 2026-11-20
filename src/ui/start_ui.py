@@ -27,6 +27,7 @@ from src.ui.tab_reorder import (
     merge_tab_order,
 )
 from src.ui.tag_editor_page import build_tag_editor_page
+from src.ui import bio_voice_effect
 from src.ui.prompt_highlight import PROMPT_HIGHLIGHT_JS
 from src.ui.conversation_table import DELETE_BUTTON_ELEM_ID, HEADERS, TABLE_JS, TABLE_ELEM_ID, apply_rows_to_json, delete_selected_rows, json_to_rows
 from src.ui.bio_editor_memory_files import (
@@ -88,7 +89,7 @@ class StartUI(routeable):
                     group = groups_by_name.get(name)
                     if group is not None:
                         group.accept_visitor(self.__constructor)
-                    for page_group in self._config.definitions.base_groups: # sections shown at the end of this page (the Text-to-Speech page's voice setups)
+                    for page_group in self._config.definitions.base_groups: # sections shown at the end of this page (the Speech-to-Text page's Custom Service and Test)
                         if getattr(page_group, "page", None) == name and not page_group.is_hidden:
                             page_group.accept_visitor(self.__constructor)
 
@@ -624,6 +625,8 @@ class StartUI(routeable):
                                 content['ref_id'] = optional_values['ref_id']
                             if optional_values.get('tags_overwrite') is not None:
                                 content['tags_overwrite'] = optional_values['tags_overwrite']
+                            if optional_values.get(bio_voice_effect.COLUMN) is not None:
+                                content[bio_voice_effect.COLUMN] = optional_values[bio_voice_effect.COLUMN]
                             # Write override tags from the tags editor when provided;
                             # otherwise keep existing `tags` unchanged.
                             if override_tags is not None:
@@ -640,6 +643,8 @@ class StartUI(routeable):
                             new_entry['ref_id'] = optional_values['ref_id']
                         if optional_values.get('tags_overwrite') is not None:
                             new_entry['tags_overwrite'] = optional_values['tags_overwrite']
+                        if optional_values.get(bio_voice_effect.COLUMN) is not None:
+                            new_entry[bio_voice_effect.COLUMN] = optional_values[bio_voice_effect.COLUMN]
                         if override_tags is not None:
                             new_entry['tags'] = override_tags
                         elif optional_values.get('tags') is not None:
@@ -1139,6 +1144,10 @@ class StartUI(routeable):
                 bio_editor = gr.Text(value="", lines=12, label="Bio")
                 tags_editor = gr.Text(value="", lines=2, label='Tags ("tags" column in override csv file only)', placeholder="Comma-separated tags from your personal override file")
                 runtime_tags_display = gr.Text(value="", lines=2, label="Runtime Tags (read-only, all sources merged)", interactive=False, placeholder="Select an NPC to see its effective runtime tags")
+                voice_effect_ui = gr.Dropdown(choices=bio_voice_effect.effect_choices(config.save_folder), value=bio_voice_effect.AUTOMATIC,
+                                              label="Voice effect", allow_custom_value=True,
+                                              info="An effect on this NPC's voice. Only effects ticked under Voice Effects on the Text-to-Speech tab are heard. "
+                                                   "Saved with Save, used from their next conversation.")
                 
                 info_line = gr.Markdown(value="", visible=True)
                 # Optional: user-chosen path for base-only NPCs; persisted in hidden config key
@@ -1242,9 +1251,12 @@ class StartUI(routeable):
                 override_tags = _load_override_tags_for_label(label, l2k, user_csv)
                 runtime_tags = _compute_runtime_tags_for_label(label, l2k)
                 can_save = bool(label)
-                return bio, summary, thoughts, reflections, notes, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), int(time.time())
+                written_effect = bio_voice_effect.effect_of_row(df, *_split_key(l2k.get(label, ''))) if label else ""
+                effect = gr.update(choices=bio_voice_effect.effect_choices(config.save_folder, written_effect),
+                                   value=bio_voice_effect.picked_value(config.save_folder, written_effect))
+                return bio, summary, thoughts, reflections, notes, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), int(time.time()), effect
 
-            def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str):
+            def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, voice_effect: str | None = None):
                 # Try to infer optional column values from current df row, if present
                 optional_values = {}
                 try:
@@ -1275,6 +1287,8 @@ class StartUI(routeable):
                 # Pass it explicitly so _save_bio_to_user_path writes it
                 # to the override file's `tags` column.
                 override_tags = tags_text.strip() if isinstance(tags_text, str) else None
+                if voice_effect is not None: # from the Voice effect list; a save from the LLM part keeps what the NPC has
+                    optional_values[bio_voice_effect.COLUMN] = str(voice_effect).strip()
                 path = _save_bio_to_user_path(label, bio_text, l2k, user_csv, optional_values, override_tags=override_tags)
                 # Fast refresh: avoid heavy reload when game isn't running
                 new_df = state_df.value if isinstance(state_df.value, pd.DataFrame) else _get_resolved_character_df()
@@ -1320,6 +1334,12 @@ class StartUI(routeable):
                     cn, cb, cr = _split_key(key_for_cached)
                     if cn and cb:
                         _update_cached_game_df_if_possible(cn, cb, cr, bio_text)
+                        if voice_effect is not None:
+                            from src.ui import settings_ui_constructor as sui
+                            game = getattr(getattr(sui, '_game_manager_ref', None), 'game', None)
+                            if game is not None and game.character_df is not None and game.character_df is not new_df:
+                                bio_voice_effect.set_in_table(game.character_df, cn, cb, cr, str(voice_effect).strip())
+                            bio_voice_effect.set_in_table(new_df, cn, cb, cr, str(voice_effect).strip())
                         # Refresh runtime tags for this NPC so the next conversation
                         # picks up the new combined tags without a full reload.
                         if override_tags is not None:
@@ -1391,7 +1411,8 @@ class StartUI(routeable):
                     gr.Text(value=""),
                     gr.Text(value=""),
                     gr.Text(value=""),
-                    gr.Button(interactive=False)
+                    gr.Button(interactive=False),
+                    gr.update(value=bio_voice_effect.AUTOMATIC)
                 )
 
             def on_refresh_memory(label: str, l2k: dict[str, str], world_id: str):
@@ -2054,9 +2075,9 @@ class StartUI(routeable):
                     pass
 
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[], show_progress="hidden")
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts], show_progress="hidden")
-            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts, voice_effect_ui], show_progress="hidden")
+            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, voice_effect_ui], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
+            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
             _memory_refresh_outputs = [info_line, summary_editor, thoughts_editor, reflections_editor, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn]
             refresh_summaries_btn.click(on_refresh_memory, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=_memory_refresh_outputs)
             save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
@@ -2084,7 +2105,7 @@ class StartUI(routeable):
             max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[], show_progress="hidden")
             send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, omit_stop_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
             save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn])
+            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
 
     def __get_theme(self):
         return gr.themes.Soft(primary_hue="green",

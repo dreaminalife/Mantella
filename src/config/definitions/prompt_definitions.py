@@ -28,7 +28,9 @@ class PromptDefinitions:
                                 "bios_and_summaries",
                                 "private_thoughts",
                                 "actions",
-                                "lorebook"]
+                                "lorebook",
+                                "voice_sounds",
+                                "voice_moods"]
 
     # Multi-NPC / director: private thoughts are mixed into memory, not a prompt variable.
     ALLOWED_PROMPT_VARIABLES_MULTI = [v for v in ALLOWED_PROMPT_VARIABLES if v != "private_thoughts"]
@@ -69,8 +71,13 @@ class PromptDefinitions:
     # Conditional blocks ({if shout} ... {else} ... {end if}, see src/prompt_conditions.py): the merged prompts, and the conditions each one knows.
     # A prompt type that is not listed accepts no tags
     PROMPT_CONDITIONS: dict[str, tuple[str, ...]] = {
+        "skyrim_prompt": ("audio_tags", "moods", "directions"),
+        "skyrim_multi_npc_prompt": ("audio_tags", "moods", "directions"),
+        "skyrim_multi_npc_director_prompt": ("audio_tags", "moods", "directions"),
+        "skyrim_npc_initiative_prompt": ("audio_tags", "moods", "directions"),
+        "skyrim_radiant_prompt": ("audio_tags", "moods", "directions"),
         "skyrim_game_master_prompt": ("director", "shout", "say_to_room", "npc_event"),
-        "skyrim_game_master_npc_prompt": ("director", "shout", "npc_event"),
+        "skyrim_game_master_npc_prompt": ("director", "shout", "npc_event", "audio_tags", "moods", "directions"),
         "skyrim_conversation_event_generator_prompt": ("talk_event", "nearby_event", "random_event", "director"),
         "skyrim_game_master_decision_instructions": ("after_event",),
         "skyrim_game_master_decision_player_criteria": ("after_event",),
@@ -84,8 +91,35 @@ class PromptDefinitions:
             "say_to_room": "'say_to_room' is never true in this prompt: whoever answers has joined the conversation, so it is 'shout' by the time they speak.",
         },
     }
+    # The parts of the speaking prompts that tell the AI it may write sounds, moods and directions in square brackets (src/tts/voice_tags.py).
+    # Only sent while an NPC in the conversation speaks with a voice service that takes them, and its Audio tags or Directions is on.
+    # Every voice service gets each sentence on its own, so a mood or direction lasts one sentence, and Qwen keeps only a sentence's first direction:
+    # hence one at the start of each sentence with a feeling
+    VOICE_TAG_RULES = """{if audio_tags}
+- Sounds: a voice can make sounds. Put one in square brackets where it happens in a spoken line, for example: Ha! [laugh] You thought I'd fall for that? The ones these voices know: {voice_sounds}. Most lines need none: add one only where the moment calls for it. Never put two tags side by side, and never put one in narration or thoughts.
+{end if}
+{if moods}
+- Moods: a voice can change its mood. Start a spoken sentence with one in square brackets. The ones these voices know: {voice_moods}. A mood lasts only until the end of its sentence. Start every sentence that has a clear feeling with one, and when a feeling carries over several sentences, repeat it on each. Plain, calm sentences need none. Change mood gradually from one sentence to the next, not in sudden jumps. Never in narration or thoughts, and never against the words.
+{end if}
+{if directions}
+- Directions: start a spoken sentence with a short direction in square brackets, in English with no punctuation inside, saying how it is said, such as [say angrily], [voice cracking with grief], [sound terrified] or [speak slowly with a trembling voice]. Pick words that fit this moment and vary them; don't fall back on the same few directions. Use one direction per sentence, at its start. It lasts only until the end of that sentence. Start every sentence that has a clear feeling with one, and when a feeling carries over several sentences, give each of them a direction. Plain, calm sentences need none. Change tone gradually from one sentence to the next, not in sudden jumps. Never in narration or thoughts, and never against the words.
+{end if}
+"""
+    # The situations every speaking prompt's preview can show for its voice tags parts
+    VOICE_TAG_SITUATIONS: list[tuple[str, frozenset[str]]] = [
+        ("Voice takes no sounds or directions", frozenset()),
+        ("Voice makes sounds (Audio tags on)", frozenset({"audio_tags"})),
+        ("Voice takes directions (Directions on)", frozenset({"directions"})),
+        ("Voice makes sounds and takes directions", frozenset({"audio_tags", "directions"})),
+        ("Voice makes sounds and changes moods (HeyGen, Boson AI)", frozenset({"audio_tags", "moods"})),
+    ]
     # What the prompt editor's preview can show each merged prompt as: (the situation in plain words, the conditions that are true then)
     PREVIEW_SITUATIONS: dict[str, list[tuple[str, frozenset[str]]]] = {
+        "skyrim_prompt": VOICE_TAG_SITUATIONS,
+        "skyrim_multi_npc_prompt": VOICE_TAG_SITUATIONS,
+        "skyrim_multi_npc_director_prompt": VOICE_TAG_SITUATIONS,
+        "skyrim_npc_initiative_prompt": VOICE_TAG_SITUATIONS,
+        "skyrim_radiant_prompt": VOICE_TAG_SITUATIONS,
         "skyrim_game_master_prompt": [
             ("Group conversation", frozenset()),
             ("Group conversation, Director Mode", frozenset({"director"})),
@@ -101,6 +135,10 @@ class PromptDefinitions:
             ("Shout", frozenset({"shout"})),
             ("Shout, Director Mode", frozenset({"shout", "director"})),
             ("Watching an NPC Event", frozenset({"npc_event"})),
+            ("Group conversation, voice makes sounds (Audio tags on)", frozenset({"audio_tags"})),
+            ("Group conversation, voice takes directions (Directions on)", frozenset({"directions"})),
+            ("Group conversation, voice makes sounds and takes directions", frozenset({"audio_tags", "directions"})),
+            ("Group conversation, voice makes sounds and changes moods (HeyGen, Boson AI)", frozenset({"audio_tags", "moods"})),
         ],
         "skyrim_shout_decision_nobody_criteria": [
             ("Saying something to the room", frozenset()),
@@ -144,7 +182,7 @@ class PromptDefinitions:
         conditions = PromptDefinitions.get_conditions(prompt_type)
         if conditions is None:
             if has_condition_tags(text):
-                return "Conditional blocks like {if ...} only work in the Game Master, Game Master NPC, Talk/Nearby/Random Event Generator, Game Master Decision Instructions, Game Master Decision Player Criteria, Decision Nearby Criteria, Say To Room Decision Nobody Criteria and Memory prompts."
+                return "Conditional blocks like {if ...} only work in the Skyrim, Skyrim Multi-NPC, Skyrim Multi-NPC Director, Skyrim NPC Initiative, Skyrim Radiant Conversation, Game Master, Game Master NPC, Talk/Nearby/Random Event Generator, Game Master Decision Instructions, Game Master Decision Player Criteria, Decision Nearby Criteria, Say To Room Decision Nobody Criteria and Memory prompts."
             return None
         return find_condition_error(text, set(conditions), PromptDefinitions.CONDITION_EXPLANATIONS.get(prompt_type or ""))
 
@@ -176,8 +214,10 @@ class PromptDefinitions:
                                 "conversation_summaries",
                                 "bios_and_summaries",
                                 "actions",
-                                "lorebook"]
-    
+                                "lorebook",
+                                "voice_sounds",
+                                "voice_moods"]
+
     ALLOWED_PROMPT_VARIABLES_MEMORY = [
         "bios",
         "names",
@@ -237,7 +277,9 @@ class PromptDefinitions:
                                 player_equipment = a basic description of the equipment the player character carries
                                 equipment = a basic description of the equipment the NPCs carry
                                 actions = instructions for the LLM how to trigger actions
-                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
+                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
+                                voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
     
     BASE_MULTI_PROMPT_DESCRIPTION = """The starting prompt sent to the LLM when multiple NPCs are selected.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -261,7 +303,9 @@ class PromptDefinitions:
                                 player_equipment = a basic description of the equipment the player character carries
                                 equipment = a basic description of the equipment the NPCs carry
                                 actions = instructions for the LLM how to trigger actions
-                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
+                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
+                                voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
     
     BASE_RADIANT_DESCRIPTION = """The starting prompt sent to the LLM when a radiant conversation is started.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -280,8 +324,14 @@ class PromptDefinitions:
                                 conversation_summaries = same as conversation_summary
                                 equipment = a basic description of the equipment the NPCs carry
                                 actions = instructions for the LLM to trigger actions
-                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
+                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
+                                voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
         
+    # Speech-to-Text Names: a list of names with commas between them, most likely first
+    ALLOWED_PROMPT_VARIABLES_STT_NAMES = ["names", "nearby_names", "location", "player_name"]
+    STT_NAMES_PROMPT = "{names}, {nearby_names}, {location}, {player_name}"
+
     class PromptChecker(ConfigValueConstraint[str]):
         def __init__(self, allowed_prompt_variables: list[str], prompt_type: str | None = None) -> None:
             """
@@ -310,19 +360,23 @@ class PromptDefinitions:
     @staticmethod
     def get_skyrim_prompt_config_value() -> ConfigValue:
         skyrim_prompt_value = """You are {name}, and you live in Skyrim. This is your background: {bio}
+                                {if audio_tags or directions}
+                                Sometimes in-game events will be passed before the player response within round brackets. You cannot respond with round brackets yourself, they only exist to give context. Here is an example:
+                                {else}
                                 Sometimes in-game events will be passed before the player response within brackets. You cannot respond with brackets yourself, they only exist to give context. Here is an example:
+                                {end if}
                                 (The player picked up a pair of gloves)
                                 Who do you think these belong to?
                                 You are having a conversation with {player_name} (the player) who is {trust} in {location}. {player_name} {player_description} {player_equipment} {equipment}
                                 This conversation is a script that will be spoken aloud, so please keep your responses appropriately concise and avoid text-only formatting such as numbered lists.
-                                The time is {time} {time_group}.
+""" + PromptDefinitions.VOICE_TAG_RULES + """                                The time is {time} {time_group}.
                                 {weather}
                                 Remember to stay in character.
                                 {actions}
                                 The conversation takes place in {language}.
                                 {conversation_summary}
                                 {private_thoughts}"""
-        return ConfigValueString("skyrim_prompt","Skyrim Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION,skyrim_prompt_value,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
+        return ConfigValueString("skyrim_prompt","Skyrim Prompt",PromptDefinitions.BASE_PROMPT_DESCRIPTION,skyrim_prompt_value,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES, "skyrim_prompt")])
 
     @staticmethod
     def get_skyrim_multi_npc_prompt_config_value() -> ConfigValue:
@@ -336,10 +390,10 @@ class PromptDefinitions:
                                     {weather}
                                     You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'.
                                     Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable).
-                                    {actions}
+""" + PromptDefinitions.VOICE_TAG_RULES + """                                    {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
-        return ConfigValueString("skyrim_multi_npc_prompt","Skyrim Multi-NPC Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI)])
+        return ConfigValueString("skyrim_multi_npc_prompt","Skyrim Multi-NPC Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI, "skyrim_multi_npc_prompt")])
 
     @staticmethod
     def get_skyrim_multi_npc_director_prompt_config_value() -> ConfigValue:
@@ -406,8 +460,8 @@ Ysolda: Thank God. Relief floods her words as she exhales, eager to move on.
 - **No Labels for Narration:** DO NOT begin your narrations with "Narration:". Just add the thing without highlighting it.  
 - **Always Use Punctuation** at the end of a sentence.  
 - **No Special Characters:** The use of special characters, asterisks, dashes (-), or quotation marks is STRICTLY PROHIBITED  
-- **Use ! and ALL CAPS** for emphasis when fitting. 
-
+- **Use ! and ALL CAPS** for emphasis when fitting.
+""" + PromptDefinitions.VOICE_TAG_RULES + """
 
 **=== END OF IMPORTANT SECTION ===**
 
@@ -431,7 +485,7 @@ Content Guidelines:
 - The conversation is in {language}.
 
 """
-        return ConfigValueString("skyrim_multi_npc_director_prompt","Skyrim Multi-NPC Director Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_director_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI)])
+        return ConfigValueString("skyrim_multi_npc_director_prompt","Skyrim Multi-NPC Director Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_director_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI, "skyrim_multi_npc_director_prompt")])
 
     @staticmethod
     def get_skyrim_game_master_prompt_config_value() -> ConfigValue:
@@ -526,7 +580,9 @@ Content Guidelines:
                                 player_equipment = a basic description of the equipment the player character carries
                                 equipment = a basic description of the equipment all NPCs in the conversation carry
                                 actions = instructions for the LLM how to trigger actions
-                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history"""
+                                lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
+                                voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
 
     @staticmethod
     def get_skyrim_game_master_npc_prompt_config_value() -> ConfigValue:
@@ -593,7 +649,7 @@ Content Guidelines:
 - Do not wrap the utterance in quotes
 - Format all spoken words and narrations with the NPC's full name followed by their dialogue.
 - No asterisks. You can use all caps instead.
-
+""" + PromptDefinitions.VOICE_TAG_RULES + """
 - At the very END of the response, after ALL spoken lines and actions are finished, you MUST add one unspoken private thought per NPC who spoke
 - Never place thoughts before or between dialogue lines.
 - Format the private thought using: <<thought Full Name>> <<action next turn Full Name>>
@@ -605,7 +661,17 @@ Content Guidelines:
 {end if}
 
 Response format example:
-Ysolda: Keep your voice down. We're here to close the deal,  we don't want to draw the attention of the town guard.
+{if directions and audio_tags}
+Ysolda: [sigh] The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
+{else if directions}
+Ysolda: The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
+{else if moods}
+Ysolda: [sigh] The buyer's late. [scared] Keep your voice down. [whisper] The guards are close. [happy] Now smile, like we're two old friends out for a walk.
+{else if audio_tags}
+Ysolda: [sigh] The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
+{else}
+Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
+{end if}
 <<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
 <<action next turn Ysolda>>  I need to make the handoff quickly and get back behind the city gates.
 
@@ -709,7 +775,7 @@ Always use the most recent memory to determine the current relationship
 - Do not wrap the utterance in quotes
 - Format all spoken words and narrations with the NPC's full name followed by their dialogue.
 - No asterisks. You can use all caps instead.
-
+""" + PromptDefinitions.VOICE_TAG_RULES + """
 - At the very END of the response, after ALL spoken lines and actions are finished, you MUST add one unspoken private thought per NPC who spoke
 - Never place thoughts before or between dialogue lines.
 - Format the private thought using: <<thought Full Name>> <<action next turn Full Name>>
@@ -717,7 +783,17 @@ Always use the most recent memory to determine the current relationship
   - Must express {names}'s internal reaction/feelings to what just happened, to the people involved (including {player_name}),  and what **impactful** actions they will immediately take, or what **impactful** new topics they would bring up in the next turn to ** concretely ** move the conversation forward. Do NOT use conditional framing like "if..., then...", "in case...", or "only if...". State exactly what they are going to do/say/ask.
 
 Response format example:
-Ysolda: Keep your voice down. We're here to close the deal,  we don't want to draw the attention of the town guard.
+{if directions and audio_tags}
+Ysolda: [sigh] The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
+{else if directions}
+Ysolda: The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
+{else if moods}
+Ysolda: [sigh] The buyer's late. [scared] Keep your voice down. [whisper] The guards are close. [happy] Now smile, like we're two old friends out for a walk.
+{else if audio_tags}
+Ysolda: [sigh] The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
+{else}
+Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
+{end if}
 <<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
 <<action next turn Ysolda>>  I need to make the handoff quickly and get back behind the city gates.
 
@@ -761,7 +837,7 @@ Always use the most recent memory to determine the current relationship
 
 ## Extra info/reference
  {lorebook}"""
-        return ConfigValueString("skyrim_npc_initiative_prompt","Skyrim NPC Initiative Prompt",description,skyrim_npc_initiative_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES)])
+        return ConfigValueString("skyrim_npc_initiative_prompt","Skyrim NPC Initiative Prompt",description,skyrim_npc_initiative_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES, "skyrim_npc_initiative_prompt")])
 
     @staticmethod
     def get_skyrim_npc_initiative_opener_config_value() -> ConfigValue:
@@ -987,11 +1063,11 @@ Always use the most recent memory to determine the current relationship
                                     The time is {time} {time_group}.
                                     {weather}
                                     You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'. 
-                                    Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable). 
-                                    {actions}
+                                    Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable).
+""" + PromptDefinitions.VOICE_TAG_RULES + """                                    {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
-        return ConfigValueString("skyrim_radiant_prompt","Skyrim Radiant Conversation Prompt",PromptDefinitions.BASE_RADIANT_DESCRIPTION,skyrim_radiant_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT)])
+        return ConfigValueString("skyrim_radiant_prompt","Skyrim Radiant Conversation Prompt",PromptDefinitions.BASE_RADIANT_DESCRIPTION,skyrim_radiant_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT, "skyrim_radiant_prompt")])
 
     @staticmethod
     def get_fallout4_prompt_config_value() -> ConfigValue:
@@ -1256,6 +1332,17 @@ If {name} does nothing, do not call any functions."""
             [PromptDefinitions.PromptChecker([])],
         )
 
+    def get_stt_names_prompt_config_value() -> ConfigValue:
+        description = """The names you are likely to say, sent with every recording so speech-to-text spells them right (Balgruuf, not "Bal Groove").
+                        Write the names with commas between them, most likely first: when the list is too long, names are left out from the end.
+                        Add names from mods or your own story, e.g. "{names}, {nearby_names}, {location}, {player_name}, Ulfric", or leave it empty to send no names.
+                        Whisper, OpenAI and Groq get the list as one line after "Names:"; Deepgram, ElevenLabs and Mistral get each name on its own (turn on Catch First Names on the Speech-to-Text tab to also send "Camilla" for "Camilla Valerius"). Moonshine, Parakeet and OpenRouter can't take names.
+                        Supports {names} = the NPCs in the conversation, {nearby_names} = the other NPCs nearby, {location} = where you are,
+                        {player_name} = your character. Each is filled with names with commas between them."""
+        return ConfigValueString("stt_names_prompt", "Speech-to-Text Names", description, PromptDefinitions.STT_NAMES_PROMPT,
+                                 [PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_STT_NAMES)])
+
+    @staticmethod
     def get_radiant_start_prompt_config_value() -> ConfigValue:
         radiant_start_prompt_description = """Once a radiant conversation has started and the radiant prompt has been passed to the LLM, the below text is passed in replace of the player response.
                                         This prompt is used to steer the radiant conversation.
@@ -1310,6 +1397,7 @@ If {name} does nothing, do not call any functions."""
             ("resummarize_prompt", "Resummarize Prompt", ["name", "language", "game", "player_name", "lorebook"]),
             ("vision_prompt", "Vision Prompt", ["game"]),
             ("advanced_actions_prompt", "Advanced Actions Prompt", ["game", "name"]),
+            ("stt_names_prompt", "Speech-to-Text Names", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_STT_NAMES),
             ("radiant_start_prompt", "Radiant Start Prompt", []),
             ("radiant_end_prompt", "Radiant End Prompt", []),
             ("decensor_handshake_prompt", "Decensor Handshake Prompt", []),
@@ -1442,6 +1530,10 @@ If {name} does nothing, do not call any functions."""
             "A short message asking the AI to confirm it is ready to roleplay. It comes right before the Decensor Assistant Prompt so that one can be sent.",
             "With every NPC reply in any conversation.",
             "Enable Decensor Bypass on and Decensor Assistant Placement set to After system prompt."),
+        "stt_names_prompt": (
+            "The names you are likely to say, sent with your recording so speech-to-text spells them right.",
+            "Each time you speak into the microphone. It is filled in whenever the game sends who is in the conversation, who is nearby and where you are.",
+            "Microphone on. Moonshine, Parakeet and OpenRouter can't take names, so with them nothing is sent."),
         "decensor_assistant_prompt": (
             "A message written as if the AI had already agreed to stay in character, which makes it less likely to refuse.",
             "With every NPC reply in any conversation. Decensor Assistant Placement sets where it goes.",
@@ -1495,6 +1587,11 @@ If {name} does nothing, do not call any functions."""
         "nearby_event": "you picked Nearby Event on the Conversation Wheel.",
         "random_event": "you picked Random Event on the Conversation Wheel.",
         "after_event": "the first choice right after you picked a Talk, Nearby or Random Event on the Conversation Wheel: who reacts to it first.",
+        "audio_tags": "an NPC in the conversation speaks with a voice that can make sounds such as [laugh] or [sigh]: Inworld, HeyGen, Qwen or Boson AI with Audio tags on (Text-to-Speech page). "
+                      "{voice_sounds} lists those sounds.",
+        "moods": "an NPC in the conversation speaks with a voice that can change its mood, such as [angry] or [scared]: HeyGen or Boson AI with Audio tags on (Text-to-Speech page). "
+                 "{voice_moods} lists those moods. Always true together with audio_tags.",
+        "directions": "an NPC in the conversation speaks with a voice that takes directions such as [say angrily]: Inworld's TTS-2 model, or Qwen while Mantella's Language is English, with Directions on (Text-to-Speech page).",
     }
     # What it means when none of a prompt's kinds of conversation is true
     CONDITION_NONE_MEANINGS: dict[str, str] = {

@@ -50,7 +50,7 @@ def test_names_are_found_by_name_or_alias_whatever_the_spelling():
 def test_a_setup_with_a_taken_name_is_left_out():
     registry = VoiceServiceRegistry()
     registry.set_setups([vs.to_service_info(vs.normalized(a_setup(name="piper"))), vs.to_service_info(vs.normalized(a_setup()))])
-    assert registry.names() == ["Piper", "XTTS", "xVASynth", "Pocket TTS", "My Pocket"]
+    assert registry.names() == ["Piper", "XTTS", "xVASynth", "Pocket TTS", "ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "My Pocket"]
 
 
 def test_setups_are_saved_listed_renamed_and_removed(tmp_path):
@@ -136,6 +136,32 @@ def test_without_a_clip_the_setups_own_voice_speaks(voice_config, tmp_path):
         service = OpenAIStyleService(voice_config, info)
         service.voice_into("Hi.", service.pick_voice(VoiceSpeaker(gender=1, voice_type="FemaleOrc")), str(tmp_path / "a.wav"))
     assert server.requests[0]["voice"] == "alba" and "speaker_ref_b64" not in server.requests[0]
+
+
+def test_a_setup_with_no_clip_box_speaks_with_its_own_voices_and_asks_the_game_for_no_clips(voice_config, tmp_path, monkeypatch):
+    from src.tts.synthesization_options import SynthesizationOptions
+    from src.tts.ttsable import TTSable
+    write_clip(tmp_path, "FemaleEvenToned") # a clip another service asked for
+    monkeypatch.setattr(TTSable, "synthesize", lambda *args, **kwargs: None)
+    with FakeVoiceServer("openai") as server:
+        info = vs.to_service_info(vs.normalized(a_setup(url=server.url, clip_field="", clip_mode="", male_voice="george", female_voice="alba")))
+        service = OpenAIStyleService(voice_config, info)
+        pick = service.pick_voice(VoiceSpeaker(gender=1, voice_type="FemaleEvenToned"))
+        service.voice_into("Hi.", pick, str(tmp_path / "a.wav"))
+        service.synthesize("", "Hi.", "FemaleNord", "FemaleNord", "", SynthesizationOptions(False, True),
+                           speaker=VoiceSpeaker(gender=1, voice_type="FemaleNord")) # no clip yet
+    assert server.requests[0]["voice"] == "alba" and "speaker_ref_b64" not in server.requests[0]
+    assert service._clip_requests.requests_for_reply() == []
+
+
+def test_a_clip_sent_as_base64_is_not_kept_in_memory(voice_config, tmp_path):
+    write_clip(tmp_path, "FemaleEvenToned")
+    with FakeVoiceServer("openai") as server:
+        service = OpenAIStyleService(voice_config, vs.to_service_info(vs.normalized(a_setup(url=server.url))))
+        pick = service.pick_voice(VoiceSpeaker(gender=1, voice_type="FemaleEvenToned"))
+        service.voice_into("Hi.", pick, str(tmp_path / "a.wav"))
+    assert server.requests[0]["speaker_ref_b64"]
+    assert all(len(repr(voice)) < 1000 for _, voice in service._prepared.values())
 
 
 def test_one_failed_try_is_tried_again(voice_config, tmp_path):

@@ -5,6 +5,7 @@ from src.llm.client_base import ClientBase
 from src.llm.key_file_resolver import key_file_resolver
 from src.llm.messages import UserMessage
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
+from src.prompt_label import label_text
 import logging
 
 
@@ -46,7 +47,7 @@ class BioLLMRequester:
             except Exception:
                 token_count = len(prompt_text) if prompt_text else 0
             logging.log(23, f"Prompt sent to LLM ({token_count} tokens): {prompt_text.strip() if prompt_text else ''}")
-            message = UserMessage(self._config, prompt_text, is_system_generated_message=True)
+            message = UserMessage(self._config, label_text(prompt_text, "the Bio Editor"), is_system_generated_message=True)
             reply = client.request_call(message)
             return reply or ""
         except Exception as e:

@@ -932,6 +932,7 @@ def conversation_event_manager(members: list, player, loaded: dict[int, SimpleNa
         setattr(cfg, f"{kind}_event_include_player", False)
     talk = MagicMock()
     talk.is_directed.return_value = False
+    talk.is_stopping = False # The game has not ended it
     talk.context.npcs_in_conversation.get_player_character.return_value = player
     talk.context.get_characters_excluding_player.return_value.get_all_characters.return_value = members
     talk.context.location, talk.context.ingame_time, talk.context.weather = "Whiterun", 12, ""

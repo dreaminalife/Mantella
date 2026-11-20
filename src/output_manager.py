@@ -8,7 +8,7 @@ import wave
 import hashlib
 import json
 import re
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Callable
 from openai import APIConnectionError
 from src.llm.output.sentence_accumulator import sentence_accumulator
 from src.config.definitions.llm_definitions import NarrationHandlingEnum
@@ -21,6 +21,7 @@ from src.llm.output.thought_parser import thought_parser
 from src.llm.output.narration_parser import narration_parser
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
 from src.llm.output.sentence_end_parser import sentence_end_parser
+from src.llm.output.voice_tags_parser import voice_tags_parser
 from src.llm.sentence_content import SentenceTypeEnum, SentenceContent
 from src.conversation.action import Action
 from src.llm.sentence_queue import SentenceQueue
@@ -38,6 +39,7 @@ from src.random_llm_selector import LLMSelection
 from src.sequential_llm_selector import SequentialLLMSelector
 from src.model_profile_manager import ModelProfileManager
 from src.llm.client_base import ClientBase, FirstTokenTimeout, ProviderError, ToolCalls
+from src.prompt_label import label_prompt
 from src.llm.image_client import ImageClient, VisionCapture, image_manager_for
 from src.image.image_manager import ImageManager
 from src.llm.messages import AssistantMessage, Message, UserMessage
@@ -48,9 +50,10 @@ from src.llm.key_file_resolver import key_file_resolver
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.games.gameable import Gameable
 from src.tts.ttsable import TTSable
-from src.tts.clip_service import ClipVoiceService
+from src.tts.clip_service import ClipVoiceService, NoSoundSymbols
 from src.tts.registry import VoiceServiceInfo, normalize_service_name, serving_in_game, voice_services
 from src.tts.voice_picker import VoicePick, VoiceSpeaker
+from src.tts import voice_tags
 
 def describe_action(action: dict) -> str:
     """An action the AI model picked, in the log and in the note for the NPC's line: its name and details, e.g. MoveTo (target: Hulda)"""
@@ -357,7 +360,7 @@ class ChatManager:
         return self._get_or_create_random_client(selection)
 
     def _get_fallback_client(self) -> AIClient | None:
-        """The Fallback model for a reply the LLM service rejected, or None when it is off or cannot be created"""
+        """The Fallback model for a reply the LLM service rejected or didn't answer in time, or None when it is off or cannot be created"""
         config = self.__config
         if not config.fallback_llm_enabled:
             return None
@@ -477,12 +480,16 @@ class ChatManager:
         """A name from the tts_service column: piper, xtts, xvasynth or xva, a newer service, or one of the player's voice setups"""
         return voice_services.find(value)
 
-    def _get_or_create_tts(self, service: VoiceServiceInfo) -> TTSable:
-        # If requested service matches the default instance, reuse it
+    def __running_tts(self, service: VoiceServiceInfo) -> TTSable | None:
+        """The service's instance if it is already made: the TTS Service's, or one made for an NPC or as the backup"""
         if service.name == getattr(self.__config, 'tts_service_name', None) or (service.legacy_enum is not None and service.legacy_enum == getattr(self.__config, 'tts_service', None)):
             return self.__tts
-        if service.name in self.__per_service_tts:
-            return self.__per_service_tts[service.name]
+        return self.__per_service_tts.get(service.name)
+
+    def _get_or_create_tts(self, service: VoiceServiceInfo) -> TTSable:
+        running = self.__running_tts(service)
+        if running is not None:
+            return running
         try:
             instance = serving_in_game(voice_services.create(service, self.__config, self.__game))
             self.__per_service_tts[service.name] = instance
@@ -500,58 +507,84 @@ class ChatManager:
                 except Exception as e:
                     logging.warning(f"Could not stop a voice service: {e}")
 
-    def __backup_tts(self) -> TTSable | None:
+    def start_backup_voice_service(self) -> None:
+        """When the game starts: the Backup Voice Service starts too when the TTS Service would hand lines to it, so it is ready
+        the moment a line fails, instead of starting while the NPC waits"""
         backup = voice_services.find(getattr(self.__config, 'tts_backup_service_name', None))
-        return self._get_or_create_tts(backup) if backup else None
+        if backup is None or not isinstance(self.__tts, ClipVoiceService) or self.__running_tts(backup) is not None:
+            return
+        self._get_or_create_tts(backup)
 
-    def __voice_chain(self, first: TTSable) -> list[TTSable]:
+    def __voice_chain(self, first: TTSable) -> list[TTSable | VoiceServiceInfo]:
         """Who speaks a line, in order, when the one before fails.
-        A newer service or voice setup goes to the Backup Voice Service. Piper, XTTS and xVASynth keep the old way: an NPC's own one goes to the TTS Service"""
-        chain = [first]
-        if isinstance(first, ClipVoiceService):
-            backup = self.__backup_tts()
-            if backup is not None:
-                chain.append(backup)
-        elif first is not self.__tts:
+        A newer service or voice setup goes to the Backup Voice Service. Piper, XTTS and xVASynth keep the old way: an NPC's own one goes to the TTS Service.
+        A backup that isn't running yet (an NPC's own newer service, with Piper, XTTS or xVASynth as the TTS Service) stays a name,
+        so it starts only when a line gets to it"""
+        chain: list[TTSable | VoiceServiceInfo] = [first]
+        if not isinstance(first, ClipVoiceService) and first is not self.__tts:
             chain.append(self.__tts)
-            if isinstance(self.__tts, ClipVoiceService):
-                backup = self.__backup_tts()
-                if backup is not None:
-                    chain.append(backup)
-        unique: list[TTSable] = []
-        for instance in chain:
-            if all(instance is not u for u in unique):
-                unique.append(instance)
-        return unique
+        backup = voice_services.find(getattr(self.__config, 'tts_backup_service_name', None))
+        if isinstance(chain[-1], ClipVoiceService) and backup is not None:
+            running = self.__running_tts(backup)
+            if running is None:
+                chain.append(backup)
+            elif all(running is not c for c in chain):
+                chain.append(running)
+        return chain
 
     @staticmethod
-    def __service_name(instance: TTSable) -> str:
-        return instance.info.name if isinstance(instance, ClipVoiceService) else type(instance).__name__
+    def __service_name(entry: TTSable | VoiceServiceInfo) -> str:
+        if isinstance(entry, VoiceServiceInfo):
+            return entry.name
+        return entry.info.name if isinstance(entry, ClipVoiceService) else type(entry).__name__
 
-    def __speak_with_chain(self, chain: list[TTSable], speak: Any) -> str:
-        """Tries each voice service in turn. *speak* voices the line with one and returns the sound file"""
-        for i, instance in enumerate(chain):
+    def __log_voice(self, who: str, chain: list[TTSable | VoiceServiceInfo], speaker: TTSable) -> None:
+        """TTS for Lydia: Pocket TTS speaks with voice type clip 'femaleeventoned'. If it fails: Piper
+        A service with a model or tags says how it speaks: TTS for Lydia: Inworld (TTS-2, audio tags, directions) speaks with ..."""
+        mode = speaker.info.mode_text(self.__config) if isinstance(speaker, ClipVoiceService) else ""
+        mode = f" ({mode})" if mode else ""
+        message = f"TTS for {who}: {self.__service_name(speaker)}{mode} speaks with {speaker.voice_in_use}"
+        if speaker is chain[0] and len(chain) > 1:
+            message += f". If it fails: {', '.join(self.__service_name(entry) for entry in chain[1:])}"
+        logging.info(message)
+
+    def __speak_with_chain(self, chain: list[TTSable | VoiceServiceInfo], speak: Any) -> tuple[str, TTSable]:
+        """Tries each voice service in turn. *speak* voices the line with one and returns the sound file. Returns the sound file and who spoke it"""
+        error: Exception | None = None
+        for i, entry in enumerate(chain):
+            instance = self._get_or_create_tts(entry) if isinstance(entry, VoiceServiceInfo) else entry # the backup starts here, the first time a line needs it
+            if any(instance is c for c in chain[:i]) and error is not None: # the backup couldn't start, so the TTS Service it fell back to failed already
+                raise error
             try:
                 audio_file = speak(instance)
                 is_last = i == len(chain) - 1
                 if not is_last and not (audio_file and os.path.exists(audio_file) and os.path.getsize(audio_file) > 0):
                     raise FileNotFoundError(f"Audio file not created or empty: {audio_file}")
-                return audio_file
+                if i > 0:
+                    logging.info(f"{self.__service_name(instance)} spoke the line with {instance.voice_in_use}")
+                return audio_file, instance
             except Exception as e:
                 if i == len(chain) - 1:
                     raise
-                logging.warning(f"{self.__service_name(instance)} failed: {e}. {self.__service_name(chain[i + 1])} speaks the line instead.")
+                error = e
+                name, why = self.__service_name(instance), str(e).rstrip(". ")
+                why = why if why.startswith(name) else f"{name} failed: {why}"
+                logging.warning(f"{why}. {self.__service_name(chain[i + 1])} speaks the line instead.")
         raise RuntimeError("No voice service to speak the line")
 
     @staticmethod
-    def _speak_as_character(instance: TTSable, character: Character, text: str, synth_options: SynthesizationOptions) -> str:
+    def _speak_as_character(instance: TTSable, character: Character, text: str, synth_options: SynthesizationOptions, voice_text: str | None = None) -> str:
+        """voice_text: the line with its sounds and directions ([laugh]), for a voice service that takes them"""
         if isinstance(instance, ClipVoiceService):
             return instance.synthesize(character.tts_voice_model, text, character.in_game_voice_model, character.csv_in_game_voice_model, character.voice_accent, synth_options,
-                                       character.advanced_voice_model, speaker=VoiceSpeaker.from_character(character))
+                                       character.advanced_voice_model, speaker=VoiceSpeaker.from_character(character), voice_text=voice_text)
         return instance.synthesize(character.tts_voice_model, text, character.in_game_voice_model, character.csv_in_game_voice_model, character.voice_accent, synth_options, character.advanced_voice_model)
 
-    def speak_test_line(self, service_name: str, voice_type: str, text: str, use_word_lists: bool = True) -> str:
-        """The Test button: one line in a voice type's voice, from one voice service. Returns the sound file"""
+    def speak_test_line(self, service_name: str, voice_type: str, text: str, use_word_lists: bool = True, as_heard: bool = True,
+                        ipa_word: tuple[str, str] | None = None) -> str:
+        """The Test button: one line in a voice type's voice, from one voice service. Returns the sound file.
+        *as_heard*: a newer service's line gets the voice's Pitch and the service's Volume, as in game; False leaves it as the service made it.
+        *ipa_word*: (word, sound symbols) to say that word by, for Hear it fixed"""
         service = voice_services.find(service_name)
         if service is None:
             raise ValueError(f"There is no voice service called '{service_name}'.")
@@ -561,8 +594,13 @@ class ChatManager:
             if isinstance(instance, ClipVoiceService):
                 out_path = os.path.join(os.getenv('TMP') or ".", "voicelines", "test_line.wav")
                 os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                instance.voice_into(text, instance.pick_voice(VoiceSpeaker(gender=gender, voice_type=voice_type)), out_path, use_word_lists)
+                pick = instance.pick_voice(VoiceSpeaker(gender=gender, voice_type=voice_type))
+                instance.voice_into(text, pick, out_path, use_word_lists, ipa_word)
+                if as_heard:
+                    instance.finish_line(out_path, pitch=instance.pitch_for(pick))
                 return out_path
+            if ipa_word is not None:
+                raise NoSoundSymbols(f"{service_name} doesn't take sound symbols.")
             spaced = " ".join(part for part in re.findall(r"[A-Z][a-z]*", voice_type)) or voice_type # FemaleEvenToned -> Female Even Toned, as Piper and XTTS name voices
             return instance.synthesize(spaced, f" {text} ", voice_type, voice_type, self.__config.language, SynthesizationOptions(False, False))
 
@@ -602,10 +640,11 @@ class ChatManager:
             try:
                 if self.__config.narration_handling == NarrationHandlingEnum.USE_NARRATOR and content.sentence_type == SentenceTypeEnum.NARRATION:
                     synth_options = SynthesizationOptions(False, self.__is_first_sentence)
-                    logging.info(f"TTS for narration: using='default' (narrator)")
                     narrator_voice = self.__config.narrator_voice
-                    audio_file = self.__speak_with_chain(self.__voice_chain(self.__tts),
+                    chain = self.__voice_chain(self.__tts)
+                    audio_file, speaker = self.__speak_with_chain(chain,
                         lambda tts: tts.synthesize(narrator_voice, text, narrator_voice, narrator_voice, "en", synth_options, narrator_voice))
+                    self.__log_voice("narration", chain, speaker)
                 else:
                     synth_options = SynthesizationOptions(character_to_talk.is_in_combat, self.__is_first_sentence)
                     # Determine per-character TTS, with fallback to default
@@ -617,27 +656,14 @@ class ChatManager:
                     if selected_tts_service is None and normalize_service_name(requested_tts_service_str):
                         logging.error(f"Invalid TTS service '{requested_tts_service_str}' specified for character {character_to_talk.name}. Valid options: piper, xtts, xvasynth, or {', '.join(voice_services.names())}. Using default TTS instead.")
 
-                    # Log TTS info once per character per response
-                    if character_to_talk.name not in self.__logged_tts_characters:
-                        # Determine which voice model will be used based on priority
-                        final_voice_model = (character_to_talk.advanced_voice_model or
-                                           character_to_talk.tts_voice_model or
-                                           character_to_talk.in_game_voice_model or
-                                           character_to_talk.csv_in_game_voice_model or
-                                           "unknown")
-
-                        if selected_tts_service is not None:
-                            tts_service_name = selected_tts_service.name
-                        else:
-                            tts_service_name = "default"
-
-                        logging.info(f"TTS for {character_to_talk.name}: using {tts_service_name} with voice '{final_voice_model}'")
-                        self.__logged_tts_characters.add(character_to_talk.name)
-
                     # The NPC's own voice service first, then whoever speaks when it fails
                     first = self._get_or_create_tts(selected_tts_service) if selected_tts_service is not None else self.__tts
-                    audio_file = self.__speak_with_chain(self.__voice_chain(first),
-                        lambda tts: self._speak_as_character(tts, character_to_talk, text, synth_options))
+                    chain = self.__voice_chain(first)
+                    audio_file, speaker = self.__speak_with_chain(chain,
+                        lambda tts: self._speak_as_character(tts, character_to_talk, text, synth_options, content.voice_text))
+                    if character_to_talk.name not in self.__logged_tts_characters: # once per NPC per response
+                        self.__log_voice(character_to_talk.name, chain, speaker)
+                        self.__logged_tts_characters.add(character_to_talk.name)
             except Exception as e:
                 utils.play_error_sound()
                 error_text = f"Text-to-Speech Error: {e}"
@@ -781,7 +807,8 @@ class ChatManager:
         name = speaker.name
         if tool_request.several_speakers:
             name = join_names([c.name for c in characters.get_all_characters() if not c.is_player_character] or [speaker.name], "or")
-        prompt = self.__config.advanced_actions_prompt.replace("{game}", self.__config.game.display_name).replace("{name}", name)
+        prompt = label_prompt(self.__config.advanced_actions_prompt.replace("{game}", self.__config.game.display_name).replace("{name}", name),
+                              self.__config.prompt_profile_manager, "advanced_actions_prompt", speaker=name)
         logging.log(23, f"The Advanced Actions model {client.model_name} picks {name}'s actions...")
         return client.request_tool_calls(messages.copy_with_system_message(prompt), tools)
 
@@ -801,6 +828,17 @@ class ChatManager:
         except Exception as e:
             logging.error(f"Could not use the Advanced Actions model {config.advanced_actions_llm_api}/{config.advanced_actions_llm}: {e}")
             return None
+
+    async def __unless_stopped(self, call: Callable[[], Any], stopped_result: Any) -> Any:
+        """Runs a call that waits for an AI model without streaming. When generation is stopped meanwhile, returns stopped_result
+        right away: the call goes on in its own thread, and what it returns is thrown away"""
+        task = asyncio.ensure_future(asyncio.to_thread(call))
+        while not task.done():
+            if self.__stop_generation.is_set():
+                task.add_done_callback(lambda t: None if t.cancelled() else t.exception()) # Its error, if any, was logged by the call
+                return stopped_result
+            await asyncio.wait({task}, timeout=0.05)
+        return task.result()
 
     async def __until_stopped(self, stream: AsyncGenerator[str | None, None]) -> AsyncGenerator[str | None, None]:
         """Passes the stream on until generation is stopped, also while still waiting for the LLM to answer. Closes the stream when done"""
@@ -859,14 +897,23 @@ class ChatManager:
         tools = [t for t in (tool_request.tools if tool_request else []) if can_see or t['function']['name'] != look_tool]
         blocking_queue = _RecordingQueue(blocking_queue) # Look: what this reply has already said
 
+        # Sounds and directions ([laugh], [say angrily]): while an NPC here speaks with a voice service that takes them,
+        # square brackets hold those, not narration. They are taken out of every sentence's text and only reach that service
+        tags_parser = voice_tags_parser(lambda speaker: voice_tags.tags_for(self.__config, speaker))             if voice_tags.conditions_for(self.__config, characters.get_all_characters()) else None
+        narration_start, narration_end = self.__config.narration_start_indicators, self.__config.narration_end_indicators
+        if tags_parser:
+            narration_start = [c for c in narration_start if c != "["]
+            narration_end = [c for c in narration_end if c != "]"]
         parser_chain: list[output_parser] = [
             thought_parser([active_character] if lock_speaker else characters.get_all_characters()),
             change_character_parser(characters, active_character if lock_speaker else None)]
         if self.__config.narration_handling != NarrationHandlingEnum.DEACTIVATE_HANDLING_OF_NARRATIONS:
-            parser_chain.append(narration_parser(self.__config.narration_start_indicators, self.__config.narration_end_indicators, 
+            parser_chain.append(narration_parser(narration_start, narration_end, 
                                                  self.__config.speech_start_indicators, self.__config.speech_end_indicators))
+        parser_chain.append(sentence_end_parser(keep_square_brackets=tags_parser is not None))
+        if tags_parser:
+            parser_chain.append(tags_parser)
         parser_chain.extend([
-            sentence_end_parser(),
             actions_parser(actions, getattr(self.__config, 'all_actions', None)),
             sentence_length_parser(self.__config.number_words_tts),
             max_count_sentences_parser(
@@ -881,7 +928,7 @@ class ChatManager:
             indicators = parser.get_cut_indicators()
             for i in indicators:
                 cut_indicators.add(i)
-        accumulator: sentence_accumulator = sentence_accumulator(list(cut_indicators))
+        accumulator: sentence_accumulator = sentence_accumulator(list(cut_indicators), keep_square_brackets=tags_parser is not None)
 
         # Reset TTS logging tracking for new response
         self.__logged_tts_characters.clear()
@@ -892,6 +939,8 @@ class ChatManager:
         stream_tools: list[dict] | None = None # Advanced Actions: sent with the request, so the NPC's own model picks the actions
         # The actions the model picked, with who does each. If it wrote no line, it is asked again for one, without the tools, told what they do
         picked: list[tuple[Character, dict]] = []
+        # The model picked actions, even ones that can't be done (someone not nearby) or were just done: without a line, it is asked again too
+        tried_actions = False
         # Look: where it is offered, the NPC only gets a screenshot once it uses Look. Then the reply is asked for again, with one
         look_offered = can_see and (any(a.identifier == LOOK for a in actions) or any(t['function']['name'] == look_tool for t in tools))
         looking = False
@@ -899,7 +948,8 @@ class ChatManager:
         self.__looker = active_character
         if tool_request:
             if getattr(self.__config, "advanced_actions_own_model", False) is True:
-                own_model_picks = self.__pick_actions_with_own_model(messages, active_character, characters, tool_request, tools)
+                own_model_picks = await self.__unless_stopped(
+                    lambda: self.__pick_actions_with_own_model(messages, active_character, characters, tool_request, tools), [])
                 if own_model_picks:
                     picked, awaits_answer = self.__send_picked_actions(own_model_picks, active_character, characters, tool_request, blocking_queue, tools)
                     looking = self.__look_requested # The screenshot comes with the line's request right away
@@ -1046,6 +1096,7 @@ class ChatManager:
                             continue
                         if isinstance(content, ToolCalls):
                             if tool_request:
+                                tried_actions = True
                                 sent, awaits_answer = self.__send_picked_actions(content, settings.current_speaker or active_character, characters, tool_request,
                                                                                  blocking_queue, stream_tools or [])
                                 picked.extend(sent)
@@ -1083,17 +1134,21 @@ class ChatManager:
                         settings.looked = True
                         settings.vision_requested = False
                         settings.stop_generation = False
-                        accumulator = sentence_accumulator(list(cut_indicators))
-                        said = blocking_queue.sentences + ([Sentence(pending_sentence, "", 0)] if pending_sentence else [])
+                        accumulator = sentence_accumulator(list(cut_indicators), keep_square_brackets=tags_parser is not None)
+                        said =blocking_queue.sentences + ([Sentence(pending_sentence, "", 0)] if pending_sentence else [])
                         request_messages = messages.copy_with(look_messages(self.__config, looker, said, is_multi_npc and not lock_speaker)
                                                               + ([action_note(self.__config, picked)] if picked else []))
                         stream_tools = None
                         first_token = True
                         continue
-                    if picked and stream_tools and not raw_response.strip() and not awaits_answer and not self.__stop_generation.is_set() and not settings.stop_generation:
-                        # Models tend to either write a line or pick actions, so it is asked again for the line, now knowing what the NPC does
-                        logging.log(23, f"The model only picked actions. Asking it again for {active_character.name}'s line")
-                        request_messages = messages.copy_with([action_note(self.__config, picked)])
+                    if tried_actions and stream_tools and not raw_response.strip() and not awaits_answer and not self.__stop_generation.is_set() and not settings.stop_generation:
+                        # Models tend to either write a line or pick actions, so it is asked again for the line, now knowing what the NPC does.
+                        # Also when none of them could be done: otherwise the NPC would say nothing, and their turn would be gone
+                        if picked:
+                            logging.log(23, f"The model only picked actions. Asking it again for {active_character.name}'s line")
+                        else:
+                            logging.log(23, f"The model only picked actions that weren't done. Asking it again for {active_character.name}'s line")
+                        request_messages = messages.copy_with([action_note(self.__config, picked)] if picked else [])
                         stream_tools = None
                         first_token = True
                         continue
@@ -1102,6 +1157,18 @@ class ChatManager:
                 except FirstTokenTimeout as e:
                     utils.play_error_sound()
                     logging.error(f"LLM API Error: {e}")
+                    # Too slow is no answer either: the Fallback Model gets one try before the NPC gives up. Not when the reply already said
+                    # something, or it would be said twice
+                    fallback_client = None if used_fallback or raw_response.strip() or self.__stop_generation.is_set() else self._get_fallback_client()
+                    if fallback_client is not None:
+                        used_fallback = True
+                        if is_multi_npc:
+                            selected_multi_client_for_request = fallback_client
+                        else:
+                            selected_client_for_request = fallback_client
+                        first_token = True
+                        logging.log(self.loglevel, f"Asking the Fallback model {self.__config.fallback_llm_api}/{self.__config.fallback_llm} instead")
+                        continue
                     error_response = "I can't find the right words at the moment."
                     new_sentence = self.generate_sentence(SentenceContent(active_character, error_response, SentenceTypeEnum.SPEECH, True))
                     blocking_queue.put(new_sentence)
@@ -1164,14 +1231,17 @@ class ChatManager:
             else:
                 logging.error(f"LLM API Error: {e}")
         finally:
+            # Stopped from outside (interrupted, ended, or the player spoke): what is left is thrown away, so it isn't voiced first.
+            # Whoever stopped it waits for this, and clears the queue after
+            stopped = self.__stop_generation.is_set()
             # Handle any remaining content
-            if parsed_sentence:
+            if parsed_sentence and not stopped:
                 self._queue_parsed_sentence(parsed_sentence, drop_buffer, blocking_queue)
 
             # Flush any trailing text that never reached a sentence-ending character.
             # Run it through the parser chain when it still contains a thought marker
             # so the marker is not spoken.
-            if not settings.stop_generation:
+            if not settings.stop_generation and not stopped:
                 leftover = accumulator.flush_remaining()
                 if leftover and leftover.strip():
                     if "<<thought" in leftover.lower():
@@ -1181,23 +1251,28 @@ class ChatManager:
                         pending_sentence, _, _ = self._parse_parser_chain(
                             leftover, parser_chain, settings, pending_sentence, accumulator, drop_buffer, blocking_queue
                         )
-                    elif pending_sentence and pending_sentence.speaker == settings.current_speaker and pending_sentence.sentence_type == settings.sentence_type:
-                        pending_sentence.append_other_sentence_content(leftover, [])
                     else:
-                        if pending_sentence:
-                            self._queue_parsed_sentence(pending_sentence, drop_buffer, blocking_queue)
-                            pending_sentence = None
-                        final_sentence = SentenceContent(
+                        final_sentence: SentenceContent | None = SentenceContent(
                             settings.current_speaker,
                             leftover,
                             settings.sentence_type,
                             False,
                         )
-                        self._queue_parsed_sentence(final_sentence, drop_buffer, blocking_queue)
+                        if tags_parser: # its sounds and directions too, or nothing when it is only those
+                            final_sentence, _ = tags_parser.modify_sentence_content(final_sentence, None, settings)
+                        if final_sentence is None:
+                            pass
+                        elif pending_sentence and pending_sentence.speaker == settings.current_speaker and pending_sentence.sentence_type == settings.sentence_type:
+                            pending_sentence.append_other_sentence_content(final_sentence.text, [], final_sentence.voice_text)
+                        else:
+                            if pending_sentence:
+                                self._queue_parsed_sentence(pending_sentence, drop_buffer, blocking_queue)
+                                pending_sentence = None
+                            self._queue_parsed_sentence(final_sentence, drop_buffer, blocking_queue)
 
-            if pending_sentence:
+            if pending_sentence and not stopped:
                 self._queue_parsed_sentence(pending_sentence, drop_buffer, blocking_queue)
-            for remaining_sentence in drop_buffer.flush():
+            for remaining_sentence in ([] if stopped else drop_buffer.flush()):
                 blocking_queue.put(self.generate_sentence(remaining_sentence))
             try:
                 token_counter_client = last_used_client if 'last_used_client' in locals() and last_used_client else self.__client

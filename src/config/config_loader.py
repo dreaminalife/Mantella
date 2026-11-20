@@ -10,11 +10,15 @@ from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, DIR
                                                              max_npc_turns_identifier, most_replies_identifier, talk_key, use_own_key)
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.tts_definitions import TTSEnum
+from src.tts.model_catalog import ServiceModels
 from src.tts.registry import FALLBACK_SERVICE, voice_services
 from src.tts.voice_setups import voice_setups_for
 from src.conversation.action import Action
 from src.actions.function_manager import FunctionManager
 from src.config.definitions.action_definitions import ACTION_KINDS, NOT_OFFERED, OLD_KEYWORDS, actions_key, carried_over_ticks
+from src.config.stt_carry_over import OLD_STT_KEYS, carried_over_stt
+from src.stt_backends.presets import PRESETS as STT_PRESETS
+from src.stt_backends.keys import STT_KEY_FILE, copy_old_key
 from src.config.config_values import ConfigValues
 from src.config.mantella_config_value_definitions_new import MantellaConfigValueDefinitionsNew
 from src.config.definitions.language_definitions import LanguageDefinitions
@@ -56,12 +60,16 @@ class ConfigLoader:
 
         create_back_up_configini = False
         old_actions: str | None = None # The old Actions list of the Other tab, which the Actions section of the Conversation page replaces
+        old_stt: dict[str, str] = {} # The old External Whisper Service settings, which Online Service and Custom Service replace
         has_action_switches = False
         action_keys = {actions_key(kind) for kind in ACTION_KINDS}
         for section_name in config.sections():
             for (each_key, each_value) in config.items(section_name):
                 if each_key == "active_actions":
                     old_actions = each_value
+                    continue
+                if each_key in OLD_STT_KEYS:
+                    old_stt[each_key] = each_value
                     continue
                 has_action_switches = has_action_switches or each_key in action_keys
                 try:
@@ -94,13 +102,44 @@ class ConfigLoader:
                 self.__carry_over_actions(old_actions)
             create_back_up_configini = True # Written again without the old list, once
 
+        moved_stt = self.__carry_over_stt(old_stt, config)
+        if old_stt or moved_stt:
+            create_back_up_configini = True # Written again without the old settings, once
+
+        moved_models = self.__carry_over_models() # also on a start that writes a backup, often the first after an update
         if create_back_up_configini:
             self.__write_config_state(self.__definitions, True)
-        
+        elif moved_models:
+            self.__write_config_state(self.__definitions)
+
         self.__is_initial_load = False
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
     
+    def __carry_over_models(self) -> bool:
+        """The online services' Model settings (src/tts/model_catalog.py): a model saved by its name (Turbo) is kept by its ID from now on,
+        and the Global settings values on the page belong to the picked model (src/tts/voice_style.py). True when something changed"""
+        from src.tts.voice_folders import voice_clips_folder
+        from src.tts.voice_style import ServiceStyle
+        from src.voice_clips.clip_store import shared_clip_store
+        changed = False
+        clips = None
+        for models in ServiceModels.all():
+            setting = self.__definitions.get_config_value_definition(models.setting)
+            models.refresh_options(setting, self) # the player's added and removed models
+            model = models.resolve(setting.value)
+            if model.known and setting.value != model.id:
+                setting.value = model.id
+                changed = True
+            style = ServiceStyle(self, models.service)
+            try:
+                if clips is None:
+                    clips = shared_clip_store(voice_clips_folder(self.save_folder))
+            except Exception:
+                clips = None
+            changed = style.sync(clips) or changed
+        return changed
+
     def __carry_over_actions(self, old_actions: str):
         """Someone updating: the Actions section's switches start from their old Actions list (see action_definitions.carried_over_ticks),
         and Offended and Forgiven, now Attack and StandDown, lose their old keywords if they kept the old default"""
@@ -115,6 +154,22 @@ class ConfigLoader:
             if keyword.value == old_keyword:
                 keyword.value = new_keyword
         logging.log(24, f"Your Actions list ({', '.join(old_ticked) or 'nothing ticked'}) was moved to the new Actions section of the Conversation page.")
+
+    def __carry_over_stt(self, old_stt: dict[str, str], config: configparser.ConfigParser) -> bool:
+        """Someone updating: their External Whisper Service setup moves to Online Service or Custom Service (see carried_over_stt),
+        and OpenAI models that stop working on 26 February 2027 move to gpt-transcribe. True when anything changed"""
+        stored = {key: value for section in config.sections() for key, value in config.items(section)}
+        changes, message, key_file = carried_over_stt(old_stt, stored)
+        if key_file and copy_old_key(key_file):
+            message += f" Your key in {STT_KEY_FILE} was copied to {key_file}."
+        for identifier, value in changes.items():
+            try:
+                self.__definitions.get_config_value_definition(identifier).value = value
+            except Exception as e:
+                logging.warning(f"Could not move the old speech-to-text setting to {identifier}: {e}")
+        if message:
+            logging.log(24, message)
+        return bool(changes)
 
     @property
     def have_all_config_values_loaded_correctly(self) -> bool:
@@ -276,6 +331,13 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
         so a button on the page that speaks with the TTS Service reads this instead"""
         return self.__voice_service_name(identifier)
 
+    def chosen_voice_volume(self, identifier: str) -> int:
+        """A voice service's Volume (pocket_tts_volume, ...) as set on the settings page right now: a change is heard from the next line"""
+        try:
+            return self.__definitions.get_int_value(identifier)
+        except Exception:
+            return 100
+
     def __voice_service_name(self, identifier: str) -> str:
         """The chosen voice service, by its name in the list of voice services. Piper when it is no longer in the list"""
         name = self.__definitions.get_string_value(identifier, False)
@@ -374,6 +436,21 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.tts_service_name: str = self.__voice_service_name("tts_service")
             self.tts_service: TTSEnum | None = voice_services.find(self.tts_service_name).legacy_enum # None for the newer services and voice setups
             self.tts_backup_service_name: str = self.__voice_service_name("tts_backup_service")
+            # Each online service's Model (src/tts/model_catalog.py): a model ID
+            for models in ServiceModels.all():
+                setattr(self, models.setting, self.__definitions.get_string_value(models.setting))
+            self.inworld_audio_tags = self.__definitions.get_bool_value("inworld_audio_tags")
+            self.inworld_directions = self.__definitions.get_bool_value("inworld_directions")
+            self.heygen_audio_tags = self.__definitions.get_bool_value("heygen_audio_tags")
+            self.qwen_workspace_id = self.__definitions.get_string_value("qwen_workspace_id").strip()
+            self.qwen_audio_tags = self.__definitions.get_bool_value("qwen_audio_tags")
+            self.qwen_directions = self.__definitions.get_bool_value("qwen_directions")
+            self.boson_audio_tags = self.__definitions.get_bool_value("boson_audio_tags")
+            # How cloned voices sound (src/tts/voice_style.py): every NPC's, unless a voice has its own on the Voice Clips page
+            self.heygen_similarity = self.__definitions.get_string_value("heygen_similarity")
+            self.heygen_expressiveness = self.__definitions.get_float_value("heygen_expressiveness")
+            self.inworld_delivery = self.__definitions.get_string_value("inworld_delivery")
+            self.boson_expressiveness = self.__definitions.get_string_value("boson_expressiveness")
             self.xtts_url = self.__definitions.get_string_value("xtts_url").rstrip('/')
 
             # Do not check if a given path exists unless the TTS service is actually selected
@@ -413,7 +490,9 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.use_sr = self.__definitions.get_bool_value("use_sr")
 
             #STT
-            self.stt_service = self.__definitions.get_string_value("stt_service").lower()
+            self.stt_service = self.__definitions.get_string_value("stt_service")
+            self.stt_online_service = self.__definitions.get_string_value("stt_online_service")
+            self.stt_models = {preset.model_setting: self.__definitions.get_string_value(preset.model_setting) for preset in STT_PRESETS}
             self.moonshine_model = self.__definitions.get_string_value("moonshine_model_size")
             if not hasattr(self, 'moonshine_folder'):
                 try:
@@ -426,6 +505,7 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             if (self.stt_language == 'default'):
                 self.stt_language = self.language
             self.stt_translate = self.__definitions.get_bool_value("stt_translate")
+            self.stt_first_names = self.__definitions.get_bool_value("stt_first_names")
             self.audio_threshold = self.__definitions.get_float_value("audio_threshold")
             self.proactive_mic_mode = self.__definitions.get_bool_value("proactive_mic_mode")
             self.min_refresh_secs = self.__definitions.get_float_value("min_refresh_secs")
@@ -436,8 +516,10 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.save_mic_input = self.__definitions.get_bool_value("save_mic_input")
             self.pause_threshold = self.__definitions.get_float_value("pause_threshold")
             self.listen_timeout = self.__definitions.get_int_value("listen_timeout")
-            self.external_whisper_service = self.__definitions.get_bool_value("external_whisper_service")
-            self.whisper_url = self.__definitions.get_string_value("whisper_url")
+            self.stt_custom_format = self.__definitions.get_string_value("stt_custom_format")
+            self.stt_custom_address = self.__definitions.get_string_value("stt_custom_address")
+            self.stt_custom_model = self.__definitions.get_string_value("stt_custom_model")
+            self.stt_custom_timeout = self.__definitions.get_float_value("stt_custom_timeout")
 
             #LLM
             self.max_response_sentences_single = self.__definitions.get_int_value("max_response_sentences_single")
@@ -726,6 +808,7 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
         self.personal_reflection_prompt = self.__overlay_prompt("personal_reflection_prompt", self.__definitions.get_string_value("personal_reflection_prompt"))
         self.vision_prompt = self.__overlay_prompt("vision_prompt", self.__definitions.get_string_value("vision_prompt"))
         self.advanced_actions_prompt = self.__overlay_prompt("advanced_actions_prompt", self.__definitions.get_string_value("advanced_actions_prompt"))
+        self.stt_names_prompt = self.__overlay_prompt("stt_names_prompt", self.__definitions.get_string_value("stt_names_prompt"))
         self.decensor_handshake_prompt = self.__overlay_prompt(
             "decensor_handshake_prompt",
             self.__definitions.get_string_value("decensor_handshake_prompt"),

@@ -1,0 +1,7 @@
+{
+  "name": "Dremora",
+  "about": "Deeper and doubled, like a voice from Oblivion.",
+  "races": ["DremoraRace"],
+  "strength": 100,
+  "sliders": {"pitch": -2, "doubled": 40, "echo": 20, "space": 40}
+}

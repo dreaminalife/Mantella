@@ -1,13 +1,16 @@
 import re
 
 from src.llm.output.clean_sentence_parser import clean_sentence_parser
+from src.llm.output.sentence_end_parser import cut_outside_brackets
 
 
 class sentence_accumulator:
     """Accumulates the token-wise output of an LLM into raw sentences.
     """
-    def __init__(self, cut_indicators: list[str]) -> None:
+    def __init__(self, cut_indicators: list[str], keep_square_brackets: bool = False) -> None:
+        """keep_square_brackets: square brackets stay as they are, for sounds and directions ([laugh]), instead of becoming round ones"""
         self.__cut_indicators = cut_indicators
+        self.__keep_square_brackets = keep_square_brackets
         self.__cleaned_llm_output: str = ""
         # Updated regex: only match a period if it is not part of an ellipsis (three or more periods)
         period = '\.'
@@ -23,14 +26,14 @@ class sentence_accumulator:
         if len(self.__prepared_match) > 0:
             return True
         
-        match = self.__sentence_end_reg.match(self.__cleaned_llm_output)
-        if not match:
+        cut = cut_outside_brackets(self.__sentence_end_reg, self.__cleaned_llm_output, self.__keep_square_brackets, wait=True)
+        if cut is None:
             return False
         else:
-            self.__prepared_match = match.group()
+            self.__prepared_match = cut
             self.__cleaned_llm_output = self.__cleaned_llm_output.removeprefix(self.__prepared_match)
             return True
-    
+
     def get_next_sentence(self) -> str:
         result = self.__unparseable + self.__prepared_match
         self.__unparseable = ""
@@ -38,7 +41,7 @@ class sentence_accumulator:
         return result
     
     def accumulate(self, llm_output: str):
-        llm_output = self.__cleaner.clean_sentence(llm_output)
+        llm_output = self.__cleaner.clean_sentence(llm_output, self.__keep_square_brackets)
         self.__cleaned_llm_output += llm_output
     
     def refuse(self, refused_text: str):

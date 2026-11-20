@@ -68,6 +68,12 @@ class message_thread():
     def __len__(self) -> int:
         return self.__messages.__len__()
 
+    @property
+    def prompt_label(self) -> str:
+        """For the log: which prompt this thread's system prompt was built from (see src/prompt_label.py). Empty if that is not known"""
+        first = self.__messages[0] if self.__messages else None
+        return getattr(first.text, "label", "") or "" if isinstance(first, SystemMessage) else ""
+
     @staticmethod
     @utils.time_it
     def transform_to_openai_messages(

@@ -3335,7 +3335,13 @@ Picks the voices NPCs speak with. Besides Piper, XTTS and xVASynth, you can now 
 - **Online services:** ElevenLabs, Inworld, HeyGen, Qwen and Boson AI.
 - **Your own voice programs**, such as llama.cpp, added without waiting for a Mantella update.
 
-Every NPC keeps their own voice: Mantella clones it from a few of their real lines from the game. Not sure which service to use? See [Which Voice and Speech Service to Pick](#which-voice-and-speech-service-to-pick).
+What's different about them:
+
+- **Voices are cloned on the fly, not trained ahead.** The first time an NPC speaks, the game hands Mantella a few of their real lines, and the service clones the voice from them right then. There are no voice models to download, train or prepare for each voice type.
+- **NPCs with custom voices just work.** Followers and other NPCs from mods with a voice of their own are cloned from their own lines like everyone else, instead of falling back to a generic voice. A mod that gives one NPC a new voice (a new voice for Lydia, say) gives her a voice of her own, while everyone else with her voice type keeps theirs. Voice replacers work too: install one later and NPCs pick up the new voice.
+- **Each voice can be tuned on its own.** Every voice type, and every NPC with a voice of their own, can have its own **Pitch** and its own service settings, such as how lively it sounds. Make the Male Nord voice deeper and every NPC who uses it changes, or give Lydia her own voice and tune just her.
+
+Not sure which service to use? See [Which Voice and Speech Service to Pick](#which-voice-and-speech-service-to-pick).
 
 ### Where to find it
 
@@ -3542,8 +3548,9 @@ Turns what you say into the microphone into your line. Pick it from one list: on
 
 Misheard names are the most common mistake ("Bal Groove" for Balgruuf). So Mantella sends the names you're likely to say with each recording: the NPCs in the conversation, the others nearby, where you are and your character's name.
 
+Which names go along is a prompt you can change: **Prompts** tab → **Speech-to-Text Names**. Add names from mods or your own story, for example `{names}, {nearby_names}, {location}, {player_name}, Ulfric`, take out the parts you don't want, or empty it to send no names. Put the most likely names first: when the list is too long, names are left out from the end.
+
 - **Catch First Names** (off at first) also sends single words of longer names, so a lone "Camilla" is caught. Turn it off if ordinary words you say get written as names. Only for Deepgram, ElevenLabs and Mistral.
-- Change the list in the **Speech-to-Text Names** prompt, for example `{names}, {nearby_names}, {location}, {player_name}, Ulfric`, or empty it to send none.
 - Moonshine, Parakeet and OpenRouter can't take names.
 
 ### Good to know
