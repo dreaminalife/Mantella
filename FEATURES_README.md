@@ -45,6 +45,12 @@ Trying my best to explain why I added these features and how to make the most of
 - [Decensor Bypass](#decensor-bypass)
 - [LLM Response Timeout](#llm-response-timeout)
 
+**Voices**
+
+- [Which Voice and Speech Service to Pick](#which-voice-and-speech-service-to-pick)
+- [Text-to-Speech Services](#text-to-speech-services)
+- [Speech-to-Text Services](#speech-to-text-services)
+
 **During a conversation**
 
 - [NPC Actions](#npc-actions)
@@ -418,7 +424,7 @@ What this gives you:
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **Auto Quest Tag Outcomes**, next to **Enable Character Tag Reading**.
+**LLM** tab → **Feature Toggles** → **Auto Quest Tag Outcomes**, next to **Enable Character Tag Reading**.
 
 ### What are quest tags?
 
@@ -547,7 +553,7 @@ New developments since last meeting:
 ### Quick start
 
 1. Install the community package and Mantella-Spell (with `MantellaQuestChecks.dll`) with your mod manager.
-2. In Mantella, **LLM** tab → **Advanced** → set **Auto Quest Tag Outcomes** to **Static** or **Dynamic**.
+2. In Mantella, **LLM** tab → **Feature Toggles** → set **Auto Quest Tag Outcomes** to **Static** or **Dynamic**.
 3. Load a save and start a conversation. Mantella's log should show the first check:
 
 ```
@@ -1007,7 +1013,7 @@ There are two ways a slot is chosen:
 | One-on-one conversations                                            | **Apply Profile for One-on-One Conversations**                                                 | The one-on-one model, a per-character model override, or the model picked from a one-on-one random / sequential pool | Weighted pick, each request  |
 | Multi-NPC conversations (also each NPC reply with the Game Master, when more than one NPC is present) | **Apply Profile for Multi-NPC Conversations**                                                  | The multi-NPC model, or the model picked from a multi-NPC random / sequential pool                                   | Weighted pick, each request  |
 | NPC Event Generator (invents NPC Events and Talk/Nearby/Random Events) | **Apply Profile for NPC Event Generator** (on by default)                                   | The NPC Event Generator model                                                                                         | Weighted pick, each request  |
-| [Fallback](#fallback-model) (a reply the service rejected)          | **Apply Profile for Fallback** (on by default)                                                 | The Fallback model                                                                                                    | Weighted pick, each request  |
+| [Fallback](#fallback-model) (a reply rejected or too slow)          | **Apply Profile for Fallback** (on by default)                                                 | The Fallback model                                                                                                    | Weighted pick, each request  |
 | Game Master (also Shout, NPC Initiative and NPC Events)             | **Apply Profile for Game Master**                                                              | The Game Master LLM. Ignored when the Game Master uses a decision model, see [Game Master Mode](#game-master-mode)    | Profile 1                    |
 | Summaries                                                           | **Apply Profile for Summaries**                                                                | The summary model                                                                                                     | Profile 1                    |
 | Private thoughts                                                    | **Apply Profile for Private Thoughts** (on by default)                                         | Its own model. While it follows the summary model, the summary client and **Apply Profile for Summaries** are used   | Profile 1                    |
@@ -1174,13 +1180,14 @@ Only the text for the situation at hand is sent. In Shout, the LLM reads the fir
 | Prompt | Conditions |
 |---|---|
 | Skyrim Game Master Prompt | `director`, `shout`, `say_to_room`, `npc_event` |
-| Skyrim Game Master NPC Prompt | `director`, `shout`, `npc_event` |
+| Skyrim Game Master NPC Prompt | `director`, `shout`, `npc_event`, `audio_tags`, `moods`, `directions` |
 | Skyrim Talk/Nearby/Random Event Generator Prompt | `talk_event`, `nearby_event`, `random_event`, `director` |
 | Skyrim Game Master Decision Instructions | `after_event` |
 | Skyrim Game Master Decision Player Criteria | `after_event` |
 | Skyrim Decision Nearby Criteria | `shout`, `say_to_room`, `npc_event` |
 | Skyrim Say To Room Decision Nobody Criteria | `director` |
 | Memory Prompt | `director` |
+| Skyrim Prompt, Skyrim Multi-NPC Prompt, Skyrim Multi-NPC Director Prompt, Skyrim NPC Initiative Prompt, Skyrim Radiant Conversation Prompt | `audio_tags`, `moods`, `directions` |
 
 The first six used to be 18 separate prompts: the Director, Shout, Say To Room and NPC Event versions of the Game Master and Game Master NPC prompts, the Conversation, Nearby and Random Event Generator prompts (now the Talk/Nearby/Random Event Generator Prompt, not to be confused with the NPC Event Generator Prompt, which writes the scenes of NPC Events), the Decision Event Instructions and Event Player Criteria, and the Shout and NPC Event Decision Nearby Criteria. The built-in text of each situation is exactly what the old prompt said.
 
@@ -1196,6 +1203,9 @@ The first six used to be 18 separate prompts: the Director, Shout, Say To Room a
 | You are watching an NPC Event | `npc_event` |
 | You picked Talk Event / Nearby Event / Random Event on the Conversation Wheel | `talk_event` / `nearby_event` / `random_event` (Talk/Nearby/Random Event Generator Prompt) |
 | The first choice of who speaks right after you picked a wheel event: who reacts to it first | `after_event` (the two Decision prompts) |
+| An NPC in the conversation speaks with Inworld, HeyGen, Qwen or Boson AI, and that service's **Audio tags** is on. `{voice_sounds}` lists the sounds | `audio_tags` (the prompts NPCs reply with) |
+| An NPC in the conversation speaks with HeyGen or Boson AI, and that service's **Audio tags** is on. `{voice_moods}` lists the moods, such as `[angry]` or `[scared]` | `moods` (the prompts NPCs reply with), always together with `audio_tags` |
+| An NPC in the conversation speaks with Inworld's TTS-2 model, or with Qwen while your **Language** is English, and that service's **Directions** is on | `directions` (the prompts NPCs reply with) |
 
 - `shout`, `say_to_room` and `npc_event` are never true at the same time. Saying something to the room is never also `shout`.
 - Once someone answers what you said to the room, it is `shout`. Once you join an NPC Event, it is `shout` too.
@@ -1275,7 +1285,7 @@ Start a conversation and look at the log: you should see sequential picks cyclin
 
 Some services reject a request outright, for example when the model's content filter blocks it (the log shows `LLM API Error: An error occurred during streaming`). Without a fallback, that NPC's reply is skipped, and later replies in the same conversation often fail the same way.
 
-With **Use Fallback Model on LLM Errors** on, Mantella asks the Fallback model for that reply instead. This only happens when the service returns an error before any text of the reply. Timeouts and replies cut off halfway are handled as before. The Fallback model is asked once per reply, and the next reply goes back to your normal model.
+With **Use Fallback Model on LLM Errors** on, Mantella asks the Fallback model for that reply instead. This happens when the service returns an error before any text of the reply, and when the model hasn't started its reply within **LLM Response Timeout** (60 seconds at first). Without a Fallback model, the NPC then says "I can't find the right words at the moment." A reply cut off halfway is handled as before. The Fallback model is asked once per reply, and the next reply goes back to your normal model.
 
 It applies to NPC replies in all conversations, NPC Events included. Summaries, the Game Master and the NPC Event Generator do not use it.
 
@@ -1289,13 +1299,14 @@ It applies to NPC replies in all conversations, NPC Events included. Summaries, 
 
 Lets one NPC use a different model or a different voice service from everyone else. For example, Serana talks through a stronger model and is voiced by xVASynth, while everyone else uses your usual model and Piper.
 
-You set it in the character CSV, one row per NPC, with three columns:
+You set it in the character CSV, one row per NPC, with these columns:
 
 | Column | What to write | What it does |
 | --- | --- | --- |
 | `llm_service` | `or` (OpenRouter), `nano` (NanoGPT) or `openai` (OpenAI) | The service this NPC's model comes from |
 | `model` | The model name, as the service spells it, e.g. `deepseek/deepseek-v4-pro-0813` | The model this NPC talks with |
-| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`) | The voice service this NPC is voiced with |
+| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`), `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), or the name of one of your [voice setups](#text-to-speech-services) | The voice service this NPC is voiced with |
+| `voice_effect` | The name of a [voice effect](#text-to-speech-services), e.g. `ghost`, or `none` | This NPC's voice effect, instead of the one their race gets. Only an effect ticked under **Voice Effects** is heard. The **Bio Editor**'s **Voice effect** list writes it for you |
 
 Leave a cell empty to use your normal setting for that NPC.
 
@@ -1312,13 +1323,14 @@ Leave a cell empty to use your normal setting for that NPC.
 - Works without any switch, in every conversation, in Skyrim and Fallout 4.
 - The NPC's voice model columns are used as usual, now with that service. Make sure the service has a voice for them.
 - If the service fails or isn't set up, that line is voiced by your normal TTS service instead. A misspelled name is logged as an error and also falls back to your normal service.
+- A [voice setup](#text-to-speech-services) that fails is tried once more, then the **Backup Voice Service** speaks the line.
 - Narration read by the narrator always uses your normal service.
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **Allow Per-Character LLM Overrides** (off by default). **TTS** tab → **TTS Service** is the voice service everyone else uses.
+**LLM** tab → **Feature Toggles** → **Allow Per-Character LLM Overrides** (off by default). **TTS** tab → **TTS Service** is the voice service everyone else uses.
 
-The columns go in the character CSV, or in a character override file (see [File structure & override system](#file-structure--override-system)). The base `skyrim_characters.csv` already has the three columns.
+The columns go in the character CSV, or in a character override file (see [File structure & override system](#file-structure--override-system)). The base `skyrim_characters.csv` already has the first three. `voice_effect` works in an override file as it is; in a CSV of your own, add it as a column. It's used by Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and your voice setups.
 
 ### Quick start
 
@@ -1333,7 +1345,7 @@ The columns go in the character CSV, or in a character override file (see [File 
 }
 ```
 
-2. **LLM** tab → **Advanced** → turn on **Allow Per-Character LLM Overrides**.
+2. **LLM** tab → **Feature Toggles** → turn on **Allow Per-Character LLM Overrides**.
 3. **Other** → **Reload Character Data** → **Reload**.
 4. Talk to Serana alone. The log shows `Created per-character LLM client for Serana using OpenRouter with model: ...` and `TTS for Serana: using xVASynth with voice '...'`.
 
@@ -1457,7 +1469,7 @@ I played it like it was nothing... But I will figure it out.
 
 ### Where to find it
 
-**LLM** tab → **Save Private Thoughts** and **Send Private Thoughts to LLM**. **Use Summary Model for Private Thoughts** picks which model writes them (see [Private thoughts model](#private-thoughts-model)).
+**LLM** tab → **Save Private Thoughts**, and **Thoughts and Reflections** → **Send Private Thoughts to LLM**. **Use Summary Model for Private Thoughts** picks which model writes them (see [Private thoughts model](#private-thoughts-model)).
 
 **Prompts** tab → **Inner Monologue Prompt** (the generation prompt). Put `{private_thoughts}` in a **single-NPC** conversation prompt if it is not already there (the default Skyrim / Fallout 4 prompts include it). Multi-NPC and radiant prompts do not accept `{private_thoughts}` — thoughts are appended to each NPC's memory instead (can be toggled off).
 
@@ -1597,7 +1609,7 @@ I expect they will keep walking into danger like it is nothing....
 
 ### Where to find it
 
-**LLM** tab → **Save Personal Reflection** and **Send Personal Reflection to LLM**. **Use Summary Model for Personal Reflection** picks which model writes them (see [Personal reflection model](#personal-reflection-model)).
+**LLM** tab → **Save Personal Reflection**, and **Thoughts and Reflections** → **Send Personal Reflection to LLM**. **Use Summary Model for Personal Reflection** picks which model writes them (see [Personal reflection model](#personal-reflection-model)).
 
 **Prompts** tab → **Personal Reflection Prompt**.
 
@@ -1796,7 +1808,7 @@ Ysolda: Come on, let's keep moving.
 
 **Thoughts and the sentence cap**
 
-> **⭐ Recommended: turn on Read Turn Thoughts After Sentence Cap** (**LLM** tab → **Advanced**). With it off, any reply that hits the sentence cap loses its thought.
+> **⭐ Recommended: turn on Read Turn Thoughts After Sentence Cap** (**LLM** tab → **Thoughts and Reflections**). With it off, any reply that hits the sentence cap loses its thought.
 
 Thoughts come **after** the spoken lines, so **Max Sentences per Response** can cut the reply off before the thought is written. **Read Turn Thoughts After Sentence Cap** decides what happens:
 
@@ -1813,7 +1825,7 @@ Thoughts come **after** the spoken lines, so **Max Sentences per Response** can 
 
 **Prompts** tab — the conversation prompt has to ask for them (see the note above).
 
-**LLM** tab → **Advanced** → **Turn Thoughts to Keep** and **Read Turn Thoughts After Sentence Cap**.
+**LLM** tab → **Thoughts and Reflections** → **Turn Thoughts to Keep** and **Read Turn Thoughts After Sentence Cap**.
 
 **Conversation** tab — turn thoughts show up as **💭 Thought** rows.
 
@@ -1833,7 +1845,7 @@ Thoughts come **after** the spoken lines, so **Max Sentences per Response** can 
 
    In the multi-NPC prompt, also paste the [multi-NPC example](#turn-thoughts) above as a response format example, so the LLM puts every NPC's thought at the end. Swap `<<action next turn Full Name>>` for [your own tags](#turn-thoughts) if you want to track something else.
 
-2. **Recommended:** **LLM** tab → **Advanced** → turn on **Read Turn Thoughts After Sentence Cap**, so the sentence cap does not cut off the thoughts.
+2. **Recommended:** **LLM** tab → **Thoughts and Reflections** → turn on **Read Turn Thoughts After Sentence Cap**, so the sentence cap does not cut off the thoughts.
 3. Talk to the NPC. The thought is not spoken.
 4. Open **Conversation** → **Reload**. The thought shows as a **💭 Thought** row under the reply.
 5. On the next turn, check the prompt log: the last reply ends with the `<<thought ...>>` line.
@@ -1865,7 +1877,7 @@ At least **one** sentence is always kept. Set to **0** to disable (default).
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **Drop Last Sentences**.
+**LLM** tab → **Quality of Life** → **Drop Last Sentences**.
 
 ### Quick start
 
@@ -1887,7 +1899,7 @@ It is meant for **single-NPC and multi-NPC** player conversations, but radiant c
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **Send Only Bios (Single + Multi)**.
+**LLM** tab → **Quality of Life** → **Send Only Bios (Single + Multi)**.
 
 ### Quick start
 
@@ -2081,7 +2093,7 @@ The handshake and commitment of [Decensor Bypass](#decensor-bypass) are not part
 
 ### Where to find it
 
-The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained.
+The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold, Game Master Message Limit and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained. **NPC Initiative** holds NPC Initiative Threshold.
 
 ### Quick start
 
@@ -2238,7 +2250,7 @@ Game Master Mode splits the job in two:
 1. **The Game Master decides who speaks next.** It sees the bios (whatever its prompt includes) and the whole conversation, but it never writes dialogue.
 2. **The chosen NPC replies on their own.** That reply is a separate request whose prompt contains **only that NPC's** bio, memory, and [private thoughts](#private-thoughts). The NPC also only sees the part of the conversation they were present for, and only their own [turn thoughts](#turn-thoughts).
 
-After every NPC reply the Game Master decides again: another NPC, or the player. The talk settings on the Conversation page can overrule it: by default, when an NPC talks to someone, that person answers next, even if the Game Master wanted to give the player the turn. After **Max NPC Turns per Player Turn** NPC replies in a row (default **3**, set for each kind of conversation), the player gets the turn. Who still speaks then depends on the talk settings too. By default, there is one extra round: one person the player spoke to (or who is part of an event) who hasn't answered yet still answers, and one other NPC can reply to them. See [Talk Level](#talk-level). When the player speaks, an NPC always answers first: by default, one of the people the player talked to.
+After every NPC reply the Game Master decides again: another NPC, or the player. The talk settings on the Conversation page can overrule it: by default, when an NPC talks to someone, that person answers next, even if the Game Master wanted to give the player the turn. After **Max NPC Turns per Player Turn** NPC replies in a row (default **3**, set for each kind of conversation), the player gets the turn. A reply in which the NPC said nothing doesn't count, unless two in a row say nothing. Who still speaks then depends on the talk settings too. By default, there is one extra round: one person the player spoke to (or who is part of an event) who hasn't answered yet still answers, and one other NPC can reply to them. See [Talk Level](#talk-level). When the player speaks, an NPC always answers first: by default, one of the people the player talked to.
 
 Send `.` to let the NPCs keep talking without saying anything yourself. It is not voiced and does not add an `Interrupting...` event. Nothing is added to the conversation except the in-game events since your last line, if there are any.
 
@@ -2278,7 +2290,7 @@ Even with no limit, the oldest lines are dropped from the Game Master's request 
 
 ### Where to find it
 
-**LLM** tab → **Multi-NPC Game Master Mode**, **Game Master Message Limit**, and **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction** and **Game Master Spoken To Threshold**.
+**LLM** tab → **Multi-NPC Game Master Mode** and (**Thoughts and Reflections**) **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction**, and, in **All Conversations**, **Game Master Spoken To Threshold** and **Game Master Message Limit**.
 
 **Prompts** tab → **Skyrim Game Master Prompt**, **Skyrim Game Master NPC Prompt**, and the three decision prompts (**Skyrim Game Master Decision Instructions**, **Skyrim Game Master Decision NPC Criteria**, **Skyrim Game Master Decision Player Criteria**). Who a line was spoken to is asked with **Skyrim Shout Decision Spoken To Criteria**, **Skyrim Shout Decision Not Spoken To Criteria**, **Skyrim Shout Decision Part Of Event Criteria** and **Skyrim Shout Decision Not Part Of Event Criteria**, and **Skyrim Shout Group Answer Note** asks for a short answer; despite their names, these are used in every group conversation with the Game Master, not only in Shout. All of them can be overlaid with [prompt profiles](#prompt-profiles).
 
@@ -2609,10 +2621,11 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 
 | Section | Holds |
 | --- | --- |
-| **All Conversations** | **Game Master Spoken To Threshold** and the shared talk settings |
+| **All Conversations** | **Game Master Spoken To Threshold**, **Game Master Message Limit** and the shared talk settings |
 | **Group Conversation** | **Use its own settings** and its talk settings, **Max NPC Turns per Player Turn**, **Most Replies per Person**, **People Who Must Answer a Group Line** |
 | **Shout** | **Use its own settings** and its talk settings, **Max NPC Turns per Player Turn**, **Most Replies per Person**, and the [Shout](#shout) settings |
 | **Director Mode** | **Use its own settings** and its talk settings, **Most Replies per Person**, **Max NPC Turns per Direction** |
+| **NPC Initiative** | **NPC Initiative Threshold**: how sure Mantella must be before a nearby NPC walks up to you and starts a conversation |
 | **Conversation Event**, **Nearby Event**, **Random Event** (one section each) | **Use its own settings** and its talk settings, **Send the Conversation So Far**, **Include Me** and **Max NPC Turns per Player Turn** |
 | **Watched NPC Event** | **Use its own settings** and its talk settings, **Most Replies per Person**, and the NPC Event scene settings |
 
@@ -2684,7 +2697,7 @@ The check follows the **Use Decision Model for Game Master** setting:
 
 In game: **MCM → Mantella → NPC Initiative**. Requires the Mantella game plugin version that includes this page.
 
-**LLM** tab → **Advanced** → **NPC Initiative Threshold**. The check is made by the Game Master model (see [Game Master Mode](#game-master-mode)), even while **Multi-NPC Game Master Mode** is off.
+**Conversation** page (below the live conversation) → **NPC Initiative** section → **NPC Initiative Threshold**. The check is made by the Game Master model (see [Game Master Mode](#game-master-mode)), even while **Multi-NPC Game Master Mode** is off.
 
 **Prompts** tab → **Skyrim NPC Initiative Prompt**, **Skyrim NPC Initiative Opener**, and the three decision prompts (**Skyrim NPC Initiative Decision Instructions**, **Skyrim NPC Initiative Decision NPC Criteria**, **Skyrim NPC Initiative Decision Nobody Criteria**). All of them can be overlaid with [prompt profiles](#prompt-profiles).
 
@@ -2961,13 +2974,13 @@ How actions fit the kinds of conversation:
 - **CastSpell:** while Advanced Actions is on, each NPC is told which spells they know, so they only offer what they can cast. That's up to 20 spells, the ones given to this NPC first, then those of their kind. Spells that can't be cast are left out: always-on abilities (other mods give NPCs many, often without a name) and hidden spells mods use behind the scenes. A spell you give an NPC yourself (e.g. with `addspell`) is on the list from your next conversation with them.
 - **Most People in Conversation:** AddToConversation never goes past it (Conversation page, Shout section), and isn't offered once the conversation is full.
 - **ShareConversation** works with summaries off too: when the conversation ends, the person it was shared with remembers what they were told. A conversation under 5 lines shares nothing, as for summaries.
-- If the model only picks actions and writes no line, it is asked again for the line, now told what the NPC does. With a separate model picking the actions, the NPC's model is told the same way, so the line fits what the NPC does.
+- If the model only picks actions and writes no line, it is asked again for the line, now told what the NPC does. That also happens when none of the actions it picked can be done (someone who isn't nearby) or are needed (asking someone to join who is already in the conversation), so the NPC never stays silent. With a separate model picking the actions, the NPC's model is told the same way, so the line fits what the NPC does.
 - A line cut short still does its actions: when Max Sentences per Response stops the line, or the model starts speaking for you or another NPC, the rest of the reply is still read, without being said, for the actions the model picked.
 - Where tools are offered, the prompts' `{actions}` says to use them. Where none are (nothing ticked for that kind of conversation), it lists the basic actions as with Advanced Actions off.
 
 ### Where to find it
 
-**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one list of tick boxes for each kind of conversation, **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
+**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
 
 **Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
 
@@ -3226,13 +3239,13 @@ The handshake is only sent with **After system prompt**.
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **Enable Decensor Bypass** (off by default) and **Decensor Assistant Placement**.
+**LLM** tab → **Quality of Life** → **Enable Decensor Bypass** (off by default) and **Decensor Assistant Placement**.
 
 **Prompts** tab → **Decensor Handshake Prompt** and **Decensor Assistant Prompt**. Both can be overlaid with [prompt profiles](#prompt-profiles).
 
 ### Quick start
 
-1. **LLM** tab → **Advanced** → turn on **Enable Decensor Bypass**.
+1. **LLM** tab → **Quality of Life** → turn on **Enable Decensor Bypass**.
 2. Optional: adjust the two prompts in the **Prompts** tab to fit your model or setting, and pick a **Decensor Assistant Placement**.
 3. Start a conversation, then check the request in the log to see what is being sent.
 
@@ -3268,3 +3281,276 @@ It applies to one-on-one, multi-NPC, summary, private thoughts, personal reflect
 ### Where to find it
 
 **LLM** tab → **Advanced** → **LLM Response Timeout** (seconds, default **120**, range 1–999).
+
+## Which Voice and Speech Service to Pick
+
+### What it does
+
+Our picks for the voice NPCs speak with (text-to-speech) and for hearing what you say (speech-to-text), on your PC and online, side by side. How each service works and how to set it up is in [Text-to-Speech Services](#text-to-speech-services) and [Speech-to-Text Services](#speech-to-text-services).
+
+### Where to find it
+
+- **Text-to-Speech** tab → **TTS Service** (and its **Model**).
+- **Speech-to-Text** tab → **Speech-to-Text Service** (and its **Model**).
+
+### Voices
+
+Prices are the ones each service lists on its website, per million characters of text spoken (a conversation of 30 lines is about 3,000 characters). Checked in November 2026.
+
+| Service | Our pick? | Where it runs | Price per 1M characters | Good to know |
+|---|---|---|---|---|
+| **Pocket TTS** | Our pick on your local  | Your PC, on the processor, so the graphics card stays free for Skyrim | Free | Light and sounds great. Needs a free Hugging Face sign-in once to clone voices (see [Text-to-Speech Services](#text-to-speech-services)). English, French, German, Portuguese, Italian, Spanish and Dutch |
+| **Inworld**, Model TTS-2 Flash | Our pick online | Online | $15 | Good enough for most players: good quality and much cheaper than ElevenLabs.|
+| **Inworld**, Model TTS-2 | Only if you want Directions | Online | $25 | During testing it doesn't sound significantly better than the flash model. But it support three different delivery modes that could make a difference. |
+| **HeyGen**, Model Turbo Free | Our pick online, until Nov 30, 2026 | Online | Free until Nov 30, 2026 | The most lively voices, with **Expressiveness** to set how lively (0 is flattest, 1 is HeyGen's own). Free accounts can clone 20 voices a day |
+| **HeyGen**, Model Turbo | Our pick online | Online | $8 | The most lively voices, with **Expressiveness** to set how lively. Personally Prefer it on some NPCs. |
+| **Boson AI** | Our pick online | Online | $15 | A $10 trial credit you claim once. Also support tone adjustment. |
+| ElevenLabs | | Online | $40 | Sounds the best, costs the most |
+| Qwen | | Online | $30 | **Directions** in English only |
+| Piper | | Your PC | Free | Doesn't clone voices. The usual **Backup Voice Service** |
+
+### Speech-to-text
+
+Prices are the ones each service lists on its website, turned into the price per hour of your speech (a talkative player says about 8 minutes an hour). Checked in November 2026.
+
+| Service | Our pick? | Where it runs | Price per hour of speech | Good to know |
+|---|---|---|---|---|
+| **Whisper**, Model large-v3/large-v3-turbo | Our pick on your PC | Your PC, NVIDIA graphics card (set **Graphics Card or Processor** to cuda) | Free | Very accurate, in 99 languages. Catches Skyrim names best, because Mantella sends it the names around you. Want it faster? large-v3-turbo is nearly as accurate and about 8 times faster |
+| **Parakeet** | Our pick on your PC | Your PC, any processor, no graphics card needed | Free | Accurate, in 25 European languages. Downloads about 670 MB the first time. Can't take names, so Skyrim names come out spelled the way they sound |
+| **Deepgram** | Our pick online | Online | $0.26 ($0.0043 a minute) | Fast and accurate. New accounts get $200 of free credit with no card needed, enough for thousands of hours of play. Takes names. No reason to not use it imo |
+| Moonshine | | Your PC, any processor | Free | English only. Best only for weak laptops |
+| Groq | | Online | $0.04 | Very fast, the cheapest. Each line is billed as at least 10 seconds |
+| OpenAI | | Online | $0.27 ($0.0045 a minute) | Model gpt-transcribe |
+| ElevenLabs | | Online | $0.20 | Among the most accurate. Same key as the ElevenLabs voices |
+| Mistral | | Online | About $0.21 (about $0.0035 a minute; not on Mistral's own site) | Strong at European languages |
+| OpenRouter | | Online | Same as the model's maker | Your OpenRouter chat key works here too. Can't take names |
+
+## Text-to-Speech Services
+
+### What it does
+
+Picks the voices NPCs speak with. Besides Piper, XTTS and xVASynth, you can now use:
+
+- **Pocket TTS**, on your PC.
+- **Online services:** ElevenLabs, Inworld, HeyGen, Qwen and Boson AI.
+- **Your own voice programs**, such as llama.cpp, added without waiting for a Mantella update.
+
+Every NPC keeps their own voice: Mantella clones it from a few of their real lines from the game. Not sure which service to use? See [Which Voice and Speech Service to Pick](#which-voice-and-speech-service-to-pick).
+
+### Where to find it
+
+**Text-to-Speech** tab.
+
+**Bio Editor** tab → **Voice effect**: one NPC's effect.
+
+### Quick start
+
+**Pocket TTS (on your PC):**
+
+1. Make a free account at huggingface.co, accept Kyutai's terms on the [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts) page and make a read token.
+2. **Text-to-Speech** tab → **Settings for** → **Pocket TTS** → **Global settings for Pocket TTS** → **Turn on voice cloning**: paste the token and press **Save token**. It should say your sign-in works.
+3. Pick **Pocket TTS** as the **TTS Service** and talk to someone.
+
+The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per language); until then the Backup Voice Service speaks. It speaks English, French, German, Portuguese, Italian, Spanish and Dutch (your **Language** setting), and needs a processor with AVX2 (most from 2013 on). Without the sign-in it still speaks, but every NPC gets one of its built-in voices.
+
+**An online service (ElevenLabs, Inworld, HeyGen, Qwen or Boson AI):**
+
+1. **Text-to-Speech** tab → **Settings for** → the service → **Global settings for** it → **Your key**: paste your key, press **Save key**, then **Check my key**. Qwen also needs your **Workspace ID** (Alibaba Cloud Model Studio, Singapore region, same workspace as the key).
+2. Pick it as the **TTS Service**.
+3. Talk to someone. Each voice is cloned the first time it speaks.
+
+**Your own voice program (llama.cpp):**
+
+1. Start llama.cpp's server with a Pocket TTS model file.
+2. **Settings for** → **Your voice setups** → **Ready-made setups** → **Pocket TTS (graphics card)** → **Use ready-made** → **Save**.
+3. Pick **Pocket TTS (graphics card)** as the **TTS Service**.
+
+**Only for one NPC:** write the service in their `tts_service` column: `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), or a voice setup's name. See [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service).
+
+### How NPCs get their voice
+
+The first time an NPC of a new voice type speaks, the game hands Mantella a few of their real lines (5–10 seconds each, never a bard song), and the service clones the voice from them. Until then they speak with a stand-in voice. Every NPC with that voice type then shares it.
+
+| Service | Lines a new voice gets | Cloned from |
+|---|---|---|
+| Pocket TTS and voice setups | 4 | the top line |
+| Inworld, Qwen, Boson AI | 4 | as many as fit in 30 seconds |
+| HeyGen | 10 | as many as fit in a minute |
+| ElevenLabs | 10 | all of them, up to 2 minutes |
+
+- **Switching services:** if the new one wants more lines than a voice has, Mantella asks the game for more the next time that voice speaks. Your own changes stay; the new lines go after them.
+- **Voice mods work.** The clip is the line you hear in game. Install a voice replacer later and Mantella takes the same line again in the new voice. An NPC with a voice mod just for them (a new voice for Lydia) gets a voice of their own.
+- **NPCs with no voice lines** (such as an unvoiced follower) use the voice type in their `skyrim_voice_folder` column, or else the one for their race and gender (an Imperial man gets Male Even Toned).
+- **The narrator** uses the voice type in **Narrator Voice**.
+- This needs `MantellaVoiceClips.dll`, which comes with the game add-on. Clips are kept in `Documents\My Games\Mantella\voice_clips\`.
+
+<details>
+<summary>Which voice an NPC gets, in order</summary>
+
+1. A voice named for them in the `advanced_voice_model` column: a clip of that name, or a voice the program has itself.
+2. Their own clip, if they have one.
+3. Their voice type's clip.
+4. The clip of the voice type in their `skyrim_voice_folder` column, when their own voice type has no lines.
+5. The clip of the voice type their race and gender point to.
+6. The service's own male or female voice.
+
+Clips come from the game's own recordings first; lines that mods add are used only when there are none (such as for an NPC a mod added). Mods that only add new lines for an NPC (follower dialogue) don't count as a voice of their own.
+
+</details>
+
+### Changing a voice
+
+**Customization per voice type and per NPC** → **Voice to change**: pick a voice type, or an NPC with a voice of their own. It lists the clips the voice is **Cloned from** and **Other clips** you could use, each with **▶** to hear it. The list follows the service picked under **Settings for**.
+
+- **Swap clips.** Pocket TTS and voice setups clone from one clip: press **Use this one**. The online services clone from several: **Add** a clip, or **Take out** one that sounds wrong (a shout, a whisper). The heading shows how much speech the service takes ("22 s of speech (Inworld takes up to 30 s)").
+- **Find more clips** brings new other clips the next time you talk to someone in game (4, or up to 16 with **How many**).
+- **Hear the voice** says a test sentence in the voice NPCs get now.
+- **Pitch** makes a voice a little deeper or higher (up to 4 steps either way). Under it, the service's own settings for this voice, such as HeyGen's **Expressiveness** (see [Online services](#online-services)).
+- **Give this NPC their own voice** to change one NPC without changing everyone of their voice type. **Give …'s voice to every … NPC** does the opposite.
+- **Share voices with a friend:** **Save my voices to a file** saves which lines each voice is cloned from and its settings, with no sound in it. A friend who loads it with **Load their voices** gets the same lines, in their own voice mods.
+- **Prepare all voices** (Pocket TTS and voice setups): makes the voice of every voice type now, one at a time while you play (about 5 seconds each), so nobody starts with a stand-in. Online services clone each voice the first time it speaks instead.
+
+Changes apply from the NPC's next line. A clip you take out or swap stays under **Other clips**, so you can add it back. Changing a voice type changes every NPC who shares it.
+
+### Online services
+
+ElevenLabs, Inworld, HeyGen, Qwen and Boson AI all work the same way:
+
+- Each voice is cloned once, the first time it speaks, and kept on your account. Picking other clips clones it again and deletes the old one.
+- Hearing a clip with **▶** clones it only for a moment, so trying clips doesn't use up your account's voices.
+- Boson AI also needs the words spoken in each clip. Mantella hears each clip once with your **Speech-to-Text** choice and keeps the words in `voice_clips\clip_words.json`. A clip with no words (a shout) is left out.
+- Qwen's voices work only with the model they were cloned for. After you pick another Qwen model, each voice is cloned again the next time it speaks.
+- Your key is saved next to `GPT_SECRET_KEY.txt` (for example `INWORLD_SECRET_KEY.txt`). **Check my key** also says how many cloned voices your account holds.
+
+**When something goes wrong,** Mantella says why in its window, once in game and on the service's part of the **Text-to-Speech** tab:
+
+| What happened | What you hear | When it tries again |
+|---|---|---|
+| No key saved | The Backup Voice Service | When you save one |
+| Your account can't clone another voice (full, out of characters, or no cloning on your plan) | The service's built-in voices for NPCs not cloned yet | 5 minutes later |
+| The service rejects one voice's clips | That voice only gets a built-in voice | When you pick other clips, or restart Mantella |
+| The service won't speak at all (no credit left, key refused) | The Backup Voice Service for every line | 5 minutes later |
+| The service is slow (about 12 seconds for a short line, up to 30 for a long one) | The Backup Voice Service for that line. After 2 slow lines in a row, for every line | The next line, or 5 minutes later |
+
+**How voices sound.** Under **Settings for** the service → **Settings for** the model:
+
+| Service | Setting | What it does |
+|---|---|---|
+| HeyGen | **Similarity** | How closely each voice copies its clips (Highest at first). Changing it clones each voice again |
+| HeyGen | **Expressiveness** | How much voices rise and fall, from 0 (flattest) to 1 (HeyGen's own); 0.5 at first. Ignored on a sentence with a sound or mood |
+| Inworld | **Delivery** | Stable, Balanced (at first) or Creative. Not on TTS-2 Flash |
+| Boson AI | **Expressiveness** | Flat, Normal or Lively (at first) |
+
+- These are for every NPC. To change one voice, see **Pitch** under [Changing a voice](#changing-a-voice).
+- Each model keeps its own values, since the same number can sound different on another model. **Volume**, **Audio tags** and **Directions** are for every model.
+- **Settings Mantella doesn't have yet** (folded): extra fields sent with every line, written as the service names them, for example `{"speed": 1.1}` for HeyGen. If the service refuses them, the Backup Voice Service speaks and the tab shows the service's message.
+
+**Models.** The **Model** next to **TTS Service** is the one NPCs speak with. The **Model** next to **Settings for** only picks whose settings you see; **Use … for …** makes the service speak with it.
+
+- Missing a model? Type its exact name in the **Model** next to **Settings for** and press **Add**. Mantella shows every setting the service has for it.
+- **Remove** takes a model off the list (its settings are kept). **Put back Mantella's models** undoes that.
+- HeyGen's Turbo Free ends on Nov 30, 2026; after that it leaves the list and the tab says to pick Turbo.
+
+**Laughs, moods and directions.** Switches on the service's part of the tab, all off at first:
+
+| Service | **Audio tags**: sounds | **Audio tags**: moods | **Directions** |
+|---|---|---|---|
+| Inworld | The most sounds: laugh, sigh, gasp, groan and more | — | Yes, except on TTS-2 Flash |
+| HeyGen | Most of them | Angry, sad, scared, happy, whispering, shouting and more | — |
+| Qwen | Laugh, sigh, gasp, cough, clear the throat | — | Only while your **Language** is English; one per line |
+| Boson AI | Laugh, sigh, cough, sob, sniffle | Angry, sad, scared, happy, whispering, shouting and more | — |
+
+- With a switch on, the AI may write them in square brackets, such as `[laugh]`, `[angry]` or `[say angrily]`. A mood or direction lasts one sentence.
+- They never show in subtitles, never go into what NPCs remember, and never reach another service: in a group, an NPC on Pocket TTS just says the words.
+- While a switch is on, square brackets in a reply aren't narration any more; stars and round brackets still are.
+- This comes with Mantella's default prompts. If you changed a prompt, reset it to default, or copy in the Audio tags and Directions parts.
+
+### Your own voice programs
+
+Many voice programs, on your PC or online, take one of two kinds of request that Mantella understands:
+
+- **OpenAI-style:** llama.cpp, audio.cpp, LocalAI and many voice websites.
+- **XTTS-style:** an XTTS server, and programs made to work like one.
+
+**Settings for** → **Your voice setups**: type the program's address and press **Check address**, which fills in most boxes for you. Each box says what it's for. The setup's name then shows in the **TTS Service** list, works in a `tts_service` column and can be the backup. Keep as many as you like (for example llama.cpp for most NPCs, a Chatterbox server only for Serana). Mantella comes with ready-made setups, such as **Pocket TTS (graphics card)** for llama.cpp; you start the program yourself.
+
+Setups are saved in `Documents\My Games\Mantella\voice_setups.json`, so you can copy them to another PC.
+
+### Backup voice and volume
+
+- **Backup Voice Service:** when a line fails (the program stopped, your internet dropped), Mantella tries once more, then the backup speaks it, so the NPC isn't silent. Piper at first. With one of the newer services as your TTS Service, the backup starts with the game, so it's ready.
+- **Volume:** Pocket TTS, each online service and each voice setup has its own. Every line is first made as loud as Skyrim's own lines; 100% is as loud as the game, 150% louder, 50% quieter.
+- **Cleaner sound:** silence at the start and end of each line is cut, so replies start sooner and lips match better.
+- **Piper, XTTS and xVASynth** work as before. They don't use the backup, Fix Pronunciation, voice effects, Pitch or Volume (use Skyrim's Voice slider).
+
+### Fix Pronunciation
+
+Voice programs often say Skyrim's names wrong. List a word and how to say it (Dovahkiin → Doh-vah-keen), and every NPC says it right from the next line. Subtitles and what NPCs remember keep the normal spelling.
+
+- **Text-to-Speech** tab → **Fix Pronunciation**: try a word, hear it, and press **Add to my list**.
+- Your list is `my_words.csv` in `Documents\My Games\Mantella\pronunciation\`. It's never touched by updates and wins over Mantella's own list (`mantella_words.csv`). Any other list you drop in that folder (say, for a mod's names) is read too.
+- An entry can be for one service or language only.
+- Inworld and HeyGen also take sound symbols (`/ˈdoʊvɑːkiːn/`); HeyGen only for cloned voices on Turbo. The others use the spelling.
+
+### Voice Effects
+
+Give creatures and ghosts a voice that fits: deeper, hollow, echoing or growling. Every effect is off until you tick it.
+
+1. **Text-to-Speech** tab → **Voice Effects** → **Effects in use**: tick an effect. Mantella comes with Draugr, Dremora, Ghost, Vampire Lord and Werewolf (werebears too).
+2. Talk to one of them. They get it from their next line.
+
+- **Change an effect:** **Strength** for the whole effect, and the sliders under **Fine-tune** (**Deeper or higher**, **Echo**, **Space**, **Doubled voice**, **Muffled**, **Thin**, **Growl**, **Waver**). **▶ With … Effect** plays your changes; press **Save changes** to keep them. **Undo my changes** goes back to Mantella's version.
+- **Who gets it:** **Ghosts and races**. Pick **Ghosts** for every NPC the game says is a ghost, and any races. For a race from a mod, type its name from the game, for example `FoxRace`.
+- **One NPC:** **Bio Editor** → **Voice effect**, then **Save** (or `none` for no effect). The effect must be ticked too. It's saved in the `voice_effect` column of your character override file.
+- **Make your own effect** (folded): give what you hear a **Name** and press **Save as a new effect**. Then pick who gets it and tick it. When yours and one of Mantella's are ticked for the same race, yours is used.
+- Mouths move with the words, not the echo. An echo adds at most about a second.
+- Your changes and your own effects are in `Documents\My Games\Mantella\voice_effects\` and never touched by updates. For tinkerers: an effect's file can have an `"extra"` list of ffmpeg audio filters, for example `"extra": [{"aecho": {"in_gain": 0.8, "out_gain": 0.7, "delays": "180", "decays": "0.3"}}]`.
+
+## Speech-to-Text Services
+
+### What it does
+
+Turns what you say into the microphone into your line. Pick it from one list: on your PC (Moonshine, Whisper, Parakeet), an online service (OpenAI, Groq, Mistral, Deepgram, ElevenLabs, OpenRouter), or any program of your own. Not sure which? See [Which Voice and Speech Service to Pick](#which-voice-and-speech-service-to-pick).
+
+### Where to find it
+
+**Speech-to-Text** tab:
+
+- **Talking**: push-to-talk, interruptions, how long Mantella waits for you, Proactive Mode and the cough sound.
+- **Service**: **Speech-to-Text Service** and **Spoken Language** (the language you speak). Under them, only what the picked service needs, then **Catch First Names** and **Test**.
+
+**Prompts** tab → **Speech-to-Text Names**: the names sent with every line.
+
+### Quick start
+
+**On your PC:** pick **Moonshine** (English), **Whisper** or **Parakeet** in **Speech-to-Text Service**, then press **Test** at the end of the page.
+
+- **Whisper:** set **Graphics Card or Processor** to cuda for the large models (NVIDIA cards only).
+- **Parakeet:** downloads about 670 MB the first time. It works out which of its 25 languages you speak.
+
+**Online:**
+
+1. **Speech-to-Text Service** → **Online Service**, then pick the service in the second list.
+2. Paste your key in the **Key** box and press **Save key**.
+3. Press **Test** at the end of the page.
+
+**A program of your own:** pick **Custom Service** and type its **Address** and **Model**. It works with anything that takes OpenAI's kind of request (whisper.cpp, Speaches, LocalAI, Together, Fireworks…), or Deepgram's or ElevenLabs' (**Format**). Example: Speaches on a second PC at `http://192.168.1.20:8000/v1` with the model `Systran/faster-whisper-large-v3`, no key.
+
+- **AMD or Intel graphics card:** Mantella's Whisper only uses NVIDIA cards. Run [whisper.cpp](https://github.com/ggml-org/whisper.cpp)'s server instead and connect to it as a Custom Service at `http://127.0.0.1:8080/inference`.
+
+### Names sent with every line
+
+Misheard names are the most common mistake ("Bal Groove" for Balgruuf). So Mantella sends the names you're likely to say with each recording: the NPCs in the conversation, the others nearby, where you are and your character's name.
+
+- **Catch First Names** (off at first) also sends single words of longer names, so a lone "Camilla" is caught. Turn it off if ordinary words you say get written as names. Only for Deepgram, ElevenLabs and Mistral.
+- Change the list in the **Speech-to-Text Names** prompt, for example `{names}, {nearby_names}, {location}, {player_name}, Ulfric`, or empty it to send none.
+- Moonshine, Parakeet and OpenRouter can't take names.
+
+### Good to know
+
+- **Keys:** each online service keeps its own, next to `GPT_SECRET_KEY.txt` (for example `DEEPGRAM_SECRET_KEY.txt`), never in config.ini, so sharing your settings never shares a key. ElevenLabs uses the same key as its voices. Your chat key is used only for the same service (OpenAI with OpenAI, OpenRouter with OpenRouter).
+- **Test** sends a recording of "Balgruuf, have you seen Proventus in Dragonsreach?" without starting the game. It shows the text, how long it took and whether the names came out right, or what went wrong.
+- **When something fails while playing,** Mantella says what to fix in its window and plays the cough sound, so you can say it again or type it. It never stops the game or waits for Enter.
+- **Each choice remembers its own model.** On an online choice, **Update** lists the models your account offers.
+- **Proactive Mode** is off for online services: it would send your recording many times a second, and each send is billed.
+- **Updating from an older version:** an **External Whisper Service** setup moves over by itself (OpenAI or Groq to **Online Service**, whisper.cpp or an address to **Custom Service**), and an old `STT_SECRET_KEY.txt` is copied once into that service's key file. OpenAI's older speech models stop on 26 February 2027, so Mantella moves you to gpt-transcribe.
