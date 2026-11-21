@@ -1,4 +1,4 @@
-"""HeyGen, Qwen and Boson AI: each clip cloned once and reused, cloned again after a swap with the old voice deleted, a voice deleted on
+"""HeyGen, Qwen, Boson AI and Iodine: each clip cloned once and reused, cloned again after a swap with the old voice deleted, a voice deleted on
 the website cloned again, a refused clone falling back to built-in voices, Check my key, and each one's own way of writing sounds"""
 import base64
 import io
@@ -14,16 +14,17 @@ from src.tts import online_service, qwen
 from src.tts.boson import BosonAI
 from src.tts.clip_service import ClipVoiceService, VoiceServiceFailure
 from src.tts.heygen import HeyGen
+from src.tts.iodine import Iodine
 from src.tts.qwen import Qwen
 from src.tts.registry import voice_services
 from src.tts.voice_picker import BUILT_IN, VOICE_TYPE_CLIP, VoicePick, VoiceSpeaker
 from tests.tts.fake_voice_server import tone_wav
 
-SERVICES = (HeyGen, Qwen, BosonAI)
+SERVICES = (HeyGen, Qwen, BosonAI, Iodine)
 
 
 class FakeServices:
-    """Answers the HeyGen, Qwen and Boson AI requests Mantella sends, and records them. HeyGen and Qwen make a voice in the background:
+    """Answers the HeyGen, Qwen, Boson AI and Iodine requests Mantella sends, and records them. HeyGen and Qwen make a voice in the background:
     the first time Mantella asks, it isn't ready yet. Their lines come back as a link on this same server"""
 
     def __init__(self) -> None:
@@ -39,6 +40,8 @@ class FakeServices:
         self.free_gone = False # HeyGen has ended Turbo Free
         self.line_refusal: tuple[int, dict] | None = None # HeyGen refuses every line this way
         self.missing_models: set[str] = set() # HeyGen answers 404 "not found" for lines on these models
+        self.clone_tries: list[dict] = [] # Iodine: every clone asked for, also refused ones
+        self.refuse_transcript = False # Iodine turns down the words sent with the clips
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -66,8 +69,29 @@ class FakeServices:
                     return failed
                 return ready if server.asked_ready[voice_id] > server.ready_after else making
 
+            def form(self) -> dict:
+                """A multipart form's fields; the file as {"file": its bytes}"""
+                from email.parser import BytesParser
+                body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                message = BytesParser().parsebytes(f"Content-Type: {self.headers['Content-Type']}\r\n\r\n".encode() + body)
+                fields = {}
+                for part in message.get_payload():
+                    name = part.get_param("name", header="content-disposition")
+                    data = part.get_payload(decode=True)
+                    fields[name] = data if name == "file" else data.decode()
+                return fields
+
             def do_POST(self):
                 server.headers.append(dict(self.headers))
+                if self.path == "/voices": # Iodine
+                    fields = self.form()
+                    server.clone_tries.append(fields)
+                    if server.refuse:
+                        return self.send(*server.refuse)
+                    if server.refuse_transcript and "transcript" in fields:
+                        return self.send(400, {"error": {"code": "invalid_transcript", "message": "transcript doesn't match"}})
+                    voice_id = self.new_voice("i", fields)
+                    return self.send(201, {"voice": {"id": voice_id, "model": "v2", "transcriptSource": "provided" if "transcript" in fields else "auto"}})
                 request = self.request_json()
                 if self.path == "/v3/models/audio/voices": # HeyGen
                     if server.refuse:
@@ -110,6 +134,11 @@ class FakeServices:
                     if server.refuse:
                         return self.send(*server.refuse)
                     return self.send(200, {"voice_id": self.new_voice("b", request), "ref_text": request["ref_text"]})
+                if self.path == "/tts": # Iodine
+                    if request["voice"] in server.gone:
+                        return self.send(400, {"error": {"code": "unknown_voice", "message": "no such voice"}})
+                    server.spoken.append((request["voice"], request))
+                    return self.send(200, tone_wav(), "audio/wav")
                 if self.path == "/audio/speech":
                     if request["voice"] in server.gone:
                         return self.send(404, {"error": {"code": "voice_not_found", "message": "not found"}})
@@ -139,6 +168,11 @@ class FakeServices:
                     return self.send(404, {}) if voice_id in server.gone else self.send(200, {"voice_id": voice_id})
                 if self.path == "/audio/voices":
                     return self.send(200, {"object": "list", "data": [{"voice_id": "b1"}]})
+                if self.path == "/voices": # Iodine: its own voices, one cloned before, and the ones cloned here
+                    cloned = [kind_id for kind_id in (f"i{n}" for n, (kind, _) in enumerate(server.clones, start=1) if kind == "i")
+                              if kind_id not in server.gone]
+                    return self.send(200, {"voices": [{"id": "mia"}, {"id": "zander"}, {"id": "vc_old", "custom": True},
+                                                      *({"id": voice_id, "custom": True} for voice_id in cloned)]})
                 self.send(404, {})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -172,7 +206,7 @@ def no_problems_left(monkeypatch):
 @pytest.fixture
 def fake(monkeypatch):
     server = FakeServices()
-    for service in (HeyGen, BosonAI):
+    for service in (HeyGen, BosonAI, Iodine):
         monkeypatch.setattr(service, "API_URL", server.url)
     monkeypatch.setattr(Qwen, "API_URL", server.url)
     monkeypatch.setattr(HeyGen, "_male_voice", None)
@@ -206,8 +240,8 @@ def clip(tmp_path, name: str = "clip.wav", seconds: float = 0.5, rate: int = 240
     return str(path)
 
 
-def test_all_three_are_listed_as_online_services():
-    for name, alias in (("HeyGen", "heygen"), ("Qwen", "alibaba"), ("Boson AI", "higgs")):
+def test_all_four_are_listed_as_online_services():
+    for name, alias in (("HeyGen", "heygen"), ("Qwen", "alibaba"), ("Boson AI", "higgs"), ("Iodine", "iodine")):
         info = voice_services.find(alias)
         assert info.name == name and info.runs_online and info.voice_tags is not None
     assert voice_services.find("HeyGen").accepts_ipa and not voice_services.find("Qwen").accepts_ipa
@@ -249,6 +283,7 @@ def test_a_voice_deleted_on_the_website_is_cloned_again(monkeypatch, voice_confi
     (HeyGen, (400, {"error": {"code": "resource_limit_reached", "message": "voice clone allowance reached"}})),
     (Qwen, (429, {"code": "Throttling.AllocationQuota", "message": "Maximum voice-clone voice limit exceeded"})),
     (BosonAI, (403, {"error": {"code": "quota_exceeded", "message": "voice quota exceeded"}})),
+    (Iodine, (400, {"error": {"code": "too_many_voices", "message": "voice limit reached"}})),
 ])
 def test_a_refused_clone_uses_built_in_voices_and_says_why(monkeypatch, voice_config, tmp_path, fake, heard, service_class, refusal):
     service = make(monkeypatch, voice_config, service_class)
@@ -268,6 +303,7 @@ def test_check_my_key(monkeypatch, voice_config, fake):
     qwen.use_workspace("ws1")
     assert "Your key works" in Qwen.check_key("secret", voice_config.save_folder)
     assert "1 of 200 cloned voices" in BosonAI.check_key("secret", voice_config.save_folder)
+    assert "1 of 50 cloned voices" in Iodine.check_key("secret", voice_config.save_folder) # its own voices don't count
 
 
 def test_heygen_speaks_with_the_chosen_model_its_sounds_and_sound_symbols(monkeypatch, voice_config, tmp_path, fake):
@@ -589,3 +625,77 @@ def test_a_model_that_skips_a_setting_doesnt_get_it(monkeypatch, voice_config, t
     voice_config.inworld_model = "inworld-tts-3" # typed in: every setting
     service.speak_with("Hello.", "Alex", str(tmp_path / "two.wav"))
     assert sent[-1]["deliveryMode"] == "CREATIVE" and sent[-1]["modelId"] == "inworld-tts-3"
+
+
+# ---- Iodine ----
+
+def test_iodine_clones_with_the_words_of_each_clip_and_consent(monkeypatch, voice_config, tmp_path, fake, heard):
+    service = make(monkeypatch, voice_config, Iodine)
+    path = clip(tmp_path)
+    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", path), str(tmp_path / "one.wav"))
+    fields = fake.clone_tries[-1]
+    assert fields["transcript"] == "words 1" and fields["consent"] == "true" and fields["language"] == "auto"
+    assert fields["name"] == "Mantella femaleeventoned" and fields["file"] == open(path, "rb").read()
+
+
+def test_iodine_leaves_out_a_clip_with_no_words_heard(monkeypatch, voice_config, tmp_path, fake):
+    monkeypatch.setattr("src.voice_clips.transcripts._hear", lambda clip_paths, config: ["" if "shout" in p else "I used to be an adventurer" for p in clip_paths])
+    service = make(monkeypatch, voice_config, Iodine)
+    shout, line = clip(tmp_path, "shout.wav", 0.3), clip(tmp_path, "line.wav", 0.6)
+    service.clone("Mantella malenord", [shout, line], "en")
+    fields = fake.clone_tries[-1]
+    assert fields["transcript"] == "I used to be an adventurer" and fields["file"] == open(line, "rb").read()
+
+
+def test_iodine_clones_without_words_when_speech_to_text_cant_hear_them(monkeypatch, voice_config, tmp_path, fake):
+    def cannot_hear(clip_paths, config):
+        raise RuntimeError("Moonshine heard no words")
+    monkeypatch.setattr("src.voice_clips.transcripts._hear", cannot_hear)
+    service = make(monkeypatch, voice_config, Iodine)
+    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path)), str(tmp_path / "one.wav"))
+    assert "transcript" not in fake.clone_tries[-1] and fake.spoken[-1][0] == "i1" # Iodine hears the clips itself
+
+
+def test_iodine_tries_once_more_without_words_it_turns_down(monkeypatch, voice_config, tmp_path, fake, heard):
+    fake.refuse_transcript = True
+    service = make(monkeypatch, voice_config, Iodine)
+    service.voice_into("Hello.", VoicePick(VOICE_TYPE_CLIP, "malenord", clip(tmp_path)), str(tmp_path / "one.wav"))
+    assert ["transcript" in fields for fields in fake.clone_tries] == [True, False] and fake.spoken[-1][0] == "i1"
+
+
+def test_iodine_speaks_with_the_voices_temperature_its_language_and_its_cues(monkeypatch, voice_config, tmp_path, fake, heard):
+    from src.tts.voice_style import IODINE_TEMPERATURE, ServiceStyle
+    from src.voice_clips.clip_store import VOICE_TYPES
+    service = make(monkeypatch, voice_config, Iodine, iodine_audio_tags=True, iodine_directions=True, iodine_temperature=0.7, language="de")
+    pick = VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", clip(tmp_path))
+    service.voice_into("[nervous] [quietly] Hallo. [whisper]Leise[/whisper] [pause] bitte.", pick, str(tmp_path / "one.wav"), use_word_lists=False)
+    request = fake.spoken[-1][1]
+    assert request["text"] == "{nervous} Hallo. {whisper}Leise{/whisper} {pause} bitte." # a mood and a direction side by side: the first
+    assert request["temperature"] == 0.7 and request["language"] == "de" and request["model"] == "v2" and request["format"] == "wav"
+    ServiceStyle(voice_config, "Iodine").set_voice_own(service._clips, VOICE_TYPES, "femaleeventoned", IODINE_TEMPERATURE, 1.5)
+    service.voice_into("Hallo.", pick, str(tmp_path / "two.wav"))
+    assert fake.spoken[-1][1]["temperature"] == 1.5 # the voice's own, for v2
+    voice_config.language = "ha" # Iodine doesn't speak Hausa: it hears the language from the words
+    service.voice_into("Hallo.", pick, str(tmp_path / "three.wav"))
+    assert "language" not in fake.spoken[-1][1]
+
+
+def test_iodine_without_credit_pauses_and_says_where_to_add_some(monkeypatch, voice_config, tmp_path, fake, heard):
+    service = make(monkeypatch, voice_config, Iodine)
+    pick = VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", clip(tmp_path))
+    service.voice_into("Hello.", pick, str(tmp_path / "one.wav"))
+    class NoCredit:
+        status_code, reason, content, text = 402, "Payment Required", b"", ""
+        def json(self):
+            return {"error": {"code": "insufficient_credits", "message": "out of credits"}}
+    monkeypatch.setattr("src.tts.iodine.requests.post", lambda *args, **kwargs: NoCredit())
+    with pytest.raises(VoiceServiceFailure): # the backup service speaks
+        service.voice_into("Hello.", pick, str(tmp_path / "two.wav"))
+    assert "no credit left" in online_service.problem("Iodine") and "billing" in online_service.problem("Iodine")
+
+
+def test_iodine_counts_only_cloned_voices_as_full(monkeypatch, fake):
+    monkeypatch.setattr("src.tts.iodine.VOICE_LIMIT", 1)
+    assert Iodine.plan_is_full("secret") is True # vc_old fills it; mia and zander are Iodine's own
+    monkeypatch.setattr("src.tts.iodine.VOICE_LIMIT", 2)
+    assert Iodine.plan_is_full("secret") is False

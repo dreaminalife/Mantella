@@ -1204,9 +1204,10 @@ The first six used to be 18 separate prompts: the Director, Shout, Say To Room a
 | You are watching an NPC Event | `npc_event` |
 | You picked Talk Event / Nearby Event / Random Event on the Conversation Wheel | `talk_event` / `nearby_event` / `random_event` (Talk/Nearby/Random Event Generator Prompt) |
 | The first choice of who speaks right after you picked a wheel event: who reacts to it first | `after_event` (the two Decision prompts) |
-| An NPC in the conversation speaks with Inworld, HeyGen, Qwen or Boson AI, and that service's **Audio tags** is on. `{voice_sounds}` lists the sounds | `audio_tags` (the prompts NPCs reply with) |
-| An NPC in the conversation speaks with HeyGen or Boson AI, and that service's **Audio tags** is on. `{voice_moods}` lists the moods, such as `[angry]` or `[scared]` | `moods` (the prompts NPCs reply with), always together with `audio_tags` |
-| An NPC in the conversation speaks with Inworld's TTS-2 model, or with Qwen while your **Language** is English, and that service's **Directions** is on | `directions` (the prompts NPCs reply with) |
+| An NPC in the conversation speaks with Inworld, HeyGen, Qwen, Boson AI or Iodine, and that service's **Audio tags** is on. `{voice_sounds}` lists the sounds | `audio_tags` (the prompts NPCs reply with) |
+| An NPC in the conversation speaks with HeyGen, Boson AI or Iodine, and that service's **Audio tags** is on. `{voice_moods}` lists the moods, such as `[angry]` or `[scared]` | `moods` (the prompts NPCs reply with), always together with `audio_tags` |
+| An NPC in the conversation speaks with Inworld's TTS-2 model, with Qwen while your **Language** is English, or with Iodine, and that service's **Directions** is on | `directions` (the prompts NPCs reply with) |
+| An NPC in the conversation speaks with Iodine, and its **Audio tags** is on. `{voice_styles}` lists the styles, such as `[whisper]` | `word_styles` (the prompts NPCs reply with), always together with `audio_tags` |
 
 - `shout`, `say_to_room` and `npc_event` are never true at the same time. Saying something to the room is never also `shout`.
 - Once someone answers what you said to the room, it is `shout`. Once you join an NPC Event, it is `shout` too.
@@ -1331,7 +1332,7 @@ Leave a cell empty to use your normal setting for that NPC.
 
 **LLM** tab → **Feature Toggles** → **Allow Per-Character LLM Overrides** (off by default). **TTS** tab → **TTS Service** is the voice service everyone else uses.
 
-The columns go in the character CSV, or in a character override file (see [File structure & override system](#file-structure--override-system)). The base `skyrim_characters.csv` already has the first three. `voice_effect` works in an override file as it is; in a CSV of your own, add it as a column. It's used by Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and your voice setups.
+The columns go in the character CSV, or in a character override file (see [File structure & override system](#file-structure--override-system)). The base `skyrim_characters.csv` already has the first three. `voice_effect` works in an override file as it is; in a CSV of your own, add it as a column. It's used by Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine and your voice setups.
 
 ### Quick start
 
@@ -1386,7 +1387,15 @@ A mod's menu line that only opens a menu, such as its settings, is not worth rem
 - In a conversation they wait in the context apart from the in-game events, so Max Count Events, Ignored In-Game Events and Tidier In-Game Events never touch them. The log shows them under "Heard nearby since previous exchange". When the conversation ends, every line that went into it (or was still waiting) is kept as a heard line by the people in it who heard it, whether or not a summary is written. Not earlier: a prompt built again during the conversation (a join, each Game Master turn) would show the line twice.
 - In memory they are merged into the timeline by real time, never into "New developments". Writing a summary, thoughts or a reflection leaves them out.
 - A game time earlier than the latest one seen in a playthrough means an older save was loaded: every NPC of that playthrough loses the lines from after it.
-- Tests: `tests/heard_lines/`.
+- Tests: `tests/heard_lines/`, the plugin's own unit tests (run on GitHub with every push), and the add-on checks in `tests/test_game_scripts.py`.
+- In-game test: `tests/ingame/heard_lines/heard_lines_ingame.py` with `MantellaHeardLinesTest.psc` in Mantella-Spell. The game plays Vignar and Olfrid's argument in the Bannered Mare five times under different settings, with people placed near, far, disabled and dead, and hands the lines over with its usual requests. The script checks what the game sent and what each NPC keeps, PASS or FAIL:
+  1. Run `python tests/ingame/heard_lines/heard_lines_ingame.py setup --game "<Skyrim folder>"` and restart Mantella. Use text input.
+  2. Load a save where Vignar Gray-Mane, Olfrid Battle-Born, Hulda and Mikael are alive. Console: `bat mhl`. It saves as `mhl_before` and runs by itself until "run 1 done".
+  3. Console: `bat mhl2`. It saves and loads the game. Then do what the two messages say: ask Hulda a question, ask to rent a room, pick Mantella's line, then open and close Vignar's dialogue. Wait for "run 2 done" and press Enter in the script's window.
+  4. Console: `bat mhl3`. It loads `mhl_before`. Wait for "done" and press Enter. The script puts your config.ini back and removes its batch files and saves.
+
+  It covers the words, who a line was said to, who heard it (near, far, disabled, dead, never the player), whether the player was there, Nearby NPCs Overhear off, Vanilla Dialogues off, a scene during a conversation (narration, kept when it ends), Mantella's own lines and menu line never caught, lines waiting in a save and the most waiting lines, dialogue-menu talk and a greeting, Lines That Only Open a Menu, each line kept once, and loading an older save.
+  Not covered, check by hand: what the AI makes of the lines, a forced greeting's question, scenes with three or more people, other mods' scenes, game versions other than yours, non-English games, a new game (`coc whiterun` from the main menu), the upgrade of an old save, and the old Mantella Vanilla Dialogue mod's warning.
 
 ## Bio Sections to Exclude
 
@@ -3345,6 +3354,7 @@ Prices are the ones each service lists on its website, per million characters of
 | **HeyGen**, Model Turbo Free | Our pick online, until Nov 30, 2026 | Online | Free until Nov 30, 2026 | The most lively voices, with **Expressiveness** to set how lively (0 is flattest, 1 is HeyGen's own). Free accounts can clone 20 voices a day |
 | **HeyGen**, Model Turbo | Our pick online | Online | $8 | The most lively voices, with **Expressiveness** to set how lively. Personally Prefer it on some NPCs. |
 | **Boson AI** | Our pick online | Online | $15 | A $10 trial credit you claim once. Also support tone adjustment. |
+| Iodine | | Online | $8 | Cloning works on the free plan. The most ways to set how a line is said: moods, directions, and styles on a few words, such as a whisper |
 | ElevenLabs | | Online | $40 | Sounds the best, costs the most |
 | Qwen | | Online | $30 | **Directions** in English only |
 | Piper | | Your PC | Free | Doesn't clone voices. The usual **Backup Voice Service** |
@@ -3372,7 +3382,7 @@ Prices are the ones each service lists on its website, turned into the price per
 Picks the voices NPCs speak with. Besides Piper, XTTS and xVASynth, you can now use:
 
 - **Pocket TTS**, on your PC.
-- **Online services:** ElevenLabs, Inworld, HeyGen, Qwen and Boson AI.
+- **Online services:** ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and Iodine.
 - **Your own voice programs**, such as llama.cpp, added without waiting for a Mantella update.
 
 What's different about them:
@@ -3399,7 +3409,7 @@ Not sure which service to use? See [Which Voice and Speech Service to Pick](#whi
 
 The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per language); until then the Backup Voice Service speaks. It speaks English, French, German, Portuguese, Italian, Spanish and Dutch (your **Language** setting), and needs a processor with AVX2 (most from 2013 on). Without the sign-in it still speaks, but every NPC gets one of its built-in voices.
 
-**An online service (ElevenLabs, Inworld, HeyGen, Qwen or Boson AI):**
+**An online service (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI or Iodine):**
 
 1. **Text-to-Speech** tab → **Settings for** → the service → **Global settings for** it → **Your key**: paste your key, press **Save key**, then **Check my key**. Qwen also needs your **Workspace ID** (Alibaba Cloud Model Studio, Singapore region, same workspace as the key).
 2. Pick it as the **TTS Service**.
@@ -3411,7 +3421,7 @@ The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per
 2. **Settings for** → **Your voice setups** → **Ready-made setups** → **Pocket TTS (graphics card)** → **Use ready-made** → **Save**.
 3. Pick **Pocket TTS (graphics card)** as the **TTS Service**.
 
-**Only for one NPC:** write the service in their `tts_service` column: `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), or a voice setup's name. See [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service).
+**Only for one NPC:** write the service in their `tts_service` column: `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or a voice setup's name. See [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service).
 
 ### How NPCs get their voice
 
@@ -3420,7 +3430,7 @@ The first time an NPC of a new voice type speaks, the game hands Mantella a few 
 | Service | Lines a new voice gets | Cloned from |
 |---|---|---|
 | Pocket TTS and voice setups | 4 | the top line |
-| Inworld, Qwen, Boson AI | 4 | as many as fit in 30 seconds |
+| Inworld, Qwen, Boson AI, Iodine | 4 | as many as fit in 30 seconds |
 | HeyGen | 10 | as many as fit in a minute |
 | ElevenLabs | 10 | all of them, up to 2 minutes |
 
@@ -3460,11 +3470,12 @@ Changes apply from the NPC's next line. A clip you take out or swap stays under 
 
 ### Online services
 
-ElevenLabs, Inworld, HeyGen, Qwen and Boson AI all work the same way:
+ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and Iodine all work the same way:
 
 - Each voice is cloned once, the first time it speaks, and kept on your account. Picking other clips clones it again and deletes the old one.
 - Hearing a clip with **▶** clones it only for a moment, so trying clips doesn't use up your account's voices.
 - Boson AI also needs the words spoken in each clip. Mantella hears each clip once with your **Speech-to-Text** choice and keeps the words in `voice_clips\clip_words.json`. A clip with no words (a shout) is left out.
+- Iodine gets those words too, as it recommends, for a closer copy. If Speech-to-Text can't hear them, Iodine hears the clips itself.
 - Qwen's voices work only with the model they were cloned for. After you pick another Qwen model, each voice is cloned again the next time it speaks.
 - Your key is saved next to `GPT_SECRET_KEY.txt` (for example `INWORLD_SECRET_KEY.txt`). **Check my key** also says how many cloned voices your account holds.
 
@@ -3486,10 +3497,12 @@ ElevenLabs, Inworld, HeyGen, Qwen and Boson AI all work the same way:
 | HeyGen | **Expressiveness** | How much voices rise and fall, from 0 (flattest) to 1 (HeyGen's own); 0.5 at first. Ignored on a sentence with a sound or mood |
 | Inworld | **Delivery** | Stable, Balanced (at first) or Creative. Not on TTS-2 Flash |
 | Boson AI | **Expressiveness** | Flat, Normal or Lively (at first) |
+| Iodine | **Temperature** | From 0 to 2; 1 at first. Lower sounds steadier and more alike each time, higher more varied. Iodine suggests about 0.7 if words come out misread, skipped or repeated |
+| Every service | **Talking speed** | How fast NPCs talk, from 0.7 to 1.5; 1 is the voice's own speed. The pitch stays the same |
 
 - These are for every NPC. To change one voice, see **Pitch** under [Changing a voice](#changing-a-voice).
 - Each model keeps its own values, since the same number can sound different on another model. **Volume**, **Audio tags** and **Directions** are for every model.
-- **Settings Mantella doesn't have yet** (folded): extra fields sent with every line, written as the service names them, for example `{"speed": 1.1}` for HeyGen. If the service refuses them, the Backup Voice Service speaks and the tab shows the service's message.
+- **Settings Mantella doesn't have yet** (folded): extra fields sent with every line, written as the service names them, for example `{"seed": 42}`. If the service refuses them, the Backup Voice Service speaks and the tab shows the service's message.
 
 **Models.** The **Model** next to **TTS Service** is the one NPCs speak with. The **Model** next to **Settings for** only picks whose settings you see; **Use … for …** makes the service speak with it.
 
@@ -3505,8 +3518,9 @@ ElevenLabs, Inworld, HeyGen, Qwen and Boson AI all work the same way:
 | HeyGen | Most of them | Angry, sad, scared, happy, whispering, shouting and more | — |
 | Qwen | Laugh, sigh, gasp, cough, clear the throat | — | Only while your **Language** is English; one per line |
 | Boson AI | Laugh, sigh, cough, sob, sniffle | Angry, sad, scared, happy, whispering, shouting and more | — |
+| Iodine | Laugh, sigh, gasp, sob, pause and more, plus styles on a few words (whisper, emphasis, loud...) | Happy, nervous, sarcastic, tired and 8 more | Yes, such as "quietly, trying not to laugh" |
 
-- With a switch on, the AI may write them in square brackets, such as `[laugh]`, `[angry]` or `[say angrily]`. A mood or direction lasts one sentence.
+- With a switch on, the AI may write them in square brackets, such as `[laugh]`, `[angry]` or `[say angrily]`. A mood or direction lasts one sentence. With Iodine, a style covers only the words it wraps: `[whisper]just between us[/whisper]`.
 - They never show in subtitles, never go into what NPCs remember, and never reach another service: in a group, an NPC on Pocket TTS just says the words.
 - While a switch is on, square brackets in a reply aren't narration any more; stars and round brackets still are.
 - This comes with Mantella's default prompts. If you changed a prompt, reset it to default, or copy in the Audio tags and Directions parts.
@@ -3525,6 +3539,7 @@ Setups are saved in `Documents\My Games\Mantella\voice_setups.json`, so you can 
 ### Backup voice and volume
 
 - **Backup Voice Service:** when a line fails (the program stopped, your internet dropped), Mantella tries once more, then the backup speaks it, so the NPC isn't silent. Piper at first. With one of the newer services as your TTS Service, the backup starts with the game, so it's ready.
+- **Talking speed:** Pocket TTS (next to its Volume), each online service (for each model) and each voice setup has its own, and each voice can have its own under **Pitch**. NPCs talk faster or slower at the same pitch, and their lips follow.
 - **Volume:** Pocket TTS, each online service and each voice setup has its own. Every line is first made as loud as Skyrim's own lines; 100% is as loud as the game, 150% louder, 50% quieter.
 - **Cleaner sound:** silence at the start and end of each line is cut, so replies start sooner and lips match better.
 - **Piper, XTTS and xVASynth** work as before. They don't use the backup, Fix Pronunciation, voice effects, Pitch or Volume (use Skyrim's Voice slider).

@@ -1,5 +1,6 @@
 """The shared clean-up for new voice services: turn whatever sound a service sends back into the kind of file the game plays
 (mono, 16-bit WAV), and cut the silence at the start and end of the line, keeping a few hundredths of a second so the first sound isn't clipped.
+Then the voice's Talking speed (voice_speed.py).
 """
 import logging
 from typing import BinaryIO
@@ -7,6 +8,8 @@ from typing import BinaryIO
 import av
 import numpy as np
 import soundfile as sf
+
+from src.tts.voice_speed import SPEED_CHANGE, SpeedChange
 
 KEEP_SECONDS = 0.03 # silence kept before the first and after the last sound
 WINDOW_SECONDS = 0.01
@@ -50,15 +53,16 @@ def trim_silence(samples: np.ndarray, rate: int) -> np.ndarray:
     return samples[start:end]
 
 
-def clean_up(source: str, destination: str, trim: bool = True) -> None:
-    """Writes *source* to *destination* as the sound file the game plays, with the silence at both ends cut"""
+def clean_up(source: str, destination: str, trim: bool = True, speed: float = 1.0, speed_change: SpeedChange = SPEED_CHANGE) -> None:
+    """Writes *source* to *destination* as the sound file the game plays, with the silence at both ends cut, at *speed* (Talking speed)"""
     samples, rate = decode(source)
     if samples.size == 0:
         raise ValueError(f"The voice service sent back no sound: {source}")
     before = samples.size
     if trim:
         samples = trim_silence(samples, rate)
-    logging.debug(f"Voice clean-up: {before / rate:.2f}s -> {samples.size / rate:.2f}s at {rate} Hz")
+    samples = speed_change.apply(samples, rate, speed)
+    logging.debug(f"Voice clean-up: {before / rate:.2f}s -> {samples.size / rate:.2f}s at {rate} Hz" + (f", Talking speed {speed:g}" if speed != 1.0 else ""))
     sf.write(destination, np.clip(samples, -1.0, 1.0), rate, subtype="PCM_16")
 
 

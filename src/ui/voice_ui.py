@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Callable
 
 import gradio as gr
@@ -13,10 +14,13 @@ from src.config.types.config_value_selection import ConfigValueSelection
 from src.tts.address_check import check_address
 from src.tts.clip_service import NoSoundSymbols
 from src.tts.registry import normalize_service_name, voice_services
-from src.tts.test_line import TEST_LINE, speak_with_service, speak_with_setup, voice_type_choices, word_line
-from src.tts.voice_folders import pronunciation_folder
+from src.tts.test_line import TEST_LINE, speak_with_clip, speak_with_service, speak_with_setup, voice_type_choices, word_line
+from src.tts.voice_folders import pronunciation_folder, voice_clips_folder
+from src.tts.voice_style import SPEED_DEFAULT, SPEED_HIGH, SPEED_LABEL, SPEED_LOW
 from src.tts.voice_setups import CLIP_BASE64, CLIP_MODES, CLIP_NAME, STYLES, XTTS, empty_setup, normalized, problems, ready_made_setups, to_service_info, voice_setups_for
 from src.tts.word_lists import IPA, SPELLING, shared_word_lists
+from src.ui.voice_clips_ui import clip_voice
+from src.voice_clips.clip_store import VOICE_TYPES, ClipStore, shared_clip_store, voice_key
 
 NEW_SETUP = "(new setup)"
 ALL = "(all)"
@@ -24,6 +28,8 @@ SERVICE_SETTINGS = ("tts_service", "tts_backup_service")
 # Shown with Your voice setups' introduction, under Settings for
 QUICKEST_WAY = ("**Quickest way:** pick a ready-made setup, or type the program's address and press **Check address** to fill in the rest. "
                 "Then press **Hear it**.")
+# Shown under Hear it for a service that clones voices, which lists only the voice types it can clone
+ONLY_READY_VOICE_TYPES = "Only voice types ready to clone are listed. A new one is added the first time an NPC with that voice talks to you in game."
 
 
 def _newer_service_names() -> list[str]:
@@ -35,26 +41,70 @@ def _default_voice_type(choices: list[str]) -> str | None:
     return "FemaleEvenToned" if "FemaleEvenToned" in choices else (choices[0] if choices else None)
 
 
+def _clones(service: str | None) -> bool:
+    info = voice_services.find(service)
+    return info is not None and info.uses_clips
+
+
+def _voice_types_for(service: str | None, save_folder: str, clips: ClipStore) -> list[str]:
+    """A service that clones voices: only the voice types with a clip, so it never speaks in another voice than the one picked.
+    Piper, XTTS and xVASynth have a voice of their own for every voice type"""
+    if not _clones(service):
+        return voice_type_choices(save_folder)
+    return sorted((e.info.name or e.key for e in clips.entries(VOICE_TYPES)), key=str.lower)
+
+
 def render_voice_test(config: ConfigLoader, chat_manager_getter: Callable[[], Any], service_ui: Any) -> None:
-    """Hear it, above Customization per voice type and per NPC: the service shown on the page (*service_ui* holds its name) speaks as any voice type"""
-    gr.Markdown("Hear this service speak as any voice type, without the game.")
-    voice_types = voice_type_choices(config.save_folder)
+    """Hear it, above Customization per voice type and per NPC: the service shown on the page (*service_ui* holds its name) speaks as a voice type"""
+    clips = shared_clip_store(voice_clips_folder(config.save_folder))
+    gr.Markdown("Hear this service speak as a voice type, without the game.")
+    voice_types = _voice_types_for(service_ui.value, config.save_folder, clips)
     with gr.Row(equal_height=False, elem_classes="voice-clips-row"):
         voice_type_ui = gr.Dropdown(choices=voice_types, value=_default_voice_type(voice_types), label="Voice type", allow_custom_value=True, scale=2)
         line_ui = gr.Text(value=TEST_LINE, label="Test sentence", max_lines=2, scale=3)
         play_btn = gr.Button("Hear it", variant="primary", size="sm", scale=1, min_width=160)
+    only_ready_ui = gr.Markdown(ONLY_READY_VOICE_TYPES, visible=_clones(service_ui.value))
     audio_ui = gr.Audio(label="Result", show_label=False, interactive=False, type="filepath", visible=False) # shown once there is a line to play
     status_ui = gr.Markdown("")
+    clips_changed_ui = gr.Textbox(value="", visible=False) # changes when a voice type gets its clip, so the list redraws by itself
 
     def on_play(service: str, voice_type: str, line: str):
         try:
-            path = speak_with_service(config, chat_manager_getter, service, voice_type or "MaleNord", line or TEST_LINE)
+            if _clones(service):
+                if not voice_type:
+                    return gr.update(value=None, visible=False), "Pick a voice type first."
+                pick = clip_voice(clips, VOICE_TYPES, voice_key(voice_type))
+                if pick is None:
+                    return gr.update(value=None, visible=False), (f"{voice_type} isn't ready to clone yet. It's added the first time "
+                                                                  "an NPC with that voice talks to you in game.")
+                # Says why when the service can't clone right now, instead of speaking in its built-in voice
+                path = speak_with_clip(config, chat_manager_getter, service, pick, line or TEST_LINE)
+            else:
+                path = speak_with_service(config, chat_manager_getter, service, voice_type or "MaleNord", line or TEST_LINE)
             return gr.update(value=path, visible=True), ""
         except Exception as e:
             logging.warning(f"Voice test failed: {e}")
             return gr.update(value=None, visible=False), f"Could not play the line: {e}"
 
+    def on_service(service: str, voice_type: str | None):
+        choices = _voice_types_for(service, config.save_folder, clips)
+        value = voice_type if voice_type in choices else _default_voice_type(choices)
+        return gr.update(choices=choices, value=value), gr.update(visible=_clones(service))
+
+    def clips_changed() -> str:
+        """When the voice types' clips last changed: read every 3 seconds, like the lists under Customization per voice type and per NPC"""
+        try:
+            return str(os.stat(os.path.join(clips.folder, VOICE_TYPES)).st_mtime_ns)
+        except OSError:
+            return "0"
+
     play_btn.click(on_play, inputs=[service_ui, voice_type_ui, line_ui], outputs=[audio_ui, status_ui], show_api=False) # Gradio 4.28 can't describe an Audio player in its API page, which breaks the page
+    service_ui.change(on_service, inputs=[service_ui, voice_type_ui], outputs=[voice_type_ui, only_ready_ui], show_progress="hidden", show_api=False)
+    clips_changed_ui.change(lambda service: gr.update(choices=_voice_types_for(service, config.save_folder, clips)), inputs=[service_ui],
+                            outputs=[voice_type_ui], show_progress="hidden", show_api=False)
+    page = gr.context.Context.root_block
+    if page is not None: # also right when the page opens, as the list was made when Mantella started
+        page.load(clips_changed, outputs=[clips_changed_ui], every=3, show_progress="hidden", show_api=False)
 
 
 def render_voice_setups_editor(config: ConfigLoader, service_dropdowns: list[tuple[ConfigValueSelection, Any]], other_service_lists: list[Any] | None = None,
@@ -121,8 +171,10 @@ def render_voice_setups_editor(config: ConfigLoader, service_dropdowns: list[tup
                                 info="Tick for a website. Prepare all voices skips it, so it doesn't run up a bill.")
         volume_ui = gr.Number(value=initial["volume"], label="Volume (%)", precision=0, minimum=10, maximum=300,
                               info="How loud NPCs speak with it. 100 is as loud as Skyrim's own lines.")
+        speed_ui = gr.Slider(value=initial["speed"], label=SPEED_LABEL, minimum=SPEED_LOW, maximum=SPEED_HIGH, step=0.1,
+                             info="How fast NPCs talk with it. 1 is the voice's own speed; the pitch stays the same.")
     extra_ui = gr.Textbox(value=json.dumps(initial["extra_fields"]) if initial["extra_fields"] else "", label="Extra request settings (JSON)",
-                          placeholder='{"speed": 1.1}', lines=2, max_lines=4,
+                          placeholder='{"seed": 42}', lines=2, max_lines=4,
                           info="Anything else the program accepts, from its instructions. Empty if unsure.")
     error_ui = gr.Markdown("", visible=False, elem_classes="constraint-violation")
     with gr.Row():
@@ -134,18 +186,19 @@ def render_voice_setups_editor(config: ConfigLoader, service_dropdowns: list[tup
     test_audio_ui = gr.Audio(label="Test", show_label=False, interactive=False, type="filepath")
     status_ui = gr.Markdown("")
 
-    boxes = [name_ui, style_ui, url_ui, key_ui, model_ui, clip_field_ui, clip_mode_ui, male_ui, female_ui, languages_ui, online_ui, extra_ui, volume_ui]
+    boxes = [name_ui, style_ui, url_ui, key_ui, model_ui, clip_field_ui, clip_mode_ui, male_ui, female_ui, languages_ui, online_ui, extra_ui, volume_ui,
+             speed_ui]
     service_outputs = [ui for _, ui in service_dropdowns] + other_service_lists
 
-    def from_boxes(name, style, url, key_file, model, clip_field, clip_mode, male, female, languages, online, extra, volume) -> dict[str, Any]:
+    def from_boxes(name, style, url, key_file, model, clip_field, clip_mode, male, female, languages, online, extra, volume, speed) -> dict[str, Any]:
         return {"name": name, "style": style, "url": url, "key_file": key_file, "model": model, "clip_field": clip_field, "clip_mode": clip_mode or "",
                 "male_voice": male, "female_voice": female, "languages": languages or "", "runs_online": bool(online), "extra_fields": extra or "",
-                "volume": 100 if volume is None else volume}
+                "volume": 100 if volume is None else volume, "speed": SPEED_DEFAULT if speed is None else speed}
 
     def to_boxes(setup: dict[str, Any]) -> list[Any]:
         return [setup["name"], setup["style"], setup["url"], setup["key_file"], setup["model"], setup["clip_field"], setup["clip_mode"] or None,
                 setup["male_voice"], setup["female_voice"], ", ".join(setup["languages"]), setup["runs_online"],
-                json.dumps(setup["extra_fields"]) if setup["extra_fields"] else "", setup["volume"]]
+                json.dumps(setup["extra_fields"]) if setup["extra_fields"] else "", setup["volume"], setup["speed"]]
 
     def other_names(selected: str) -> list[str]:
         return [s.name for s in voice_services.all() if not (selected != NEW_SETUP and normalize_service_name(s.name) == normalize_service_name(selected))]

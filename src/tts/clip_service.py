@@ -22,6 +22,7 @@ from src.tts.synthesization_options import SynthesizationOptions
 from src.tts.ttsable import TTSable
 from src.tts.voice_folders import pronunciation_folder, voice_clips_folder
 from src.tts.voice_picker import NAMED, OWN_CLIP, VoicePick, VoicePicker, VoiceSpeaker, file_value
+from src.tts.voice_style import ServiceStyle, style_for
 from src.tts.word_lists import replace_words, shared_word_lists
 from src.voice_clips.clip_store import MOST_CHOSEN, NPCS, VOICE_TYPES, ClipStore, clip_seconds, lines_within, shared_clip_store
 from src.voice_clips.preparing import preparation_for
@@ -110,6 +111,7 @@ class ClipVoiceService(TTSable):
         self._effects = voice_effects.shared_voice_effects(config.save_folder)
         self._effect: voice_effects.VoiceEffect | None = None # for the line being made
         self._pitch: float = 0.0
+        self._style: ServiceStyle = style_for(config, info) # Talking speed, and an online service's other settings (voice_style.py)
         self.spoke_in_game = False # a line in game, not only a button on the page
         if not info.speaks(config.language) and (info.name, config.language) not in _warned_languages:
             _warned_languages.add((info.name, config.language)) # once, not on every settings change
@@ -297,6 +299,21 @@ class ClipVoiceService(TTSable):
     def pitch_for(self, pick: VoicePick | None) -> float:
         return voice_pitch(self._clips, pick)
 
+    def speed_for(self, pick: VoicePick | None) -> float:
+        """The Talking speed for a line in this voice: the voice's own, else the page's (a voice setup's as last saved). 1 for a
+        service without one, or a model that doesn't take it"""
+        style = self._style
+        if self._info.is_setup:
+            latest = voice_services.find(self._info.name)
+            style = style_for(self._config, latest if latest is not None and latest.is_setup else self._info)
+        setting = style.speed_setting()
+        if setting is None or setting not in style.settings():
+            return 1.0
+        try:
+            return float(style.voice_value(self._clips, pick, setting))
+        except (TypeError, ValueError):
+            return 1.0
+
     def finish_line(self, wav_file: str, effect: voice_effects.VoiceEffect | None = None, volume: float | None = None, pitch: float = 0.0) -> None:
         """The voice's Pitch, the voice effect, then the service's Volume, on a finished line. A line that can't be changed plays as it is"""
         try:
@@ -342,7 +359,7 @@ class ClipVoiceService(TTSable):
                     line = replace_words(line, {ipa_word[0].lower(): self.format_ipa(*ipa_word)})
                 text = (self.spoken_text(line, ipa) if use_word_lists else line).strip()
                 self.speak_line(text, voice, raw_file, pick)
-                audio_cleanup.clean_up(raw_file, final_voiceline_file)
+                audio_cleanup.clean_up(raw_file, final_voiceline_file, speed=self.speed_for(pick))
                 last_error = None
                 break
             except NoSoundSymbols:

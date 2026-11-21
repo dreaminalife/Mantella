@@ -446,11 +446,14 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.qwen_audio_tags = self.__definitions.get_bool_value("qwen_audio_tags")
             self.qwen_directions = self.__definitions.get_bool_value("qwen_directions")
             self.boson_audio_tags = self.__definitions.get_bool_value("boson_audio_tags")
+            self.iodine_audio_tags = self.__definitions.get_bool_value("iodine_audio_tags")
+            self.iodine_directions = self.__definitions.get_bool_value("iodine_directions")
             # How cloned voices sound (src/tts/voice_style.py): every NPC's, unless a voice has its own on the Voice Clips page
             self.heygen_similarity = self.__definitions.get_string_value("heygen_similarity")
             self.heygen_expressiveness = self.__definitions.get_float_value("heygen_expressiveness")
             self.inworld_delivery = self.__definitions.get_string_value("inworld_delivery")
             self.boson_expressiveness = self.__definitions.get_string_value("boson_expressiveness")
+            self.iodine_temperature = self.__definitions.get_float_value("iodine_temperature")
             self.xtts_url = self.__definitions.get_string_value("xtts_url").rstrip('/')
 
             # Do not check if a given path exists unless the TTS service is actually selected

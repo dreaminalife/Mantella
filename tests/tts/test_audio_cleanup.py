@@ -51,3 +51,40 @@ def test_no_sound_is_an_error(tmp_path):
     sf.write(tmp_path / "empty.wav", np.zeros(0, dtype=np.float32), RATE)
     with pytest.raises(Exception):
         clean_up(str(tmp_path / "empty.wav"), str(tmp_path / "out.wav"))
+
+
+# ---- Talking speed (Step 13) ----
+
+def peak_hz(samples: np.ndarray, rate: int) -> float:
+    return float(np.argmax(np.abs(np.fft.rfft(samples)))) * rate / samples.size
+
+
+def tone(seconds: float = 2.0, hz: float = 220.0) -> np.ndarray:
+    return (0.4 * np.sin(2 * np.pi * hz * np.arange(int(RATE * seconds)) / RATE)).astype(np.float32)
+
+
+def test_talking_speed_changes_the_length_but_not_the_pitch(tmp_path):
+    sf.write(tmp_path / "in.wav", tone(), RATE)
+    clean_up(str(tmp_path / "in.wav"), str(tmp_path / "out.wav"), trim=False, speed=1.25)
+    data, rate = sf.read(str(tmp_path / "out.wav"))
+    assert abs(len(data) / rate - 2.0 / 1.25) < 0.05
+    assert abs(peak_hz(data, rate) - 220.0) < 3
+
+
+def test_talking_speed_1_leaves_the_line_untouched():
+    from src.tts.voice_speed import SPEED_CHANGE
+    samples = tone()
+    assert SPEED_CHANGE.apply(samples, RATE, 1.0) is samples
+
+
+def test_a_failed_speed_change_keeps_the_line(tmp_path):
+    from src.tts.voice_speed import SpeedChange
+
+    class Broken(SpeedChange):
+        def changed(self, samples, rate, speed):
+            raise RuntimeError("no filter")
+
+    sf.write(tmp_path / "in.wav", tone(), RATE)
+    clean_up(str(tmp_path / "in.wav"), str(tmp_path / "out.wav"), trim=False, speed=0.8, speed_change=Broken())
+    data, rate = sf.read(str(tmp_path / "out.wav"))
+    assert abs(len(data) / rate - 2.0) < 0.01

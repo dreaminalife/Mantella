@@ -837,10 +837,12 @@ class context:
         actions = self.__get_action_texts(actions_for_prompt, tools_offered)
         event = self.npc_event.text if self.npc_event else ""
         nearby = self.__get_nearby_text()
-        # Sounds, moods and directions in square brackets, for an NPC whose voice service takes them ({if audio_tags}, {if moods}, {if directions})
+        # Sounds, moods, directions and word styles in square brackets, for an NPC whose voice service takes them ({if audio_tags}, {if moods},
+        # {if directions}, {if word_styles})
         speakers = prompt_characters.get_all_characters()
         voice_sounds = voice_tags.sounds_text(self.__config, speakers)
         voice_moods = voice_tags.moods_text(self.__config, speakers)
+        voice_styles = voice_tags.styles_text(self.__config, speakers)
         conditions = set(conditions or ()) | voice_tags.conditions_for(self.__config, speakers)
         variable_values = {
             "player_name": player_name,
@@ -870,6 +872,7 @@ class context:
             "nearby": nearby,
             "voice_sounds": voice_sounds,
             "voice_moods": voice_moods,
+            "voice_styles": voice_styles,
         }
         if prompt_type:
             prompt = self.__config.prompt_profile_manager.resolve_prompt(prompt_type, prompt)
@@ -921,6 +924,7 @@ class context:
                 nearby=nearby,
                 voice_sounds=voice_sounds,
                 voice_moods=voice_moods,
+                voice_styles=voice_styles,
                 nearby_bios=nearby_bios if step < 2 else "", # Dropped along with the memories when the prompt is too long, also when nobody is in the conversation yet
                 )
             if self.__client.is_too_long(result, self.TOKEN_LIMIT_PERCENT):

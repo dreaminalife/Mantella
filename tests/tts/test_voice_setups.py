@@ -50,7 +50,7 @@ def test_names_are_found_by_name_or_alias_whatever_the_spelling():
 def test_a_setup_with_a_taken_name_is_left_out():
     registry = VoiceServiceRegistry()
     registry.set_setups([vs.to_service_info(vs.normalized(a_setup(name="piper"))), vs.to_service_info(vs.normalized(a_setup()))])
-    assert registry.names() == ["Piper", "XTTS", "xVASynth", "Pocket TTS", "ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "My Pocket"]
+    assert registry.names() == ["Piper", "XTTS", "xVASynth", "Pocket TTS", "ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "Iodine", "My Pocket"]
 
 
 def test_setups_are_saved_listed_renamed_and_removed(tmp_path):
@@ -252,3 +252,13 @@ def test_a_setup_not_set_up_for_the_language_is_named_once(voice_config, caplog)
         OpenAIStyleService(voice_config, info)
         OpenAIStyleService(voice_config, info)
     assert caplog.text.count("German Only is set up for de, not for your Language setting (en)") == 1
+
+
+def test_a_setups_talking_speed_is_kept_within_its_range():
+    from src.tts.voice_setups import empty_setup, normalized, problems
+    assert empty_setup()["speed"] == 1.0
+    assert normalized({**empty_setup(), "name": "Mine", "speed": "1.25"})["speed"] == 1.25
+    assert normalized({**empty_setup(), "name": "Mine", "speed": 3})["speed"] == 1.5
+    assert normalized({**empty_setup(), "name": "Mine", "speed": "fast"})["speed"] == 1.0
+    assert any("Talking speed" in p for p in problems({**empty_setup(), "name": "Mine", "speed": 2.0}, []))
+    assert not any("Talking speed" in p for p in problems({**empty_setup(), "name": "Mine", "speed": 0.8}, []))

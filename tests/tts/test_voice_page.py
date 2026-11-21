@@ -172,14 +172,14 @@ def test_the_online_services_have_parts_of_their_own_and_never_show_the_key(tmp_
     config.auto_launch_ui = False
     blocks = StartUI(config).create_main_block()
     picker = next(c for c in blocks.blocks.values() if isinstance(c, gr.Dropdown) and c.label == "Settings for")
-    assert [value for _, value in picker.choices][:6] == ["Pocket TTS", "ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI"]
-    for name in ("ElevenLabs", "HeyGen", "Qwen", "Boson AI"):
+    assert [value for _, value in picker.choices][:7] == ["Pocket TTS", "ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "Iodine"]
+    for name in ("ElevenLabs", "HeyGen", "Qwen", "Boson AI", "Iodine"):
         assert tab_of(next(c for c in blocks.blocks.values() if getattr(c, "label", None) == f"{name} key")) == "Text-to-Speech"
-    online = ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI")
+    online = ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "Iodine")
     labels = [(c.label, service_of(c)) for c in blocks.blocks.values()
               if getattr(c, "label", None) in ("Audio tags", "Directions") and service_of(c) in online and accordion_of(c) == f"Global settings for {service_of(c)}"]
     assert sorted(labels) == sorted([("Audio tags", "Inworld"), ("Directions", "Inworld"), ("Audio tags", "HeyGen"), ("Audio tags", "Qwen"),
-                                     ("Directions", "Qwen"), ("Audio tags", "Boson AI")])
+                                     ("Directions", "Qwen"), ("Audio tags", "Boson AI"), ("Audio tags", "Iodine"), ("Directions", "Iodine")])
     texts = [(c.value, service_of(c), accordion_of(c)) for c in blocks.blocks.values() if isinstance(getattr(c, "value", None), str)]
     assert any("The model HeyGen speaks with" in text and part is None for text, part, _ in texts) # HeyGen's Model, next to TTS Service
     assert any("Workspace ID" in text and part == "Qwen" and fold == "Your key" for text, part, fold in texts) # with the key
@@ -240,7 +240,7 @@ def test_voice_effects_and_each_services_volume_are_on_the_text_to_speech_page(t
     labels = {c.label: c for c in blocks.blocks.values() if getattr(c, "label", None)}
     assert tab_of(labels["Effect"]) == "Text-to-Speech"
     volumes = [service_of(c) for c in blocks.blocks.values() if isinstance(getattr(c, "value", None), str) and "How loud NPCs speak with" in c.value]
-    assert sorted(volumes) == ["Boson AI", "ElevenLabs", "HeyGen", "Inworld", "Pocket TTS", "Qwen"] # each in its own part, not in a part of its own named the same
+    assert sorted(volumes) == ["Boson AI", "ElevenLabs", "HeyGen", "Inworld", "Iodine", "Pocket TTS", "Qwen"] # each in its own part, not in a part of its own named the same
     accordions = [c.label for c in blocks.blocks.values() if isinstance(c, gr.Accordion)]
     assert "Pocket TTS" not in accordions # its part is shown with the Settings for list, not folded
     assert accordions.index("Voice Effects") < accordions.index("Fix Pronunciation") # at the end of the page
@@ -351,7 +351,7 @@ def test_each_online_service_shows_its_key_then_how_npcs_sound(tmp_path):
     config.auto_launch_ui = False
     config.definitions.get_config_value_definition("inworld_model").value = "TTS-2 Flash"
     blocks = StartUI(config).create_main_block()
-    online = ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI")
+    online = ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "Iodine")
     texts = [(c.value, accordion_of(c)) for c in blocks.blocks.values() if isinstance(getattr(c, "value", None), str)]
     folds = {SOUND_NAMES[c.elem_id]: c for c in blocks.blocks.values() if isinstance(c, gr.Column) and c.elem_id in SOUND_NAMES}
     for name in online:
@@ -370,6 +370,9 @@ def test_each_online_service_shows_its_key_then_how_npcs_sound(tmp_path):
     expressiveness = setting_in("HeyGen", gr.Slider, 0.5)
     assert len(expressiveness) == 1 and not hidden(expressiveness[0]) # HeyGen's Expressiveness, a slider
     assert setting_in("HeyGen", gr.Dropdown, "Highest") and setting_in("Boson AI", gr.Dropdown, "Lively") # Similarity, Boson's Expressiveness
+    assert setting_in("Iodine", gr.Slider, 1.0) # Temperature and Talking speed
+    speeds = [service_of(c) for c in blocks.blocks.values() if isinstance(c, gr.Slider) and c.label == "Talking speed" and service_of(c) in ("Pocket TTS", *online)]
+    assert sorted(speeds) == sorted(["Pocket TTS", *online]) # one in each service's part; each online service's is per model
     # TTS-2 Flash has no Delivery and no Directions, so they are hidden; they show with TTS-2
     delivery = setting_in("Inworld", gr.Dropdown, "Balanced")
     directions = [c for c in blocks.blocks.values() if getattr(c, "label", None) == "Directions" and service_of(c) in ("Inworld", "Qwen")]
@@ -397,27 +400,30 @@ def test_voice_clips_shows_the_services_style_settings_for_the_picked_voice(tmp_
             return next(update for c, update in out.items() if isinstance(c, kind) and c.label == label)
         back = next(update for c, update in out.items() if isinstance(c, gr.Button) and c.value == "") # Use the Text-to-Speech page's setting
         return {"Similarity": find(gr.Dropdown, "Similarity"), "Expressiveness": find(gr.Slider, "Expressiveness"), "back": back,
-                "Delivery": find(gr.Dropdown, "Delivery"), "Boson": find(gr.Dropdown, "Expressiveness")}
+                "Delivery": find(gr.Dropdown, "Delivery"), "Boson": find(gr.Dropdown, "Expressiveness"), "Speed": find(gr.Slider, "Talking speed")}
     shown = drawn("HeyGen")
     assert shown["Similarity"]["visible"] and shown["Similarity"]["value"] == "" and shown["Similarity"]["choices"][0][0] == "Same as the Text-to-Speech page (Highest)"
     assert shown["Expressiveness"]["visible"] and shown["Expressiveness"]["value"] == 0.5 and not shown["back"]["visible"]
     assert not shown["Delivery"]["visible"] and not shown["Boson"]["visible"]
-    assert not any(update["visible"] for update in drawn("Pocket TTS").values()) # Pocket TTS has none
+    pocket = drawn("Pocket TTS")
+    assert pocket["Speed"]["visible"] and pocket["Speed"]["value"] == 1.0 # Pocket TTS has only Talking speed
+    assert not any(update["visible"] for name, update in pocket.items() if name != "Speed")
+    assert shown["Speed"]["visible"] # one Talking speed slider, for whichever service is shown
     assert drawn("Inworld")["Delivery"]["visible"] and drawn("Boson AI")["Boson"]["value"] == "" # TTS-2, the page's Model
 
     lambdas = [f.fn for f in blocks.fns if getattr(f.fn, "__name__", "") == "<lambda>" and "render_voice_clips_editor" in f.fn.__qualname__]
     slider = next(fn for fn in lambdas if "on_style_slider" in fn.__code__.co_freevars)
     back = next(fn for fn in lambdas if "on_style_back" in fn.__code__.co_freevars)
     similarity = next(fn for fn in lambdas if "set_style" in fn.__code__.co_freevars and fn.__defaults__[0].name == "heygen_similarity")
-    message, back_button = slider(voice, 0.2)
+    message, back_button = slider(voice, "HeyGen", 0.2)
     assert "has Expressiveness 0.2" in message and back_button["visible"]
     assert clips.voice_setting(VOICE_TYPES, "femaleeventoned", "heygen_expressiveness") == {"heygen-voice-1-turbo": 0.2} # kept for the picked model
     assert drawn("HeyGen")["Expressiveness"]["value"] == 0.2
-    message, slider_update, back_button = back(voice)
+    message, slider_update, back_button = back(voice, "HeyGen")
     assert "uses the Text-to-Speech page's Expressiveness" in message and slider_update["value"] == 0.5 and not back_button["visible"]
-    assert "HeyGen clones the Female Even Toned voice again" in similarity(voice, "Medium")
+    assert "HeyGen clones the Female Even Toned voice again" in similarity(voice, "HeyGen", "Medium")
     assert clips.voice_setting(VOICE_TYPES, "femaleeventoned", "heygen_similarity", "heygen-voice-1-turbo") == "Medium"
-    similarity(voice, "") # Same as the Text-to-Speech page
+    similarity(voice, "HeyGen", "") # Same as the Text-to-Speech page
     assert clips.voice_settings(VOICE_TYPES, "femaleeventoned") == {}
 
 

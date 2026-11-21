@@ -19,7 +19,7 @@ from src.tts.voice_effects import RACE_GROUPS, SLIDER_KEYS, SLIDERS, race_ids, r
 
 EFFECT_LINE = "You dare enter this place? Your bones will join the others."
 KEEP_LINE_SECONDS = 300 # both buttons play the same spoken line for this long, so an online service is paid once
-EFFECT_SERVICES = "Pocket TTS, your voice setups, ElevenLabs, Inworld, HeyGen, Qwen and Boson AI"
+EFFECT_SERVICES = "Pocket TTS, your voice setups, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and Iodine"
 UNSAVED = "**Not saved yet.** Press **Save changes** to keep what you changed."
 GHOSTS = "Ghosts" # listed with the races, though the game marks ghosts apart: they share their race with the living
 

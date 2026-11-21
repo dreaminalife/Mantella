@@ -1,4 +1,4 @@
-"""Voice effects and Voice Volume, for the newer voice services (Pocket TTS, voice setups, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI).
+"""Voice effects and Voice Volume, for the newer voice services (Pocket TTS, voice setups, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine).
 
 Both run on a finished line, after its lip file is made: pitch and filters don't change when the mouth moves, and an echo's tail
 would only add mouth movement where nobody speaks. The effect comes first, then the line is made as loud as Skyrim's own lines,

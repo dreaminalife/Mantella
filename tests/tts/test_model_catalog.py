@@ -31,7 +31,7 @@ TURBO_2 = {"id": "heygen-voice-2-turbo", "name": "Turbo 2", "price": 12, "skips"
 
 def test_the_shipped_list_has_every_online_service():
     catalog = ModelCatalog()
-    for name in ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI"):
+    for name in ("ElevenLabs", "Inworld", "HeyGen", "Qwen", "Boson AI", "Iodine"):
         assert catalog.models(name, date(2026, 11, 19)), name
         assert ServiceModels.of(name).default().known, name
     assert catalog.find("HeyGen", "Turbo").id == "heygen-voice-1-turbo" # older Mantella saved the name
@@ -204,13 +204,13 @@ def test_models_are_carried_over_on_a_start_that_also_writes_a_backup(tmp_path, 
 
 
 def test_a_model_that_skips_audio_tags_or_directions_gets_none(monkeypatch, tmp_path):
-    from src.tts import boson, heygen, inworld, qwen
+    from src.tts import boson, heygen, inworld, iodine, qwen
     from src.tts.voice_tags import NO_TAGS
     services = {name: {"default": "plain", "models": [{"id": "plain", "name": "Plain"},
                                                         {"id": "quiet", "name": "Quiet", "skips": [f"{key}_audio_tags", f"{key}_directions"]}]}
-                for name, key in (("HeyGen", "heygen"), ("Inworld", "inworld"), ("Qwen", "qwen"), ("Boson AI", "boson"))}
+                for name, key in (("HeyGen", "heygen"), ("Inworld", "inworld"), ("Qwen", "qwen"), ("Boson AI", "boson"), ("Iodine", "iodine"))}
     use_catalog(monkeypatch, tmp_path, json.dumps({"services": services}))
-    for module, key in ((heygen, "heygen"), (inworld, "inworld"), (qwen, "qwen"), (boson, "boson")):
+    for module, key in ((heygen, "heygen"), (inworld, "inworld"), (qwen, "qwen"), (boson, "boson"), (iodine, "iodine")):
         on = {f"{key}_audio_tags": True, f"{key}_directions": True, "language": "en"}
         assert module.voice_tags(SimpleNamespace(**on, **{f"{key}_model": "plain"})) != NO_TAGS
         assert module.voice_tags(SimpleNamespace(**on, **{f"{key}_model": "quiet"})) == NO_TAGS, key
@@ -265,3 +265,12 @@ def test_a_removed_model_keeps_its_settings(tmp_path):
     assert heygen.remove(config, "heygen-voice-3")
     heygen.add(config, "heygen-voice-3")
     assert style.show_model("heygen-voice-3")["heygen_expressiveness"] == 0.8
+
+
+def test_every_online_service_has_a_talking_speed_for_each_model_and_pocket_tts_one():
+    from src.tts.voice_style import SPEEDS, SETUP_SPEED, SPEED_HIGH, SPEED_LOW
+    for models in ServiceModels.all():
+        assert SPEEDS[models.service].name == f"{models.key}_speed" and SPEEDS[models.service].per_model, models.service
+    assert not SPEEDS["Pocket TTS"].per_model and SPEEDS["Pocket TTS"].name == "pocket_tts_speed"
+    assert SETUP_SPEED.per_model # kept by setup name
+    assert (SPEED_LOW, SPEED_HIGH) == (0.7, 1.5) and SPEEDS["Iodine"].clean(2.0) is None and SPEEDS["Iodine"].clean(1.25) == 1.25

@@ -30,7 +30,8 @@ class PromptDefinitions:
                                 "actions",
                                 "lorebook",
                                 "voice_sounds",
-                                "voice_moods"]
+                                "voice_moods",
+                                "voice_styles"]
 
     # Multi-NPC / director: private thoughts are mixed into memory, not a prompt variable.
     ALLOWED_PROMPT_VARIABLES_MULTI = [v for v in ALLOWED_PROMPT_VARIABLES if v != "private_thoughts"]
@@ -71,13 +72,13 @@ class PromptDefinitions:
     # Conditional blocks ({if shout} ... {else} ... {end if}, see src/prompt_conditions.py): the merged prompts, and the conditions each one knows.
     # A prompt type that is not listed accepts no tags
     PROMPT_CONDITIONS: dict[str, tuple[str, ...]] = {
-        "skyrim_prompt": ("audio_tags", "moods", "directions"),
-        "skyrim_multi_npc_prompt": ("audio_tags", "moods", "directions"),
-        "skyrim_multi_npc_director_prompt": ("audio_tags", "moods", "directions"),
-        "skyrim_npc_initiative_prompt": ("audio_tags", "moods", "directions"),
-        "skyrim_radiant_prompt": ("audio_tags", "moods", "directions"),
+        "skyrim_prompt": ("audio_tags", "moods", "directions", "word_styles"),
+        "skyrim_multi_npc_prompt": ("audio_tags", "moods", "directions", "word_styles"),
+        "skyrim_multi_npc_director_prompt": ("audio_tags", "moods", "directions", "word_styles"),
+        "skyrim_npc_initiative_prompt": ("audio_tags", "moods", "directions", "word_styles"),
+        "skyrim_radiant_prompt": ("audio_tags", "moods", "directions", "word_styles"),
         "skyrim_game_master_prompt": ("director", "shout", "say_to_room", "npc_event"),
-        "skyrim_game_master_npc_prompt": ("director", "shout", "npc_event", "audio_tags", "moods", "directions"),
+        "skyrim_game_master_npc_prompt": ("director", "shout", "npc_event", "audio_tags", "moods", "directions", "word_styles"),
         "skyrim_conversation_event_generator_prompt": ("talk_event", "nearby_event", "random_event", "director"),
         "skyrim_game_master_decision_instructions": ("after_event",),
         "skyrim_game_master_decision_player_criteria": ("after_event",),
@@ -91,20 +92,59 @@ class PromptDefinitions:
             "say_to_room": "'say_to_room' is never true in this prompt: whoever answers has joined the conversation, so it is 'shout' by the time they speak.",
         },
     }
-    # The parts of the speaking prompts that tell the AI it may write sounds, moods and directions in square brackets (src/tts/voice_tags.py).
-    # Only sent while an NPC in the conversation speaks with a voice service that takes them, and its Audio tags or Directions is on.
-    # Every voice service gets each sentence on its own, so a mood or direction lasts one sentence, and Qwen keeps only a sentence's first direction:
-    # hence one at the start of each sentence with a feeling
-    VOICE_TAG_RULES = """{if audio_tags}
-- Sounds: a voice can make sounds. Put one in square brackets where it happens in a spoken line, for example: Ha! [laugh] You thought I'd fall for that? The ones these voices know: {voice_sounds}. Most lines need none: add one only where the moment calls for it. Never put two tags side by side, and never put one in narration or thoughts.
-{end if}
-{if moods}
-- Moods: a voice can change its mood. Start a spoken sentence with one in square brackets. The ones these voices know: {voice_moods}. A mood lasts only until the end of its sentence. Start every sentence that has a clear feeling with one, and when a feeling carries over several sentences, repeat it on each. Plain, calm sentences need none. Change mood gradually from one sentence to the next, not in sudden jumps. Never in narration or thoughts, and never against the words.
-{end if}
-{if directions}
-- Directions: start a spoken sentence with a short direction in square brackets, in English with no punctuation inside, saying how it is said, such as [say angrily], [voice cracking with grief], [sound terrified] or [speak slowly with a trembling voice]. Pick words that fit this moment and vary them; don't fall back on the same few directions. Use one direction per sentence, at its start. It lasts only until the end of that sentence. Start every sentence that has a clear feeling with one, and when a feeling carries over several sentences, give each of them a direction. Plain, calm sentences need none. Change tone gradually from one sentence to the next, not in sudden jumps. Never in narration or thoughts, and never against the words.
-{end if}
-"""
+    # The part of the speaking prompts that tells the AI it may write sounds, moods, directions and word styles in square brackets
+    # (src/tts/voice_tags.py). Each line is only sent while an NPC in the conversation speaks with a voice service that takes it, with its Audio
+    # tags or Directions on. Square brackets, because curly ones are how prompts write their variables: Iodine gets curly ones (src/tts/iodine.py).
+    # The wording follows Iodine's own advice for prompts. A mood or direction lasts one sentence: every voice service gets each sentence on its own.
+    # It never names a language: the conversation's language is the player's ({language})
+    VOICE_TAG_LINES: tuple[str, ...] = (
+        "{if audio_tags or directions}",
+        "Voice tags, in square brackets, only in spoken lines, never in narration or thoughts:",
+        "{end if}",
+        "{if moods}",
+        "- Start a sentence with an emotion when it changes: {voice_moods}. It lasts until the end of that sentence.",
+        "{end if}",
+        "{if directions}",
+        "- {if moods}Or describe{else}Describe{end if} the delivery in a few words, like a note to an actor: {if word_styles}[quietly, trying not to laugh]"
+        "{else}[say angrily], [voice cracking with grief], with no punctuation inside{end if}. Vary them.",
+        "{end if}",
+        "{if audio_tags}",
+        "- Put sounds exactly where they happen: Ha! [laugh] You thought I'd fall for that? These voices know: {voice_sounds}"
+        "{if word_styles and directions}, or a short sound of your own such as [small laugh]{end if}",
+        "{end if}",
+        "{if word_styles}",
+        "- Wrap a few words in a style and close it: [whisper]just between us[/whisper], [emphasis]never[/emphasis]. Styles: {voice_styles}",
+        "{end if}",
+        "{if audio_tags or directions}",
+        "- One emotion per sentence at most, and no more than two or three cues in a row. Most sentences need none.",
+        "{end if}",
+    )
+    # The example reply, with the tags the NPCs' voices take: (the condition, the reply), the first that holds is shown
+    VOICE_TAG_EXAMPLES: tuple[tuple[str, str], ...] = (
+        ("word_styles", "[sigh] The buyer's late. [nervous] Keep your voice down. [whisper]The guards are close.[/whisper] Now smile, like we're two old friends out for a walk."),
+        ("moods", "[sigh] The buyer's late. [scared] Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk."),
+        ("directions", "The buyer's late. [low and uneasy] Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk."),
+        ("audio_tags", "[sigh] The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk."),
+    )
+    VOICE_TAG_PLAIN_EXAMPLE = "The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk."
+
+    @staticmethod
+    def voice_tag_rules(indent: str = "") -> str:
+        """The voice tags block, each line starting with *indent* to match the prompt it sits in"""
+        return "".join(f"{indent}{line}\n" for line in PromptDefinitions.VOICE_TAG_LINES)
+
+    @staticmethod
+    def voice_tag_example(indent: str = "", speaker: str = "", heading: str = "For example:", plain: bool = False) -> str:
+        """The example reply for the tags the voices take. *speaker*: written before it ("Ysolda: "). *heading*: shown above it while
+        the voices take tags. *plain*: one without tags otherwise, for a prompt that always shows its example"""
+        lines: list[str] = ["{if audio_tags or directions}", heading, "{end if}"] if heading else []
+        for i, (condition, reply) in enumerate(PromptDefinitions.VOICE_TAG_EXAMPLES):
+            lines += [f"{{{'if' if i == 0 else 'else if'} {condition}}}", speaker + reply]
+        if plain:
+            lines += ["{else}", speaker + PromptDefinitions.VOICE_TAG_PLAIN_EXAMPLE]
+        lines.append("{end if}")
+        return "".join(f"{indent}{line}\n" for line in lines)
+
     # The situations every speaking prompt's preview can show for its voice tags parts
     VOICE_TAG_SITUATIONS: list[tuple[str, frozenset[str]]] = [
         ("Voice takes no sounds or directions", frozenset()),
@@ -112,6 +152,7 @@ class PromptDefinitions:
         ("Voice takes directions (Directions on)", frozenset({"directions"})),
         ("Voice makes sounds and takes directions", frozenset({"audio_tags", "directions"})),
         ("Voice makes sounds and changes moods (HeyGen, Boson AI)", frozenset({"audio_tags", "moods"})),
+        ("Voice takes moods, directions, sounds and word styles (Iodine)", frozenset({"audio_tags", "moods", "directions", "word_styles"})),
     ]
     # What the prompt editor's preview can show each merged prompt as: (the situation in plain words, the conditions that are true then)
     PREVIEW_SITUATIONS: dict[str, list[tuple[str, frozenset[str]]]] = {
@@ -139,6 +180,7 @@ class PromptDefinitions:
             ("Group conversation, voice takes directions (Directions on)", frozenset({"directions"})),
             ("Group conversation, voice makes sounds and takes directions", frozenset({"audio_tags", "directions"})),
             ("Group conversation, voice makes sounds and changes moods (HeyGen, Boson AI)", frozenset({"audio_tags", "moods"})),
+            ("Group conversation, voice takes moods, directions, sounds and word styles (Iodine)", frozenset({"audio_tags", "moods", "directions", "word_styles"})),
         ],
         "skyrim_shout_decision_nobody_criteria": [
             ("Saying something to the room", frozenset()),
@@ -216,7 +258,8 @@ class PromptDefinitions:
                                 "actions",
                                 "lorebook",
                                 "voice_sounds",
-                                "voice_moods"]
+                                "voice_moods",
+                                "voice_styles"]
 
     ALLOWED_PROMPT_VARIABLES_MEMORY = [
         "bios",
@@ -279,7 +322,8 @@ class PromptDefinitions:
                                 actions = instructions for the LLM how to trigger actions
                                 lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
                                 voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
-                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen, Boson AI or Iodine with Audio tags on). Use it inside {if moods}
+                                voice_styles = the word styles the NPCs' voices can take, such as [whisper], [emphasis] (Iodine with Audio tags on). Use it inside {if word_styles}"""
     
     BASE_MULTI_PROMPT_DESCRIPTION = """The starting prompt sent to the LLM when multiple NPCs are selected.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -305,7 +349,8 @@ class PromptDefinitions:
                                 actions = instructions for the LLM how to trigger actions
                                 lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
                                 voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
-                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen, Boson AI or Iodine with Audio tags on). Use it inside {if moods}
+                                voice_styles = the word styles the NPCs' voices can take, such as [whisper], [emphasis] (Iodine with Audio tags on). Use it inside {if word_styles}"""
     
     BASE_RADIANT_DESCRIPTION = """The starting prompt sent to the LLM when a radiant conversation is started.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
@@ -326,7 +371,8 @@ class PromptDefinitions:
                                 actions = instructions for the LLM to trigger actions
                                 lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
                                 voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
-                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen, Boson AI or Iodine with Audio tags on). Use it inside {if moods}
+                                voice_styles = the word styles the NPCs' voices can take, such as [whisper], [emphasis] (Iodine with Audio tags on). Use it inside {if word_styles}"""
         
     # Speech-to-Text Names: a list of names with commas between them, most likely first
     ALLOWED_PROMPT_VARIABLES_STT_NAMES = ["names", "nearby_names", "location", "player_name"]
@@ -369,7 +415,7 @@ class PromptDefinitions:
                                 Who do you think these belong to?
                                 You are having a conversation with {player_name} (the player) who is {trust} in {location}. {player_name} {player_description} {player_equipment} {equipment}
                                 This conversation is a script that will be spoken aloud, so please keep your responses appropriately concise and avoid text-only formatting such as numbered lists.
-""" + PromptDefinitions.VOICE_TAG_RULES + """                                The time is {time} {time_group}.
+""" + PromptDefinitions.voice_tag_rules("                                ") + PromptDefinitions.voice_tag_example("                                ") + """                                The time is {time} {time_group}.
                                 {weather}
                                 Remember to stay in character.
                                 {actions}
@@ -390,7 +436,7 @@ class PromptDefinitions:
                                     {weather}
                                     You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'.
                                     Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable).
-""" + PromptDefinitions.VOICE_TAG_RULES + """                                    {actions}
+""" + PromptDefinitions.voice_tag_rules("                                    ") + PromptDefinitions.voice_tag_example("                                    ", "Ysolda: ") + """                                    {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
         return ConfigValueString("skyrim_multi_npc_prompt","Skyrim Multi-NPC Prompt",PromptDefinitions.BASE_MULTI_PROMPT_DESCRIPTION,skyrim_multi_npc_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI, "skyrim_multi_npc_prompt")])
@@ -459,9 +505,9 @@ Ysolda: Thank God. Relief floods her words as she exhales, eager to move on.
 
 - **No Labels for Narration:** DO NOT begin your narrations with "Narration:". Just add the thing without highlighting it.  
 - **Always Use Punctuation** at the end of a sentence.  
-- **No Special Characters:** The use of special characters, asterisks, dashes (-), or quotation marks is STRICTLY PROHIBITED  
+- **No Special Characters:** The use of special characters, asterisks, dashes (-), or quotation marks is STRICTLY PROHIBITED{if audio_tags or directions} (the voice tags below are allowed){end if}  
 - **Use ! and ALL CAPS** for emphasis when fitting.
-""" + PromptDefinitions.VOICE_TAG_RULES + """
+""" + PromptDefinitions.voice_tag_rules() + PromptDefinitions.voice_tag_example(speaker="Ysolda: ") + """
 
 **=== END OF IMPORTANT SECTION ===**
 
@@ -582,7 +628,8 @@ Content Guidelines:
                                 actions = instructions for the LLM how to trigger actions
                                 lorebook = lorebook entries matched from non-bio/non-summary prompt context and conversation history
                                 voice_sounds = the sounds the NPCs' voices can make, such as [laugh], [sigh] (a voice service with Audio tags on). Use it inside {if audio_tags}
-                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen or Boson AI with Audio tags on). Use it inside {if moods}"""
+                                voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen, Boson AI or Iodine with Audio tags on). Use it inside {if moods}
+                                voice_styles = the word styles the NPCs' voices can take, such as [whisper], [emphasis] (Iodine with Audio tags on). Use it inside {if word_styles}"""
 
     @staticmethod
     def get_skyrim_game_master_npc_prompt_config_value() -> ConfigValue:
@@ -649,7 +696,7 @@ Content Guidelines:
 - Do not wrap the utterance in quotes
 - Format all spoken words and narrations with the NPC's full name followed by their dialogue.
 - No asterisks. You can use all caps instead.
-""" + PromptDefinitions.VOICE_TAG_RULES + """
+""" + PromptDefinitions.voice_tag_rules() + """
 - At the very END of the response, after ALL spoken lines and actions are finished, you MUST add one unspoken private thought per NPC who spoke
 - Never place thoughts before or between dialogue lines.
 - Format the private thought using: <<thought Full Name>> <<action next turn Full Name>>
@@ -661,18 +708,7 @@ Content Guidelines:
 {end if}
 
 Response format example:
-{if directions and audio_tags}
-Ysolda: [sigh] The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
-{else if directions}
-Ysolda: The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
-{else if moods}
-Ysolda: [sigh] The buyer's late. [scared] Keep your voice down. [whisper] The guards are close. [happy] Now smile, like we're two old friends out for a walk.
-{else if audio_tags}
-Ysolda: [sigh] The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
-{else}
-Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
-{end if}
-<<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
+""" + PromptDefinitions.voice_tag_example(speaker="Ysolda: ", heading="", plain=True) + """<<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
 <<action next turn Ysolda>>  I need to make the handoff quickly and get back behind the city gates.
 
 
@@ -775,7 +811,7 @@ Always use the most recent memory to determine the current relationship
 - Do not wrap the utterance in quotes
 - Format all spoken words and narrations with the NPC's full name followed by their dialogue.
 - No asterisks. You can use all caps instead.
-""" + PromptDefinitions.VOICE_TAG_RULES + """
+""" + PromptDefinitions.voice_tag_rules() + """
 - At the very END of the response, after ALL spoken lines and actions are finished, you MUST add one unspoken private thought per NPC who spoke
 - Never place thoughts before or between dialogue lines.
 - Format the private thought using: <<thought Full Name>> <<action next turn Full Name>>
@@ -783,18 +819,7 @@ Always use the most recent memory to determine the current relationship
   - Must express {names}'s internal reaction/feelings to what just happened, to the people involved (including {player_name}),  and what **impactful** actions they will immediately take, or what **impactful** new topics they would bring up in the next turn to ** concretely ** move the conversation forward. Do NOT use conditional framing like "if..., then...", "in case...", or "only if...". State exactly what they are going to do/say/ask.
 
 Response format example:
-{if directions and audio_tags}
-Ysolda: [sigh] The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
-{else if directions}
-Ysolda: The buyer's late. [low and uneasy] Keep your voice down. [tense and hushed] The guards are close. [with forced brightness] Now smile, like we're two old friends out for a walk.
-{else if moods}
-Ysolda: [sigh] The buyer's late. [scared] Keep your voice down. [whisper] The guards are close. [happy] Now smile, like we're two old friends out for a walk.
-{else if audio_tags}
-Ysolda: [sigh] The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
-{else}
-Ysolda: The buyer's late. Keep your voice down. The guards are close. Now smile, like we're two old friends out for a walk.
-{end if}
-<<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
+""" + PromptDefinitions.voice_tag_example(speaker="Ysolda: ", heading="", plain=True) + """<<thought Ysolda>> My heart is hammering against my ribs standing out here in the open. If the guards catch wind of this shipment, my trading license is forfeit.
 <<action next turn Ysolda>>  I need to make the handoff quickly and get back behind the city gates.
 
 
@@ -1064,7 +1089,7 @@ Always use the most recent memory to determine the current relationship
                                     {weather}
                                     You are tasked with providing the responses for the NPCs. Please begin your response with an indication of who you are speaking as, for example: '{name}: Good evening.'. 
                                     Please use your own discretion to decide who should speak in a given situation (sometimes responding with all NPCs is suitable).
-""" + PromptDefinitions.VOICE_TAG_RULES + """                                    {actions}
+""" + PromptDefinitions.voice_tag_rules("                                    ") + PromptDefinitions.voice_tag_example("                                    ", "Ysolda: ") + """                                    {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
         return ConfigValueString("skyrim_radiant_prompt","Skyrim Radiant Conversation Prompt",PromptDefinitions.BASE_RADIANT_DESCRIPTION,skyrim_radiant_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT, "skyrim_radiant_prompt")])
@@ -1587,11 +1612,6 @@ If {name} does nothing, do not call any functions."""
         "nearby_event": "you picked Nearby Event on the Conversation Wheel.",
         "random_event": "you picked Random Event on the Conversation Wheel.",
         "after_event": "the first choice right after you picked a Talk, Nearby or Random Event on the Conversation Wheel: who reacts to it first.",
-        "audio_tags": "an NPC in the conversation speaks with a voice that can make sounds such as [laugh] or [sigh]: Inworld, HeyGen, Qwen or Boson AI with Audio tags on (Text-to-Speech page). "
-                      "{voice_sounds} lists those sounds.",
-        "moods": "an NPC in the conversation speaks with a voice that can change its mood, such as [angry] or [scared]: HeyGen or Boson AI with Audio tags on (Text-to-Speech page). "
-                 "{voice_moods} lists those moods. Always true together with audio_tags.",
-        "directions": "an NPC in the conversation speaks with a voice that takes directions such as [say angrily]: Inworld's TTS-2 model, or Qwen while Mantella's Language is English, with Directions on (Text-to-Speech page).",
     }
     # What it means when none of a prompt's kinds of conversation is true
     CONDITION_NONE_MEANINGS: dict[str, str] = {
@@ -1602,6 +1622,49 @@ If {name} does nothing, do not call any functions."""
         "skyrim_game_master_decision_instructions": "Without `after_event`: every other choice of who speaks next.",
         "skyrim_game_master_decision_player_criteria": "Without `after_event`: every other choice of who speaks next.",
     }
+
+    # When each voice tag condition is true: {services} is filled with the voice services that can make it true (voice_tag_services)
+    VOICE_TAG_MEANINGS: dict[str, str] = {
+        "audio_tags": "an NPC in the conversation speaks with a voice that can make sounds such as [laugh] or [sigh]: {services} with Audio tags on "
+                      "(Text-to-Speech page). {voice_sounds} lists those sounds.",
+        "moods": "an NPC in the conversation speaks with a voice that can change its mood, such as [angry] or [scared]: {services} with Audio tags on "
+                 "(Text-to-Speech page). {voice_moods} lists those moods. Always true together with audio_tags.",
+        "directions": "an NPC in the conversation speaks with a voice that takes directions such as [say angrily]: {services} with Directions on "
+                      "(Text-to-Speech page). Some take them only on some models or in some languages: see each one's Directions setting.",
+        "word_styles": "an NPC in the conversation speaks with a voice that can say a few words in a style, such as [whisper]just between us[/whisper]: "
+                       "{services} with Audio tags on (Text-to-Speech page). {voice_styles} lists those styles. Always true together with audio_tags.",
+    }
+
+    @staticmethod
+    def voice_tag_services(condition: str) -> list[str]:
+        """The voice services that can make a voice tag condition true, with every switch on: read from the list of voice services"""
+        from src.tts.registry import voice_services
+
+        class EverySwitchOn:
+            language = "en" # some take directions only in English
+            def __getattr__(self, name: str):
+                return True if name.endswith(("_audio_tags", "_directions")) else None
+
+        wanted = {"audio_tags": lambda tags: bool(tags.sounds), "moods": lambda tags: bool(tags.moods),
+                  "directions": lambda tags: tags.directions, "word_styles": lambda tags: bool(tags.styles)}[condition]
+        found: list[str] = []
+        for service in voice_services.all():
+            try:
+                if service.voice_tags is not None and wanted(service.voice_tags(EverySwitchOn())):
+                    found.append(service.name)
+            except Exception:
+                continue
+        return found
+
+    @staticmethod
+    def condition_meaning(name: str) -> str:
+        """When a condition is true, in the player's words"""
+        template = PromptDefinitions.VOICE_TAG_MEANINGS.get(name)
+        if template is None:
+            return PromptDefinitions.CONDITION_MEANINGS[name]
+        services = PromptDefinitions.voice_tag_services(name)
+        named = ", ".join(services[:-1]) + f" or {services[-1]}" if len(services) > 1 else (services[0] if services else "a voice service")
+        return template.replace("{services}", named)
 
     @staticmethod
     def get_conditions_note(prompt_type: str) -> str:
@@ -1614,7 +1677,7 @@ If {name} does nothing, do not call any functions."""
                  "Conditions can be combined with `not`, `and` and `or`, for example `{if shout or npc_event}`.",
                  "",
                  "**Conditions:**"]
-        lines += [f"- `{name}`: {PromptDefinitions.CONDITION_MEANINGS[name]}" for name in conditions]
+        lines += [f"- `{name}`: {PromptDefinitions.condition_meaning(name)}" for name in conditions]
         none_meaning = PromptDefinitions.CONDITION_NONE_MEANINGS.get(prompt_type)
         if none_meaning:
             lines.append(f"- {none_meaning}")

@@ -29,7 +29,7 @@ from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import key_saves, read_key_file
 from src.tts.model_catalog import ServiceModel, ServiceModels, with_model_limits
-from src.tts.voice_style import EXTRA_REQUEST_LABEL, ServiceStyle, StyleSetting
+from src.tts.voice_style import EXTRA_REQUEST_LABEL, StyleSetting
 
 RETRY_MINUTES = 5 # after a refusal, cloning is tried again: the player may have made room on their account meanwhile
 
@@ -243,7 +243,6 @@ class OnlineCloneService(ClipVoiceService):
         self.__told: set[str] = set() # the error sound and the in-game notice, once for cloning and once for speaking
         self.__genders: dict[str, int | None] = {} # by voice, for the NPCs speaking now: their built-in voice when cloning is refused
         self.__language = config.language
-        self._style = ServiceStyle(config, self.NAME)
         self.__use_key()
 
     @property

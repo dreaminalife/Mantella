@@ -358,6 +358,7 @@ INWORLD_MODELS = ServiceModels("Inworld", "inworld", "inworld-tts-2")
 HEYGEN_MODELS = ServiceModels("HeyGen", "heygen", "heygen-voice-1-turbo")
 QWEN_MODELS = ServiceModels("Qwen", "qwen", "qwen-audio-3.1-tts-plus")
 BOSON_MODELS = ServiceModels("Boson AI", "boson", "higgs-tts-3")
+IODINE_MODELS = ServiceModels("Iodine", "iodine", "v2")
 
 
 def with_model_limits(config: Any, info):

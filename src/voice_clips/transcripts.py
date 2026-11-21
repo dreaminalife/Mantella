@@ -1,4 +1,4 @@
-"""The words spoken in a voice clip, for a service that clones a voice only together with them (Boson AI).
+"""The words spoken in a voice clip, for a service that clones a voice only together with them (Boson AI), or better with them (Iodine).
 
 Each clip is heard once with the option picked under Speech-to-Text, also when the player types instead of talking, and its words are kept
 in voice_clips/clip_words.json by the clip's sound, so a clip is heard again only when its sound changes.

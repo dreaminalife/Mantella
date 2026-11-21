@@ -18,7 +18,7 @@ from src.config.definitions.startup_definitions import StartupDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.stt_definitions import PAGE_DESCRIPTION as STT_PAGE_DESCRIPTION, SERVICE_PART as STT_SERVICE_PART, TALKING_PART as STT_TALKING_PART, STTDefinitions
 from src.stt_backends.presets import MOONSHINE_CHOICE, PARAKEET_CHOICE, PRESETS, WHISPER_CHOICE
-from src.config.definitions.tts_definitions import TTSDefinitions, SERVICE_VOLUMES, PIPER_PART, SPEED_PART, XTTS_PART, XVASYNTH_PART
+from src.config.definitions.tts_definitions import TTSDefinitions, SERVICE_VOLUMES, PIPER_PART, POCKET_TTS_GROUP, SPEED_PART, XTTS_PART, XVASYNTH_PART
 from src.config.definitions.vision_definitions import VisionDefinitions
 from src.config.definitions.model_profile_definitions import ModelProfileDefinitions
 import sys
@@ -268,6 +268,7 @@ class MantellaConfigValueDefinitionsNew:
             tts_category.add_config_value(config_value)
         for service in SERVICE_VOLUMES: # shown in the service's own part of the page
             tts_category.add_config_value(TTSDefinitions.get_service_volume_config_value(service))
+        tts_category.add_config_value(TTSDefinitions.get_speed_config_value(POCKET_TTS_GROUP)) # next to its Volume: Pocket TTS has no models
         tts_category.add_config_value(TTSDefinitions.get_xvasynth_folder_config_value().in_folded_part(XVASYNTH_PART))
         tts_category.add_config_value(TTSDefinitions.get_xtts_folder_config_value().in_folded_part(XTTS_PART))
         tts_category.add_config_value(TTSDefinitions.get_piper_folder_config_value(is_integrated).in_folded_part(PIPER_PART))

@@ -37,17 +37,18 @@ INWORLD_GROUP = "Inworld"
 HEYGEN_GROUP = "HeyGen"
 QWEN_GROUP = "Qwen"
 BOSON_GROUP = "Boson AI"
+IODINE_GROUP = "Iodine"
 PIPER_PART = "Piper"
 XTTS_PART = "XTTS"
 XVASYNTH_PART = "xVASynth"
 VOICE_SETUPS_PART = "Your voice setups"
 # The online services' parts of the page: each has its own key panel
-ONLINE_SERVICE_GROUPS = (ELEVENLABS_GROUP, INWORLD_GROUP, HEYGEN_GROUP, QWEN_GROUP, BOSON_GROUP)
+ONLINE_SERVICE_GROUPS = (ELEVENLABS_GROUP, INWORLD_GROUP, HEYGEN_GROUP, QWEN_GROUP, BOSON_GROUP, IODINE_GROUP)
 # The choices under Settings for, in their order: one part of the page each, shown one at a time
 SERVICE_PARTS = (POCKET_TTS_GROUP, *ONLINE_SERVICE_GROUPS, PIPER_PART, XTTS_PART, XVASYNTH_PART, VOICE_SETUPS_PART)
 # Each newer service's Volume (config.ini keeps it under [TTS]); it shows in that service's part of the page
 SERVICE_VOLUMES = {POCKET_TTS_GROUP: "pocket_tts_volume", ELEVENLABS_GROUP: "elevenlabs_volume", INWORLD_GROUP: "inworld_volume",
-                   HEYGEN_GROUP: "heygen_volume", QWEN_GROUP: "qwen_volume", BOSON_GROUP: "boson_volume"}
+                   HEYGEN_GROUP: "heygen_volume", QWEN_GROUP: "qwen_volume", BOSON_GROUP: "boson_volume", IODINE_GROUP: "iodine_volume"}
 
 
 def service_part_id(part: str) -> str:
@@ -101,7 +102,7 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
 
 Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Need to add a new column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
 
-Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', 'heygen', 'qwen', 'boson', or the name of one of your voice setups.
+Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', 'heygen', 'qwen', 'boson', 'iodine', or the name of one of your voice setups.
 
 Your own voice setups are in this list too. The picked service's settings show below."""
         options, enums = TTSDefinitions.voice_service_options()
@@ -122,6 +123,13 @@ Piper, XTTS and xVASynth work as before: when one of them fails for an NPC, the 
         description = f"""How loud NPCs speak with {service}. 100% is as loud as Skyrim's own lines, 150% louder, 50% quieter.
 Every line is first made as loud as the game's own lines, then this is applied. Very loud lines are kept from crackling."""
         return ConfigValueInt(SERVICE_VOLUMES[service], "Volume", description, 100, 10, 300).in_folded_part(service)
+
+    @staticmethod
+    def get_speed_config_value(group: str) -> ConfigValue:
+        """Talking speed (src/tts/voice_speed.py): an online service's for each model, Pocket TTS's one. A voice setup keeps its own in the setup"""
+        from src.tts.voice_style import SPEEDS
+        return TTSDefinitions.get_style_config_value(SPEEDS[group], group,
+            "How fast NPCs talk. 1 is the voice's own speed, 1.2 is a little faster, 0.8 a little slower. Their pitch stays the same.")
 
     @staticmethod
     def get_service_model_config_value(group: str, description: str) -> ConfigValue:
@@ -186,19 +194,20 @@ Every line is first made as loud as the game's own lines, then this is applied. 
         """Settings Mantella doesn't have yet: fields the player writes, sent with every line on the picked model"""
         from src.tts.voice_style import EXTRA_REQUESTS
         return TTSDefinitions.get_style_config_value(EXTRA_REQUESTS[group], group,
-            f'Fields sent with every line on the picked model, named the way {group}\'s own instructions name them, for example {{"speed": 1.1}}. '
+            f'Fields sent with every line on the picked model, named the way {group}\'s own instructions name them, for example {{"seed": 42}}. '
             f"Leave it empty for none. If {group} refuses them, the backup voice speaks and this page says why.")
 
     @staticmethod
     def get_online_service_config_values() -> list[ConfigValue]:
         """The settings shown in the online services' parts of the page, above their Volume"""
-        from src.tts import boson, heygen, inworld, qwen
-        from src.tts.voice_style import BOSON_EXPRESSIVENESS, HEYGEN_EXPRESSIVENESS, HEYGEN_SIMILARITY, INWORLD_DELIVERY
+        from src.tts import boson, heygen, inworld, iodine, qwen
+        from src.tts.voice_style import BOSON_EXPRESSIVENESS, HEYGEN_EXPRESSIVENESS, HEYGEN_SIMILARITY, INWORLD_DELIVERY, IODINE_TEMPERATURE
         # Only on a model that takes directions (not TTS-2 Flash): the page hides it with another model
         inworld_directions = TTSDefinitions.get_directions_config_value(inworld, INWORLD_GROUP, "NPCs say lines the way they feel: angrily, in a whisper, trembling.")
         same_voices = "NPC voices already cloned stay the same."
         return [
             TTSDefinitions.get_service_model_config_value(ELEVENLABS_GROUP, f"The model ElevenLabs speaks with. {same_voices}"),
+            TTSDefinitions.get_speed_config_value(ELEVENLABS_GROUP),
             TTSDefinitions.get_extra_request_config_value(ELEVENLABS_GROUP),
             TTSDefinitions.get_model_settings_config_value(ELEVENLABS_GROUP),
             TTSDefinitions.get_model_list_config_value(ELEVENLABS_GROUP),
@@ -208,6 +217,7 @@ Every line is first made as loud as the game's own lines, then this is applied. 
                                                    "Creative": "A wider range of feeling, less predictable."}),
             TTSDefinitions.get_audio_tags_config_value(inworld, INWORLD_GROUP, "NPCs laugh, sigh, gasp and groan while they talk, where it fits the line."),
             inworld_directions,
+            TTSDefinitions.get_speed_config_value(INWORLD_GROUP),
             TTSDefinitions.get_extra_request_config_value(INWORLD_GROUP),
             TTSDefinitions.get_model_settings_config_value(INWORLD_GROUP),
             TTSDefinitions.get_model_list_config_value(INWORLD_GROUP),
@@ -217,6 +227,7 @@ Every line is first made as loud as the game's own lines, then this is applied. 
                                                    "Highest": "The closest copy of the clips."}),
             TTSDefinitions.get_style_config_value(HEYGEN_EXPRESSIVENESS, HEYGEN_GROUP, "How much NPCs' voices rise and fall: 0 is the flattest, 1 the liveliest. HeyGen ignores it on a line with an audio tag."),
             TTSDefinitions.get_audio_tags_config_value(heygen, HEYGEN_GROUP, "NPCs laugh, sigh and gasp, and speak angrily, sadly or in a whisper, where it fits the line."),
+            TTSDefinitions.get_speed_config_value(HEYGEN_GROUP),
             TTSDefinitions.get_extra_request_config_value(HEYGEN_GROUP),
             TTSDefinitions.get_model_settings_config_value(HEYGEN_GROUP),
             TTSDefinitions.get_model_list_config_value(HEYGEN_GROUP),
@@ -224,6 +235,7 @@ Every line is first made as loud as the game's own lines, then this is applied. 
             ConfigValueString(qwen.WORKSPACE_SETTING, "Workspace ID", "Your workspace in Alibaba Cloud's Model Studio, Singapore region: copy it from the console's Workspace page. Your key must come from the same workspace.", "").in_folded_part(QWEN_GROUP),
             TTSDefinitions.get_audio_tags_config_value(qwen, QWEN_GROUP, "NPCs laugh, sigh, gasp and cough while they talk, where it fits the line."),
             TTSDefinitions.get_directions_config_value(qwen, QWEN_GROUP, "NPCs say lines the way they feel: angrily, in a whisper, trembling. Only while Mantella's Language is English (en): Qwen wants it in the language of the line."),
+            TTSDefinitions.get_speed_config_value(QWEN_GROUP),
             TTSDefinitions.get_extra_request_config_value(QWEN_GROUP),
             TTSDefinitions.get_model_settings_config_value(QWEN_GROUP),
             TTSDefinitions.get_model_list_config_value(QWEN_GROUP),
@@ -231,9 +243,19 @@ Every line is first made as loud as the game's own lines, then this is applied. 
             TTSDefinitions.get_style_config_value(BOSON_EXPRESSIVENESS, BOSON_GROUP, "How much NPCs' voices rise and fall.",
                                                   {"Flat": "Flatter and calmer.", "Normal": "Plain, everyday speech.", "Lively": "More feeling in each line."}),
             TTSDefinitions.get_audio_tags_config_value(boson, BOSON_GROUP, "NPCs laugh, sigh and sob, and speak angrily, sadly or in a whisper, where it fits the line."),
+            TTSDefinitions.get_speed_config_value(BOSON_GROUP),
             TTSDefinitions.get_extra_request_config_value(BOSON_GROUP),
             TTSDefinitions.get_model_settings_config_value(BOSON_GROUP),
             TTSDefinitions.get_model_list_config_value(BOSON_GROUP),
+            TTSDefinitions.get_service_model_config_value(IODINE_GROUP, f"The model Iodine speaks with. {same_voices}"),
+            TTSDefinitions.get_style_config_value(IODINE_TEMPERATURE, IODINE_GROUP, "Lower sounds steadier and more alike each time, higher more varied. "
+                                                  "Iodine suggests lowering it, for example to 0.7, if words sometimes come out misread, skipped or repeated."),
+            TTSDefinitions.get_audio_tags_config_value(iodine, IODINE_GROUP, "NPCs laugh, sigh and gasp, speak nervously or sarcastically, and whisper or stress a few words, where it fits the line."),
+            TTSDefinitions.get_directions_config_value(iodine, IODINE_GROUP, "NPCs say lines the way they feel, as a note to an actor: quietly, trying not to laugh."),
+            TTSDefinitions.get_speed_config_value(IODINE_GROUP),
+            TTSDefinitions.get_extra_request_config_value(IODINE_GROUP),
+            TTSDefinitions.get_model_settings_config_value(IODINE_GROUP),
+            TTSDefinitions.get_model_list_config_value(IODINE_GROUP),
         ]
 
     @staticmethod

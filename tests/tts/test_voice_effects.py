@@ -480,3 +480,46 @@ def test_a_shared_voices_file_carries_the_style_settings(tmp_path):
     picks[VOICE_TYPES]["femaleeventoned"]["style"]["heygen_similarity"] = "Way too high" # not a choice: left out
     import_picks(friend, Requests(), picks, TAKE_THEIRS)
     assert friend.voice_settings(VOICE_TYPES, "femaleeventoned") == {"heygen_expressiveness": 0.3}
+
+
+# ---- Talking speed (Step 13) ----
+
+class PlainService(DraugrService):
+    pass
+
+
+def test_the_lip_file_is_made_from_the_faster_line(voice_config, monkeypatch):
+    voice_config.lip_generation = "enabled"
+    heard_by_lip_file = []
+    def lip_lengths(speed):
+        voice_config.pocket_tts_speed = speed
+        service = PlainService(voice_config, VoiceServiceInfo("Pocket TTS", factory=None))
+        monkeypatch.setattr(service, "_generate_voiceline_files", lambda wav, line, skip_lip_generation=False: heard_by_lip_file.append(open(wav, "rb").read()))
+        service.synthesize("MaleNord", "Hello there.", "MaleNord", "MaleNord", "", SynthesizationOptions(False, False))
+        samples, rate = sf.read(io.BytesIO(heard_by_lip_file[-1]), dtype="float32")
+        return len(samples) / rate
+    plain, faster = lip_lengths(1.0), lip_lengths(1.25)
+    assert abs(faster - plain / 1.25) < 0.05
+
+
+def test_a_voices_own_talking_speed_wins_over_the_pages_for_its_model(voice_config, tmp_path):
+    from src.tts.voice_picker import VOICE_TYPE_CLIP, VoicePick
+    from src.tts.voice_style import SPEEDS, SetupStyle, ServiceStyle
+    from src.voice_clips.clip_store import VOICE_TYPES, ClipStore
+    store = ClipStore(str(tmp_path / "clips"))
+    pick = VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", str(tmp_path / "clip.wav"))
+    voice_config.iodine_speed = 1.2
+    style = ServiceStyle(voice_config, "Iodine")
+    setting = style.speed_setting()
+    assert setting is SPEEDS["Iodine"] and style.voice_value(store, pick, setting) == 1.2 # the page's
+    style.set_voice_own(store, VOICE_TYPES, "femaleeventoned", setting, 0.8)
+    assert style.voice_value(store, pick, setting) == 0.8
+    voice_config.iodine_model = "iodine-v3" # another model: the voice's own value was for v2
+    assert style.voice_value(store, pick, setting) == 1.2
+    setup = VoiceServiceInfo("My XTTS", factory=None, is_setup=True, setup={"speed": 1.3})
+    setup_style = SetupStyle(voice_config, setup)
+    assert setup_style.voice_value(store, pick, setup_style.speed_setting()) == 1.3 # kept in the setup
+    setup_style.set_voice_own(store, VOICE_TYPES, "femaleeventoned", setup_style.speed_setting(), 0.9)
+    assert setup_style.voice_value(store, pick, setup_style.speed_setting()) == 0.9
+    other = SetupStyle(voice_config, VoiceServiceInfo("Other setup", factory=None, is_setup=True, setup={}))
+    assert other.voice_value(store, pick, other.speed_setting()) == 1.0 # a voice's own value belongs to one setup

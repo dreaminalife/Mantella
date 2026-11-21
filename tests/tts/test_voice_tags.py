@@ -2,6 +2,8 @@
 and how a spoken sentence is split into the text everyone sees and the text the voice service gets"""
 from types import SimpleNamespace
 
+import pytest
+
 from src.tts import inworld
 from src.tts.voice_tags import NO_TAGS, VoiceTags, conditions_for, moods_text, sounds_text, split, tags_for
 
@@ -119,24 +121,83 @@ def test_the_speaking_prompts_show_the_rules_only_when_unlocked():
         assert "{voice_moods}" in moods and "{voice_sounds}" in moods and "[say angrily]" not in moods, prompt_type
 
 
+SPEAKING_PROMPTS = ("skyrim_prompt", "skyrim_multi_npc_prompt", "skyrim_multi_npc_director_prompt", "skyrim_npc_initiative_prompt",
+                    "skyrim_radiant_prompt", "skyrim_game_master_npc_prompt")
+
+
+def default_prompt(prompt_type: str) -> str:
+    from src.config.definitions.prompt_definitions import PromptDefinitions
+    return next(getattr(PromptDefinitions, name)() for name in dir(PromptDefinitions)
+                if name.startswith("get_") and name.endswith("_config_value") and getattr(PromptDefinitions, name)().identifier == prompt_type).default_value
+
+
 def test_the_reply_example_only_shows_tags_the_voices_take():
-    """The Game Master NPC and NPC Initiative prompts end with an example reply: it shows sounds, moods or directions only when they are on"""
+    """Every speaking prompt shows an example reply while the voices take tags; Game Master NPC and NPC Initiative always show theirs"""
     from src.config.definitions.prompt_definitions import PromptDefinitions
     import re
-    for prompt_type, getter in (("skyrim_game_master_npc_prompt", PromptDefinitions.get_skyrim_game_master_npc_prompt_config_value),
-                                ("skyrim_npc_initiative_prompt", PromptDefinitions.get_skyrim_npc_initiative_prompt_config_value)):
-        text = getter().default_value
+    for prompt_type in SPEAKING_PROMPTS:
+        text = default_prompt(prompt_type)
         def example(conditions):
             merged = PromptDefinitions.apply_prompt_conditions(prompt_type, text, conditions)
-            lines = [line for line in merged.splitlines() if line.startswith("Ysolda: ")]
+            lines = [line.strip() for line in merged.splitlines() if "The buyer's late." in line]
+            if not lines:
+                return None
             assert len(lines) == 1, (prompt_type, conditions)
             return set(re.findall(r"\[([^\]]+)\]", lines[0]))
-        assert example(set()) == set()
-        assert example({"audio_tags"}) == {"sigh"}
-        assert example({"audio_tags", "moods"}) == {"sigh", "scared", "whisper", "happy"}
-        directions = example({"directions"})
-        assert len(directions) == 3 and "sigh" not in directions # a different direction on each sentence with a feeling
-        assert example({"audio_tags", "directions"}) == directions | {"sigh"}
+        always = prompt_type in ("skyrim_game_master_npc_prompt", "skyrim_npc_initiative_prompt")
+        assert example(set()) == (set() if always else None), prompt_type
+        assert example({"audio_tags"}) == {"sigh"}, prompt_type
+        assert example({"audio_tags", "moods"}) == {"sigh", "scared"}, prompt_type
+        assert example({"directions"}) == {"low and uneasy"}, prompt_type
+        assert example({"audio_tags", "directions"}) == {"low and uneasy"}, prompt_type # the sounds line has its own example
+        assert example({"audio_tags", "moods", "directions", "word_styles"}) == {"sigh", "nervous", "whisper", "/whisper"}, prompt_type
+
+
+def voice_tag_lines(prompt_type: str, conditions: set[str]) -> list[str]:
+    """The lines of the voice tags block a prompt sends: from its heading to the last line every service gets"""
+    from src.config.definitions.prompt_definitions import PromptDefinitions
+    lines = [line.strip() for line in PromptDefinitions.apply_prompt_conditions(prompt_type, default_prompt(prompt_type), conditions).splitlines()]
+    if not any(line.startswith("Voice tags, in square brackets") for line in lines):
+        return []
+    first = next(i for i, line in enumerate(lines) if line.startswith("Voice tags, in square brackets"))
+    last = next(i for i, line in enumerate(lines) if line.startswith("- One emotion per sentence at most"))
+    return lines[first:last + 1]
+
+
+@pytest.mark.parametrize("conditions,starts", [
+    (set(), []),
+    ({"audio_tags", "directions"}, ["Voice tags", "- Describe the delivery", "- Put sounds", "- One emotion"]), # Inworld, Qwen
+    ({"audio_tags", "moods"}, ["Voice tags", "- Start a sentence with an emotion", "- Put sounds", "- One emotion"]), # HeyGen, Boson AI
+    ({"audio_tags", "moods", "directions", "word_styles"}, ["Voice tags", "- Start a sentence with an emotion", "- Or describe the delivery",
+                                                             "- Put sounds", "- Wrap a few words", "- One emotion"]), # Iodine
+])
+def test_each_service_sees_only_its_own_voice_tag_lines(conditions, starts):
+    for prompt_type in SPEAKING_PROMPTS:
+        lines = voice_tag_lines(prompt_type, conditions)
+        assert [next(start for start in starts if line.startswith(start)) for line in lines] == starts, (prompt_type, lines)
+        text = " ".join(lines)
+        assert "English" not in text and "language" not in text # the conversation's language is the player's ({language})
+        if "word_styles" in conditions: # Iodine's directions may have commas
+            assert "[quietly, trying not to laugh]" in text and "no punctuation" not in text and "[small laugh]" in text
+        elif "directions" in conditions:
+            assert "with no punctuation inside" in text and "[small laugh]" not in text
+        assert "repeat it on each" not in text and "The ones these voices know" not in text # the old wording is gone
+
+
+def test_the_speaking_prompts_pass_their_own_checks():
+    from src.config.definitions.prompt_definitions import PromptDefinitions
+    for name in dir(PromptDefinitions):
+        if name.startswith("get_") and name.endswith("_config_value"):
+            value = getattr(PromptDefinitions, name)()
+            if value.identifier in SPEAKING_PROMPTS:
+                assert all(c.apply_constraint(value.default_value).is_success for c in value.constraints), value.identifier
+
+
+def test_the_editor_names_every_service_that_makes_a_condition_true():
+    from src.config.definitions.prompt_definitions import PromptDefinitions
+    assert "HeyGen, Boson AI or Iodine with Audio tags on" in PromptDefinitions.condition_meaning("moods")
+    assert "Inworld, Qwen or Iodine with Directions on" in PromptDefinitions.condition_meaning("directions")
+    assert ": Iodine with Audio tags on" in PromptDefinitions.condition_meaning("word_styles")
 
 
 def test_a_service_writing_sounds_its_own_way_gets_them_rewritten_and_nothing_else():
@@ -188,7 +249,7 @@ def test_the_sounds_are_filled_into_the_prompt_sent_to_the_ai(default_context, m
     monkeypatch.setattr(context_module.voice_tags, "sounds_text", lambda config, speakers: "[laugh], [sigh]")
     prompt = PromptDefinitions.get_skyrim_prompt_config_value().default_value
     text = default_context.generate_system_message(prompt, [], prompt_type="skyrim_prompt")
-    assert "The ones these voices know: [laugh], [sigh]." in text
+    assert "These voices know: [laugh], [sigh]" in text
     assert "{voice_sounds}" not in text
 
 
@@ -204,3 +265,76 @@ def test_the_log_says_how_each_voice_service_speaks():
     assert voice_services.find("Qwen").mode_text(qwen_off) == "Qwen Audio 3.1 TTS Plus" # every online service names its model
     assert voice_services.find("Qwen").mode_text(SimpleNamespace(qwen_model="qwen-audio-9-tts", language="en")) == "qwen-audio-9-tts" # typed in
     assert voice_services.find("Pocket TTS").mode_text(settings()) == "" # no model choice and nothing on: the log line stays as it was
+
+
+# ---- Iodine: moods, directions, sounds and word styles, written in curly brackets ----
+
+def test_iodine_takes_everything_with_audio_tags_and_directions_on():
+    from src.tts import iodine
+    on = iodine.voice_tags(SimpleNamespace(iodine_audio_tags=True, iodine_directions=True))
+    assert on == VoiceTags(iodine.SOUNDS, True, iodine.MOODS, iodine.WORD_STYLES)
+    assert iodine.voice_tags(SimpleNamespace(iodine_audio_tags=False, iodine_directions=True)) == VoiceTags(directions=True)
+    assert iodine.voice_tags(SimpleNamespace(iodine_audio_tags=True, iodine_directions=False)).styles == iodine.WORD_STYLES # under Audio tags
+    assert iodine.voice_tags(SimpleNamespace()) == NO_TAGS
+
+
+@pytest.mark.parametrize("written,sent", [
+    ("[happy] Hello.", "{happy} Hello."),
+    ("Ha! [laugh] Fine. [sigh] Go.", "Ha! {laughs} Fine. {sighs} Go."),
+    ("[clear throat] [shaky breath] [long pause] Well.", "{clears throat} {shaky breath} {long pause} Well."),
+    ("Keep it down. [whisper]The guards are close.[/whisper] Now go.", "Keep it down. {whisper}The guards are close.{/whisper} Now go."),
+    ("[/emphasis] A closer with no opener.", "A closer with no opener."),
+    ("[loud] The rest of the sentence.", "{loud} The rest of the sentence."),
+    ("[quietly, trying not to laugh] Sure. [small laugh] Fine.", "{quietly, trying not to laugh} Sure. {small laugh} Fine."),
+    ("[reset] [groan] Words {in} braces.", "Words in braces."),
+])
+def test_iodine_gets_each_tag_in_curly_brackets_where_the_ai_put_it(written, sent):
+    from src.tts.iodine import IodineCues
+    assert IodineCues(True).text(written) == sent
+
+
+def test_iodine_never_gets_an_emotion_and_a_direction_side_by_side():
+    from src.tts.iodine import IodineCues
+    cues = IodineCues(True)
+    assert cues.text("[happy] [low, gravelly] Hi.") == "{happy} Hi."
+    assert cues.text("[low, gravelly] [happy] Hi.") == "{low, gravelly} Hi."
+    assert cues.text("[happy] Hi. [low, gravelly] Bye.") == "{happy} Hi. {low, gravelly} Bye." # words between: both stay
+    assert cues.text("[happy] [laugh] [low, gravelly] Hi.") == "{happy} {laughs} Hi." # a sound between isn't words
+    assert cues.text("[sad] [whisper] [low, gravelly] go[/whisper]") == "{sad} {whisper} go{/whisper}" # nor is a word style
+    assert cues.text("[nervous] [gasp] Oh.") == "{nervous} {gasps} Oh." # a sound next to an emotion stays
+    assert cues.text("[sad] [whisper]go[/whisper] now.") == "{sad} {whisper}go{/whisper} now." # and a word style
+    assert IodineCues(False).text("[low voice] [sigh] Hi.") == "{sighs} Hi." # Directions off: no directions
+
+
+def test_a_sound_the_ai_makes_up_is_a_sound_not_a_direction():
+    from src.tts.iodine import IodineCues, made_up_sound
+    cues = IodineCues(True)
+    assert cues.text("[happy] [small laugh] Ha, fine.") == "{happy} {small laugh} Ha, fine."
+    assert cues.text("[small laugh] [nervous] Well.") == "{small laugh} {nervous} Well."
+    assert cues.text("[deep breath] [low, gravelly] Listen.") == "{deep breath} {low, gravelly} Listen."
+    assert made_up_sound("nervous laughter") and made_up_sound("soft giggles") and made_up_sound("short pause")
+    assert not made_up_sound("trying not to laugh") and not made_up_sound("say angrily") and not made_up_sound("low voice")
+    assert cues.text("[angry] [quietly, trying not to laugh] Go.") == "{angry} Go." # a longer one is a direction
+    assert IodineCues(False).text("[small laugh] Ha.") == "Ha." # Directions off: no sounds of its own either
+
+
+def test_word_styles_are_kept_only_for_a_service_that_takes_them():
+    from src.tts import iodine
+    tags = iodine.voice_tags(SimpleNamespace(iodine_audio_tags=True, iodine_directions=False))
+    assert split("I [whisper]knew[/whisper] it.", tags) == ("I knew it.", "I [whisper]knew[/whisper] it.")
+    assert split("I [whisper]knew[/whisper] it.", SOUNDS) == ("I knew it.", "I knew it.")
+    assert split("I [whisper]knew[/whisper] it.", DIRECTIONS)[1] == "I [whisper]knew it." # a direction for Inworld; no closer
+
+
+def test_iodines_new_sounds_are_never_directions():
+    from src.tts.voice_tags import SOUND_WORDS
+    assert {"shaky breath", "pause", "long pause"} <= SOUND_WORDS
+    assert split("[pause] Well.", DIRECTIONS) == ("Well.", "Well.")
+
+
+def test_the_prompt_unlocks_word_styles_for_an_npc_on_iodine():
+    from src.tts.voice_tags import WORD_STYLES, styles_text
+    config = SimpleNamespace(tts_service_name="Inworld", iodine_audio_tags=True, inworld_audio_tags=True)
+    group = [npc("Lydia", "iodine"), npc("Ysolda")]
+    assert WORD_STYLES in conditions_for(config, group) and WORD_STYLES not in conditions_for(config, group[1:])
+    assert styles_text(config, group) == "[whisper], [soft], [loud], [emphasis], [fast], [slow]"

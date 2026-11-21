@@ -173,9 +173,22 @@ def _boson_voice_tags(config):
     return voice_tags(config)
 
 
+def _iodine(config, game, info):
+    from src.tts.iodine import Iodine
+    return Iodine(config, info)
+
+
+def _iodine_voice_tags(config):
+    from src.tts.iodine import voice_tags
+    return voice_tags(config)
+
+
 HEYGEN_LANGUAGES = ["ar", "be", "bg", "ca", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fil", "fr", "he", "hi", "hr", "hu", "id", "it", "ja",
                     "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv", "ta", "th", "tl", "tr", "uk", "vi", "zh"]
 QWEN_LANGUAGES = ["zh", "en", "ja", "ko", "ru", "fr", "de", "pt", "th", "id", "vi", "es", "it", "ms", "fil", "ar"]
+# Every one of Mantella's languages but Hausa and Yoruba
+IODINE_LANGUAGES = ["en", "zh", "es", "hi", "ar", "fr", "pt", "bn", "ru", "ja", "de", "ko", "ur", "id", "tr", "vi", "it", "ta", "te", "pa", "th",
+                    "tl", "fa", "pl", "uk", "nl", "ms", "ro", "sw", "el", "cs", "hu", "sv", "he", "da", "fi", "no", "sk", "bg", "hr"]
 
 
 def _legacy_services() -> list[VoiceServiceInfo]:
@@ -197,7 +210,7 @@ def _new_services() -> list[VoiceServiceInfo]:
         VoiceServiceInfo("Inworld", _inworld, CLIP, runs_online=True, aliases=["inworld"], accepts_ipa=True,
                          volume_setting="inworld_volume", clip_seconds=29.5, fill_seconds=25.0, voice_tags=_inworld_voice_tags,
                          model=_model_name("Inworld")),
-        # HeyGen clones from one recording (about a minute works best); Qwen and Boson AI use at most 30 seconds of it
+        # HeyGen clones from one recording (about a minute works best); Qwen, Boson AI and Iodine use at most 30 seconds of it
         VoiceServiceInfo("HeyGen", _heygen, CLIP, runs_online=True, aliases=["heygen"], languages=HEYGEN_LANGUAGES, accepts_ipa=True,
                          volume_setting="heygen_volume", clip_seconds=60.0, fill_seconds=45.0, clip_lines=10, voice_tags=_heygen_voice_tags,
                          model=_model_name("HeyGen")),
@@ -206,6 +219,9 @@ def _new_services() -> list[VoiceServiceInfo]:
         VoiceServiceInfo("Boson AI", _boson, CLIP, runs_online=True, aliases=["boson", "higgs"],
                          volume_setting="boson_volume", clip_seconds=29.5, fill_seconds=20.0, voice_tags=_boson_voice_tags,
                          model=_model_name("Boson AI")),
+        VoiceServiceInfo("Iodine", _iodine, CLIP, runs_online=True, aliases=["iodine"], languages=IODINE_LANGUAGES,
+                         volume_setting="iodine_volume", clip_seconds=29.5, fill_seconds=20.0, voice_tags=_iodine_voice_tags,
+                         model=_model_name("Iodine")),
     ]
 
 

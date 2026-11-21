@@ -22,8 +22,8 @@ from src.tts.voice_picker import OWN_CLIP, VOICE_TYPE_CLIP, VoicePick
 from src.tts.voice_setups import read_key_file, save_key_file
 from src.tts.model_catalog import ServiceModels, with_model_limits
 from src.tts.online_voices import cloned_voices
-from src.tts.voice_style import (BOSON_EXPRESSIVENESS, HEYGEN_EXPRESSIVENESS, HEYGEN_SIMILARITY, INWORLD_DELIVERY, STYLE_SETTINGS, ServiceStyle,
-                                 StyleSetting)
+from src.tts.voice_style import (BOSON_EXPRESSIVENESS, HEYGEN_EXPRESSIVENESS, HEYGEN_SIMILARITY, INWORLD_DELIVERY, IODINE_TEMPERATURE,
+                                 SPEED_DEFAULT, SPEED_HIGH, SPEED_LABEL, SPEED_LOW, STYLE_SETTINGS, ServiceStyle, StyleSetting, style_for)
 from src.voice_clips.clip_store import (CANDIDATES, MOST_CHOSEN, NPCS, NPCS_SEEN_FILE, VOICE_TYPES, ClipInfo,
                                         ClipStore, clip_seconds, lines_within, shared_clip_store)
 from src.voice_clips.picks import KEEP_MINE, TAKE_THEIRS, export_picks, import_picks
@@ -33,11 +33,15 @@ from src.voice_clips.requests import LINES_TO_HEAR, MOST_MORE, clip_requests_for
 LATER = "the next time you talk to someone in game"
 PITCH_STEPS = 4 # semitones up or down on the page
 SAME_AS_PAGE = "" # a style setting's choice that takes the voice's own value away
+# One Talking speed slider for whichever service is shown: it stands for that service's own speed setting (voice_style.SPEEDS, SETUP_SPEED)
+SPEED_SLOT = StyleSetting("talking_speed", "", SPEED_LABEL, SPEED_DEFAULT, low=SPEED_LOW, high=SPEED_HIGH)
 STYLE_INFO = {
     HEYGEN_SIMILARITY.name: "How closely the voice copies its clips. Changing it clones the voice again.",
     HEYGEN_EXPRESSIVENESS.name: "How much the voice rises and falls: 0 is the flattest, 1 the liveliest.",
     INWORLD_DELIVERY.name: "Stable is even and much the same every time; Creative has a wider range of feeling.",
     BOSON_EXPRESSIVENESS.name: "How much the voice rises and falls.",
+    IODINE_TEMPERATURE.name: "Lower is steadier and more alike each time, higher more varied.",
+    SPEED_SLOT.name: "How fast this voice talks. 1 is its own speed; the pitch stays the same.",
 }
 
 
@@ -185,7 +189,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
                     "- **A new voice type** uses a stand-in voice for about its first line. **Prepare all voices**, at the bottom, avoids that.\n"
                     "- **NPCs with no voice lines**, such as an unvoiced follower, use the voice type in their character file "
                     "(the skyrim_voice_folder column), or else one that fits their race and gender.\n"
-                    "- **Works with** Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI and your voice setups. Piper, XTTS and xVASynth "
+                    "- **Works with** Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine and your voice setups. Piper, XTTS and xVASynth "
                     "don't use clips.\n"
                     "- **Pitch and the settings beside it** belong to the voice: every NPC who shares it sounds the same. "
                     "The settings beside Pitch are kept for each model.\n"
@@ -232,7 +236,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
     with gr.Row(equal_height=True):
         pitch_ui = gr.Slider(minimum=-PITCH_STEPS, maximum=PITCH_STEPS, step=0.5, value=0, label="Pitch", visible=False, # shown once a voice is picked
                              info="Deeper below 0, higher above 0. 0 keeps the clips' own. Heard with Hear the voice, and in game from the next line.")
-        for setting in (s for s in STYLE_SETTINGS if s.per_voice):
+        for setting in [*(s for s in STYLE_SETTINGS if s.per_voice and s.label != SPEED_LABEL), SPEED_SLOT]:
             if setting.choices:
                 control = gr.Dropdown(choices=[], value=None, label=setting.label, info=STYLE_INFO[setting.name], visible=False, allow_custom_value=False)
             else:
@@ -290,7 +294,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         with gr.Accordion("How it works", open=False, elem_classes="help-fold"):
             gr.Markdown(f"- **Starts** {LATER} or load a save, then works in the background while you play.\n"
                         "- **Takes** about 10 minutes for 100 voice types with Pocket TTS.\n"
-                        "- **For** Pocket TTS and voice setups on your PC. Online services (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI) clone "
+                        "- **For** Pocket TTS and voice setups on your PC. Online services (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine) clone "
                         "each voice the first time an NPC speaks, so they don't need it.")
         prepare_btn = gr.Button("Prepare all voices", size="sm")
         prepare_msg = gr.Markdown(preparation.progress(), elem_classes="voice-clips-progress")
@@ -303,28 +307,39 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         """Whether the service takes *path* too, added below the clips it uses: counted the way the voice is cloned, gaps included"""
         return lines_within([clip_seconds(p) for p in [*used, path]], view.clip_seconds) == len(used) + 1
 
-    def page_text(setting: StyleSetting) -> str:
-        value = ServiceStyle(config, setting.service).page_value(setting)
+    def page_text(style: ServiceStyle, setting: StyleSetting) -> str:
+        value = style.page_value(setting)
         return f"{value:g}" if isinstance(value, float) else str(value)
+
+    def real_setting(style: ServiceStyle | None, setting: StyleSetting) -> StyleSetting | None:
+        """The setting a control stands for with this service: the Talking speed slider is the service's own"""
+        if setting is not SPEED_SLOT:
+            return setting
+        return style.speed_setting() if style is not None else None
+
+    def style_of(service_value: str | None) -> ServiceStyle | None:
+        view, _ = view_for(config, service_value)
+        return style_for(config, view) if view is not None else None
 
     def style_updates(kind: str, key: str, view: VoiceServiceInfo | None) -> list:
         """The shown service's style settings for its picked model, with the voice's own values for that model"""
-        style = ServiceStyle(config, view.name) if view is not None else None
+        style = style_for(config, view) if view is not None else None
         shown_settings = style.settings(per_voice=True) if style is not None and key else []
         updates: list = []
-        for setting, control, back in style_uis:
-            if setting not in shown_settings:
+        for slot, control, back in style_uis:
+            setting = real_setting(style, slot)
+            if setting is None or setting not in shown_settings:
                 updates.append(gr.update(visible=False))
                 if back is not None:
                     updates.append(gr.update(visible=False))
                 continue
             own = style.voice_own(store, kind, key, setting)
             if back is None:
-                choices = [(f"Same as the Text-to-Speech page ({page_text(setting)})", SAME_AS_PAGE), *((c, c) for c in setting.choices)]
+                choices = [(f"Same as the Text-to-Speech page ({page_text(style, setting)})", SAME_AS_PAGE), *((c, c) for c in setting.choices)]
                 updates.append(gr.update(visible=True, choices=choices, value=SAME_AS_PAGE if own is None else own))
             else:
                 updates.append(gr.update(visible=True, value=style.page_value(setting) if own is None else own))
-                updates.append(gr.update(visible=own is not None, value=f"Use the Text-to-Speech page's setting ({page_text(setting)})"))
+                updates.append(gr.update(visible=own is not None, value=f"Use the Text-to-Speech page's setting ({page_text(style, setting)})"))
         return updates
 
     def show(choice: str | None, service_value: str | None = None, message: str | None = ""):
@@ -486,13 +501,17 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         how = "keeps the clips' own pitch" if not semitones else f"is {abs(semitones):g} step{'s' if abs(semitones) != 1 else ''} {'higher' if semitones > 0 else 'deeper'}"
         return f"{whose(kind, key)} {how} from the next line. Press **Hear the voice** to hear it."
 
-    def set_style(setting: StyleSetting, choice: str | None, value: Any) -> str:
+    def set_style(slot: StyleSetting, choice: str | None, service_value: str | None, value: Any) -> str:
         """Saves the voice's own value for the picked model (None or Same as the page: takes it away) and says what changes"""
         kind, key = split(choice)
         if not key:
             return "Pick a voice first."
+        style = style_of(service_value)
+        setting = real_setting(style, slot)
+        if style is None or setting is None:
+            return "Pick a voice service that clones voices first."
         own = None if value == SAME_AS_PAGE else setting.clean(value)
-        ServiceStyle(config, setting.service).set_voice_own(store, kind, key, setting, own)
+        style.set_voice_own(store, kind, key, setting, own)
         if setting is HEYGEN_SIMILARITY:
             return (f"{setting.service} clones {whose(kind, key).replace('The ', 'the ', 1)} again before its next line. "
                     "Press **Hear the voice** to hear it.")
@@ -500,15 +519,19 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
             else f"has {setting.label} {own}"
         return f"{whose(kind, key)} {how} from the next line. Press **Hear the voice** to hear it."
 
-    def on_style_slider(setting: StyleSetting, choice: str | None, value: float | None):
-        message = set_style(setting, choice, value)
+    def on_style_slider(slot: StyleSetting, choice: str | None, service_value: str | None, value: float | None):
+        message = set_style(slot, choice, service_value, value)
         kind, key = split(choice)
-        has_own = bool(key) and ServiceStyle(config, setting.service).voice_own(store, kind, key, setting) is not None
+        style = style_of(service_value)
+        setting = real_setting(style, slot)
+        has_own = bool(key) and setting is not None and style.voice_own(store, kind, key, setting) is not None
         return message, gr.update(visible=has_own)
 
-    def on_style_back(setting: StyleSetting, choice: str | None):
-        message = set_style(setting, choice, None)
-        return message, gr.update(value=ServiceStyle(config, setting.service).page_value(setting)), gr.update(visible=False)
+    def on_style_back(slot: StyleSetting, choice: str | None, service_value: str | None):
+        message = set_style(slot, choice, service_value, None)
+        style = style_of(service_value)
+        setting = real_setting(style, slot)
+        return message, gr.update(value=style.page_value(setting) if setting is not None else slot.default), gr.update(visible=False)
 
     def on_more(choice: str | None, service_value: str | None = None, how_many: float | None = LINES_TO_HEAR):
         kind, key = split(choice)
@@ -610,11 +633,13 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
     pitch_ui.release(on_pitch, inputs=[clip_ui, pitch_ui], outputs=[change_msg], show_api=False) # when the slider is let go or the number typed, not while dragging
     for setting, control, back in style_uis:
         if back is None: # input, not change: change also fires when picking a voice sets the dropdown
-            control.input(lambda choice, value, s=setting: set_style(s, choice, value), inputs=[clip_ui, control], outputs=[change_msg], show_api=False)
+            control.input(lambda choice, service, value, s=setting: set_style(s, choice, service, value), inputs=[*picked, control],
+                          outputs=[change_msg], show_api=False)
         else:
-            control.release(lambda choice, value, s=setting: on_style_slider(s, choice, value), inputs=[clip_ui, control], outputs=[change_msg, back],
-                            show_api=False)
-            back.click(lambda choice, s=setting: on_style_back(s, choice), inputs=[clip_ui], outputs=[change_msg, control, back], show_api=False)
+            control.release(lambda choice, service, value, s=setting: on_style_slider(s, choice, service, value), inputs=[*picked, control],
+                            outputs=[change_msg, back], show_api=False)
+            back.click(lambda choice, service, s=setting: on_style_back(s, choice, service), inputs=picked, outputs=[change_msg, control, back],
+                       show_api=False)
     speak_btn.click(on_speak, inputs=[*picked, sentence_ui], outputs=[spoken_ui, change_msg], show_api=False)
     remove_btn.click(on_remove, inputs=picked, outputs=[clip_ui, npc_ui, *shown], show_api=False)
     voice_type_btn.click(on_use_for_voice_type, inputs=picked, outputs=[clip_ui, npc_ui, *shown], show_api=False)

@@ -1,4 +1,4 @@
-"""The online services' parts of the Text-to-Speech page (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI): what it costs, how to turn on
+"""The online services' parts of the Text-to-Speech page (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine): what it costs, how to turn on
 voice cloning, and the key"""
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Callable
 import gradio as gr
 
 from src.config.config_loader import ConfigLoader
-from src.tts import boson, elevenlabs, heygen, inworld, qwen
+from src.tts import boson, elevenlabs, heygen, inworld, iodine, qwen
 from src.tts.model_catalog import ServiceModel, ServiceModels
 from src.tts.online_service import problem, set_problem
 from src.tts.voice_folders import voice_clips_folder
@@ -39,9 +39,15 @@ STEPS = {
         "3. Paste it below and press **Save key**.\n\n"
         "Boson AI clones a voice only together with the words spoken in its clips. Mantella hears each clip once with your choice on the "
         "**Speech-to-Text** tab, also if you type instead of talking."),
+    iodine.NAME: (
+        f"1. Make an account at [Iodine]({iodine.SIGN_UP_PAGE}). Voice cloning works on the free plan.\n"
+        f"2. Make a key in [Iodine's console]({iodine.KEYS_PAGE}). Add credit on [the billing page]({iodine.BILLING_PAGE}) when the free credit runs out.\n"
+        "3. Paste it below and press **Save key**.\n\n"
+        "Mantella sends each voice's clips together with the words spoken in them, as Iodine recommends: it hears each clip once with "
+        "your choice on the **Speech-to-Text** tab. Without them, Iodine hears the clips itself."),
 }
 SERVICES = {elevenlabs.NAME: (elevenlabs, elevenlabs.ElevenLabs), inworld.NAME: (inworld, inworld.Inworld), heygen.NAME: (heygen, heygen.HeyGen),
-            qwen.NAME: (qwen, qwen.Qwen), boson.NAME: (boson, boson.BosonAI)}
+            qwen.NAME: (qwen, qwen.Qwen), boson.NAME: (boson, boson.BosonAI), iodine.NAME: (iodine, iodine.Iodine)}
 
 
 HOW_MODELS_WORK = ("- **Each model keeps its own settings.** Pick a model next to **Settings for** to change its settings without speaking "

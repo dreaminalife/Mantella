@@ -56,11 +56,11 @@ def test_each_setting_is_in_its_part_of_the_page(default_config: ConfigLoader):
         assert part[identifier] == "xVASynth", identifier
     for identifier in ("number_words_tts", "lip_generation", "fast_response_mode", "fast_response_mode_volume", "tts_print"):
         assert part[identifier] == "Speed and lip sync", identifier
-    for identifier in ("tts_service", "tts_backup_service", "elevenlabs_model", "inworld_model", "heygen_model", "qwen_model", "boson_model"):
+    for identifier in ("tts_service", "tts_backup_service", "elevenlabs_model", "inworld_model", "heygen_model", "qwen_model", "boson_model", "iodine_model"):
         assert part[identifier] is None, identifier # the Models are next to TTS Service
     on_page = [c for c in blocks.blocks.values() if tab_of(c) == "Text-to-Speech"]
     folds = [c.label for c in on_page if isinstance(c, gr.Accordion) and c.parent is not None and part_of(c) is None]
-    assert folds.count("How model settings work") == 5 # one for each service with models, under Backup Voice Service
+    assert folds.count("How model settings work") == 6 # one for each service with models, under Backup Voice Service
     folds = [label for label in folds if label != "How model settings work"]
     assert folds == ["Speed and lip sync", "Hear it", NPC_VOICES_PART, "Voice Effects", "Fix Pronunciation"]
     sounds = [SOUND_NAMES[c.elem_id] for c in on_page if isinstance(c, gr.Column) and c.elem_id in SOUND_NAMES]

@@ -15,6 +15,7 @@ from typing import Any
 from src import utils
 from src.tts.registry import CLIP, VoiceServiceInfo, normalize_service_name, voice_services
 from src.tts.voice_folders import voice_setups_file
+from src.tts.voice_style import SPEED_DEFAULT, SPEED_HIGH, SPEED_LOW
 
 OPENAI = "openai"
 XTTS = "xtts"
@@ -30,13 +31,14 @@ CLIP_MODES = {
 }
 
 FIELDS = ["name", "style", "url", "key_file", "model", "male_voice", "female_voice", "clip_field", "clip_mode",
-          "languages", "extra_fields", "runs_online", "volume"]
+          "languages", "extra_fields", "runs_online", "volume", "speed"]
 MIN_VOLUME, MAX_VOLUME = 10, 300
 
 
 def empty_setup() -> dict[str, Any]:
     return {"name": "", "style": OPENAI, "url": "http://127.0.0.1:8080", "key_file": "", "model": "", "male_voice": "", "female_voice": "",
-            "clip_field": "", "clip_mode": CLIP_BASE64, "languages": [], "extra_fields": {}, "runs_online": False, "volume": 100}
+            "clip_field": "", "clip_mode": CLIP_BASE64, "languages": [], "extra_fields": {}, "runs_online": False, "volume": 100,
+            "speed": SPEED_DEFAULT}
 
 
 def normalized(setup: dict[str, Any]) -> dict[str, Any]:
@@ -62,6 +64,10 @@ def normalized(setup: dict[str, Any]) -> dict[str, Any]:
         result["volume"] = int(min(MAX_VOLUME, max(MIN_VOLUME, round(float(result["volume"])))))
     except (TypeError, ValueError):
         result["volume"] = 100
+    try:
+        result["speed"] = round(min(SPEED_HIGH, max(SPEED_LOW, float(result["speed"]))), 2)
+    except (TypeError, ValueError):
+        result["speed"] = SPEED_DEFAULT
     return result
 
 
@@ -94,6 +100,12 @@ def problems(setup: dict[str, Any], other_names: list[str]) -> list[str]:
             found.append(f"Volume must be from {MIN_VOLUME}% to {MAX_VOLUME}%.")
     except (TypeError, ValueError):
         found.append(f"Volume must be a number from {MIN_VOLUME} to {MAX_VOLUME}.")
+    try:
+        speed = float(setup.get("speed", SPEED_DEFAULT) if setup.get("speed", SPEED_DEFAULT) not in (None, "") else SPEED_DEFAULT)
+        if not SPEED_LOW <= speed <= SPEED_HIGH:
+            found.append(f"Talking speed must be from {SPEED_LOW:g} to {SPEED_HIGH:g}.")
+    except (TypeError, ValueError):
+        found.append(f"Talking speed must be a number from {SPEED_LOW:g} to {SPEED_HIGH:g}.")
     extra = setup.get("extra_fields", {})
     if isinstance(extra, str) and extra.strip():
         try:

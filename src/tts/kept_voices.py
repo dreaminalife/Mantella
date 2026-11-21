@@ -13,8 +13,9 @@ def _keepers() -> list[Any]:
     from src.tts.elevenlabs import ElevenLabs
     from src.tts.heygen import HeyGen
     from src.tts.inworld import Inworld
+    from src.tts.iodine import Iodine
     from src.tts.qwen import Qwen
-    return [pocket_tts, ElevenLabs.keeper(), Inworld.keeper(), HeyGen.keeper(), Qwen.keeper(), BosonAI.keeper()]
+    return [pocket_tts, ElevenLabs.keeper(), Inworld.keeper(), HeyGen.keeper(), Qwen.keeper(), BosonAI.keeper(), Iodine.keeper()]
 
 
 def _each(action: str, *args, **kwargs) -> None:

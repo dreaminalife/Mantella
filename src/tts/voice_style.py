@@ -1,5 +1,6 @@
-"""How an online service's cloned voices sound: HeyGen's Similarity and Expressiveness, Inworld's Delivery, Boson AI's Expressiveness, and
-each service's Settings Mantella doesn't have yet (fields sent with every line, written by the player).
+"""How an online service's cloned voices sound: HeyGen's Similarity and Expressiveness, Inworld's Delivery, Boson AI's Expressiveness,
+Iodine's Temperature, each service's Settings Mantella doesn't have yet (fields sent with every line, written by the player), and
+Talking speed (Step 13), which every newer service has: Pocket TTS and each voice setup too.
 
 These settings belong to the model picked for the service (Step 11): each model keeps its own values, because the same number can
 mean something else on another model. HeyGen's Similarity too: switching to a model with another Similarity clones each voice again
@@ -9,6 +10,9 @@ kept in a hidden setting per service (<service>_model_settings). A model on Mant
 Each voice can have its own value too, per model, on the Voice Clips part of the page (Customization per voice type and per NPC), kept in voice_settings.json next to
 its Pitch. Settings follow the voice: NPCs who share a voice type share them, an NPC with a voice of their own has their own. A
 service's built-in voice always uses the page's.
+
+Pocket TTS and voice setups have no models: Pocket TTS keeps one Talking speed on the page, a voice setup keeps its own in the setup
+("speed"), and a voice's own value for a setup is kept under the setup's name in place of a model (SetupStyle).
 """
 from __future__ import annotations
 
@@ -66,12 +70,32 @@ def extra_request_setting(service: str, key: str) -> StyleSetting:
     return StyleSetting(f"{key}_extra_request", service, "Fields to send", "", json_object=True, per_voice=False)
 
 
+# Talking speed: how fast NPCs talk, applied to each finished line without changing its pitch (src/tts/voice_speed.py)
+SPEED_LABEL = "Talking speed"
+SPEED_DEFAULT = 1.0
+SPEED_LOW = 0.7
+SPEED_HIGH = 1.5
+POCKET_TTS = "Pocket TTS"
+SETUPS = "voice setups" # SETUP_SPEED's service: each setup is its own service, so a voice's own value is kept by setup name
+
+
+def speed_setting(service: str, key: str, per_model: bool = True) -> StyleSetting:
+    """A service's Talking speed. *per_model*: each model keeps its own (an online service), else one for the service"""
+    return StyleSetting(f"{key}_speed", service, SPEED_LABEL, SPEED_DEFAULT, low=SPEED_LOW, high=SPEED_HIGH, per_model=per_model)
+
+
 HEYGEN_SIMILARITY = StyleSetting("heygen_similarity", "HeyGen", "Similarity", "Highest", ("Medium", "High", "Very high", "Highest"))
 HEYGEN_EXPRESSIVENESS = StyleSetting("heygen_expressiveness", "HeyGen", "Expressiveness", 0.5)
 INWORLD_DELIVERY = StyleSetting("inworld_delivery", "Inworld", "Delivery", "Balanced", ("Stable", "Balanced", "Creative"))
 BOSON_EXPRESSIVENESS = StyleSetting("boson_expressiveness", "Boson AI", "Expressiveness", "Lively", ("Flat", "Normal", "Lively"))
+IODINE_TEMPERATURE = StyleSetting("iodine_temperature", "Iodine", "Temperature", 1.0, low=0.0, high=2.0)
 EXTRA_REQUESTS = {models.service: extra_request_setting(models.service, models.key) for models in ServiceModels.all()}
-STYLE_SETTINGS = (HEYGEN_SIMILARITY, HEYGEN_EXPRESSIVENESS, INWORLD_DELIVERY, BOSON_EXPRESSIVENESS, *EXTRA_REQUESTS.values())
+# Each online service's Talking speed (a future one gets its own), Pocket TTS's, and the one every voice setup has
+SPEEDS = {**{models.service: speed_setting(models.service, models.key) for models in ServiceModels.all()},
+          POCKET_TTS: speed_setting(POCKET_TTS, "pocket_tts", per_model=False)}
+SETUP_SPEED = speed_setting(SETUPS, "setup")
+STYLE_SETTINGS = (HEYGEN_SIMILARITY, HEYGEN_EXPRESSIVENESS, INWORLD_DELIVERY, BOSON_EXPRESSIVENESS, IODINE_TEMPERATURE, *SPEEDS.values(),
+                  SETUP_SPEED, *EXTRA_REQUESTS.values())
 BY_NAME = {setting.name: setting for setting in STYLE_SETTINGS}
 
 
@@ -141,13 +165,13 @@ class ServiceStyle:
 
     def voice_own(self, clips: ClipStore, kind: str, key: str, setting: StyleSetting) -> Any:
         """The voice's own value for the picked model. None: it uses the page's"""
-        return setting.clean(clips.voice_setting(kind, key, setting.name, self.__model_id(setting)))
+        return setting.clean(clips.voice_setting(kind, key, setting.name, self._model_id(setting)))
 
     def set_voice_own(self, clips: ClipStore, kind: str, key: str, setting: StyleSetting, value: Any) -> None:
         """None takes the voice's own value for the picked model away"""
-        clips.set_voice_setting(kind, key, setting.name, value, self.__model_id(setting))
+        clips.set_voice_setting(kind, key, setting.name, value, self._model_id(setting))
 
-    def __model_id(self, setting: StyleSetting) -> str | None:
+    def _model_id(self, setting: StyleSetting) -> str | None:
         """Which model a voice's own value is kept for. None: one value for every model"""
         model = self.model
         return model.id if model is not None and setting.per_model else None
@@ -159,6 +183,10 @@ class ServiceStyle:
             if own is not None:
                 return own
         return self.page_value(setting)
+
+    def speed_setting(self) -> StyleSetting | None:
+        """The service's Talking speed. None: a service without one (Piper, XTTS, xVASynth)"""
+        return SPEEDS.get(self.service)
 
     def extra_request(self) -> dict:
         """The picked model's Settings Mantella doesn't have yet, as fields: empty when there are none, or the model skips them"""
@@ -244,6 +272,36 @@ class ServiceStyle:
         definition = self.__definition(self.models.stored_setting)
         if definition is not None:
             definition.value = json.dumps(stored, separators=(",", ":"))
+
+
+class SetupStyle(ServiceStyle):
+    """A voice setup's settings: its Talking speed is kept in the setup, and a voice's own value under the setup's name"""
+
+    def __init__(self, config: Any, info: Any) -> None:
+        super().__init__(config, info.name)
+        self.models = None # a setup has no models
+        self.__setup = info.setup or {}
+
+    def all_settings(self) -> list[StyleSetting]:
+        return [SETUP_SPEED]
+
+    def speed_setting(self) -> StyleSetting | None:
+        return SETUP_SPEED
+
+    def page_value(self, setting: StyleSetting) -> Any:
+        """The setup's own value, as saved in the setup"""
+        if setting is not SETUP_SPEED:
+            return super().page_value(setting)
+        value = setting.clean(self.__setup.get("speed"))
+        return setting.default if value is None else value
+
+    def _model_id(self, setting: StyleSetting) -> str | None:
+        return self.service
+
+
+def style_for(config: Any, info: Any) -> ServiceStyle:
+    """A voice service's settings: a voice setup's are kept in the setup"""
+    return SetupStyle(config, info) if getattr(info, "is_setup", False) else ServiceStyle(config, info.name)
 
 
 def shared_values(values: Any) -> dict[str, Any]:

@@ -35,6 +35,12 @@
       "models": [
         {"id": "higgs-tts-3", "name": "Higgs TTS 3", "price": 15}
       ]
+    },
+    "Iodine": {
+      "default": "v2",
+      "models": [
+        {"id": "v2", "name": "Iodine v2", "price": 8, "voices": {"male": "zander", "female": "mia"}}
+      ]
     }
   }
 }
