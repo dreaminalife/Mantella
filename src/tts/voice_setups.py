@@ -113,6 +113,14 @@ def key_file_places(key_file: str) -> list[Path]:
     return [Path(utils.resolve_path()).parent.parent.parent / key_file, Path(utils.resolve_path()) / key_file, Path(key_file)]
 
 
+_key_saves: dict[str, int] = {} # by key file: how often Save key saved it this run
+
+
+def key_saves(key_file: str) -> int:
+    """How often a key was saved in *key_file* this run. A running service that read the key before compares it to see a new key"""
+    return _key_saves.get(key_file, 0)
+
+
 def save_key_file(key_file: str, key: str) -> Path:
     """Saves a key where read_key_file finds it first: over the file already there, else next to GPT_SECRET_KEY.txt, else in Mantella's own folder"""
     places = key_file_places(key_file)
@@ -121,6 +129,7 @@ def save_key_file(key_file: str, key: str) -> Path:
         gpt_key = next((p for p in key_file_places("GPT_SECRET_KEY.txt") if p.is_file()), None)
         target = gpt_key.with_name(key_file) if gpt_key is not None else Path(utils.resolve_path()) / key_file
     target.write_text(key.strip() + "\n", encoding="utf-8")
+    _key_saves[key_file] = key_saves(key_file) + 1
     return target
 
 

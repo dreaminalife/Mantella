@@ -27,7 +27,7 @@ from src.tts.online_voices import VoiceKeeper, cloned_voices, key_fingerprint
 from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
-from src.tts.voice_setups import read_key_file
+from src.tts.voice_setups import key_saves, read_key_file
 from src.tts.model_catalog import ServiceModel, ServiceModels, with_model_limits
 from src.tts.voice_style import EXTRA_REQUEST_LABEL, ServiceStyle, StyleSetting
 
@@ -231,7 +231,9 @@ class OnlineCloneService(ClipVoiceService):
     def __init__(self, config: ConfigLoader, info: VoiceServiceInfo) -> None:
         self.__hashes: dict[tuple, str] = {}
         super().__init__(config, info)
-        self._api_key = read_key_file(self.KEY_FILE)
+        self.__key_lock = threading.Lock()
+        self.__key_saves = key_saves(self.KEY_FILE)
+        self.__key = read_key_file(self.KEY_FILE)
         self._voices = cloned_voices(config.save_folder, self.NAME)
         self.__refused: str | None = None # why cloning is off for a while
         self.__refused_at = 0.0
@@ -242,13 +244,37 @@ class OnlineCloneService(ClipVoiceService):
         self.__genders: dict[str, int | None] = {} # by voice, for the NPCs speaking now: their built-in voice when cloning is refused
         self.__language = config.language
         self._style = ServiceStyle(config, self.NAME)
-        if self._api_key:
-            forgotten = self._voices.use_account(key_fingerprint(self._api_key))
-            if forgotten:
-                logging.info(f"{self.NAME}: a new key, so the {forgotten} voice(s) cloned with the old one are cloned again on this account")
-            if self.NAME not in OnlineCloneService._tidied:
-                OnlineCloneService._tidied.add(self.NAME)
-                self.keeper().remove_old_tries(config.save_folder, self._api_key)
+        self.__use_key()
+
+    @property
+    def _api_key(self) -> str:
+        """The saved key. A key saved with Save key while the service runs is used from the next line on, and by Hear it, without
+        waiting for the game to start the voice services again"""
+        if key_saves(self.KEY_FILE) != self.__key_saves:
+            with self.__key_lock:
+                saves = key_saves(self.KEY_FILE)
+                if saves != self.__key_saves:
+                    self.__key = read_key_file(self.KEY_FILE)
+                    self.__key_saves = saves
+                    logging.info(f"{self.NAME}: a new key was saved, so it is used from now on")
+                    # What went wrong was about the old key: cloning and speaking are tried again with the new one
+                    self.__refused = self.__paused = None
+                    self.__late = 0
+                    self.__told.clear()
+                    self.forget_prepared_voices() # voice IDs from the old key's account
+                    self.__use_key()
+        return self.__key
+
+    def __use_key(self) -> None:
+        """A key read: voices from another key's account are forgotten, and voices left over from trying clips are deleted, once a run"""
+        if not self.__key:
+            return
+        forgotten = self._voices.use_account(key_fingerprint(self.__key))
+        if forgotten:
+            logging.info(f"{self.NAME}: a new key, so the {forgotten} voice(s) cloned with the old one are cloned again on this account")
+        if self.NAME not in OnlineCloneService._tidied:
+            OnlineCloneService._tidied.add(self.NAME)
+            self.keeper().remove_old_tries(self._config.save_folder, self.__key)
 
     # ---- what each online service answers ----
 

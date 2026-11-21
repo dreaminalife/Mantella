@@ -30,7 +30,7 @@ from src.tts.clip_service import ClipVoiceService, clip_hash
 from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
-from src.tts.voice_setups import read_key_file
+from src.tts.voice_setups import key_saves, read_key_file
 from src.voice_clips.preparing import in_background
 
 NAME = "Pocket TTS"
@@ -322,6 +322,8 @@ class PocketTTS(ClipVoiceService):
         self.__setup_error: str | None = None
         self.__access = ACCESS_UNKNOWN
         self.__token = ""
+        self.__token_saves = key_saves(KEY_FILE) # set again when the setup reads the token
+        self.__token_lock = threading.Lock()
         self.__ready = threading.Event() # the program is installed and the sign-in checked
         _program.add_user() # now, not in the setup: the service this one replaces may be stopped before the setup is done
         threading.Thread(target=self.__set_up, name="Pocket TTS setup", daemon=True).start()
@@ -345,6 +347,7 @@ class PocketTTS(ClipVoiceService):
         return self.__access
 
     def pick_voice(self, speaker: VoiceSpeaker | None, named_voice: str | None = None) -> VoicePick:
+        self.__use_saved_token()
         pick = super().pick_voice(speaker, named_voice)
         if pick.clip_path and not self.can_copy_voices:
             return VoicePick(BUILT_IN, self.built_in_voice(speaker.gender if speaker else None), None)
@@ -443,7 +446,9 @@ class PocketTTS(ClipVoiceService):
             _remove_other_versions(self.__save_folder)
             _remove_old_tries(self.__save_folder)
             _clean_download_cache()
-            self.__token = read_key_file(KEY_FILE)
+            with self.__token_lock:
+                self.__token_saves = key_saves(KEY_FILE)
+                self.__token = read_key_file(KEY_FILE)
             self.__access = check_access(self.__token, self.__kyutai_language)
             if self.__access in ACCESS_MESSAGES:
                 self.__say_no_copying(ACCESS_MESSAGES[self.__access])
@@ -457,6 +462,22 @@ class PocketTTS(ClipVoiceService):
             add_notice(f"Pocket TTS: {e}")
         finally:
             self.__ready.set()
+
+    def __use_saved_token(self) -> None:
+        """A token saved under 'Turn on voice cloning' while the service runs is used from the next line on, and by Hear it, without
+        waiting for the game to start the voice services again. Whether Hugging Face takes it is checked when a voice is next made"""
+        if not self.__ready.is_set() or key_saves(KEY_FILE) == self.__token_saves:
+            return
+        with self.__token_lock:
+            saves = key_saves(KEY_FILE)
+            if saves == self.__token_saves:
+                return
+            self.__token_saves = saves
+            self.__token = read_key_file(KEY_FILE)
+            self.__access = ACCESS_UNKNOWN if self.__token else ACCESS_NO_TOKEN
+            logging.info("Pocket TTS: a new Hugging Face token was saved, so it is used from now on")
+            if self.__exe and not self.__stopped and _program.is_running():
+                self.__launch() # the program was started with the old sign-in: it starts again with the new one
 
     def __say_no_copying(self, message: str) -> None:
         logging.warning(message)
