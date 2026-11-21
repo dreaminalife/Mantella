@@ -6,7 +6,8 @@ from src.llm.message_thread import message_thread
 
 class Remembering(ABC):
     @abstractmethod
-    def get_prompt_text(self, npcs_in_conversation: Characters, world_id: str, include_private_thoughts: bool = True, conversation_start_ts: int | None = None) -> str:
+    def get_prompt_text(self, npcs_in_conversation: Characters, world_id: str, include_private_thoughts: bool = True, conversation_start_ts: int | None = None,
+                        include_heard_lines: bool = True, hide_player: bool = False) -> str:
         """ Generates a text that explains the previous interactions of the npcs with the player. 
             Text is passed as part of the prompt to the LLM
 
@@ -14,6 +15,8 @@ class Remembering(ABC):
             npcs_in_conversation (Characters): the NPCs in question
             include_private_thoughts: When False, omit saved private thoughts. Summary generation uses this.
             conversation_start_ts: When set, ignore summaries written since this time.
+            include_heard_lines: When False, omit the lines the NPCs heard (Vanilla Dialogues). Summary generation uses this.
+            hide_player: Director Mode: heard lines leave out menu talk with the player and that the player was there.
 
         Returns:
             str: a single text
@@ -21,7 +24,8 @@ class Remembering(ABC):
         pass
 
     @abstractmethod
-    def get_character_summary(self, character: Character, world_id: str, conversation_start_ts: int | None = None, keep_latest_since: bool = False) -> str:
+    def get_character_summary(self, character: Character, world_id: str, conversation_start_ts: int | None = None, keep_latest_since: bool = False,
+                              include_heard_lines: bool = True, hide_player: bool = False) -> str:
         """ Gets the summary for a specific character
         
         Args:
@@ -29,7 +33,9 @@ class Remembering(ABC):
             world_id (str): the world ID
             conversation_start_ts: When set, ignore summaries written since this time.
             keep_latest_since: With conversation_start_ts, still keep the newest summary written since then.
-            
+            include_heard_lines: When False, omit the lines the NPC heard (Vanilla Dialogues). Summary generation uses this.
+            hide_player: Director Mode: heard lines leave out menu talk with the player and that the player was there.
+
         Returns:
             str: the summary text for this character, or empty string if no summary exists
         """

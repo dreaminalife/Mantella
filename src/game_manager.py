@@ -30,6 +30,9 @@ from src.games.fallout4 import Fallout4
 from src.games.skyrim import Skyrim
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.quest_tags.tracker import QuestTagTracker
+from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver, HeardLinesReceiver
+from src.heard_lines.heard_lines_store import HeardLinesStore, JsonHeardLinesStore
+from src.heard_lines.heard_lines_text import HeardLinesText, PlainHeardLinesText
 
 if TYPE_CHECKING:
     from src.conversation.bystanders import EventPerson
@@ -153,6 +156,7 @@ class GameStateManager:
         self.__rememberer: Remembering = self._create_rememberer(game, config, client, summary_client, thoughts_client, reflection_client)
 
         self.__talk: Conversation | None = None
+        self.__heard_lines_world_id: str = "default" # Vanilla Dialogues: the playthrough of the latest request that named one
         self.__npc_initiative_client: "ClientBase | None" = None # Created on the first NPC Initiative check
         self.__npc_event_clients: "dict[int, AIClient]" = {} # The event generator, by model profile slot (0 for no profile). Created on first use
         self.__npc_event_count: int = 0 # Gives each event its id
@@ -197,6 +201,10 @@ class GameStateManager:
     def _create_rememberer(self, game: Gameable, config: ConfigLoader, client: LLMClient, summary_client, thoughts_client=None, reflection_client=None) -> Summaries:
         inner_monologue = InnerMonologue(game, config, client, self.__language_info['language'], thoughts_client)
         personal_reflection = PersonalReflection(game, config, client, self.__language_info['language'], reflection_client)
+        # Vanilla Dialogues: the lines NPCs heard. Built with the rememberer, so new settings and a new game folder reach both
+        self.__heard_lines_store: HeardLinesStore = JsonHeardLinesStore(game, config)
+        self.__heard_lines_text: HeardLinesText = PlainHeardLinesText()
+        self.__heard_lines_receiver: HeardLinesReceiver = GameHeardLinesReceiver(config, self.__heard_lines_store)
         return Summaries(
             game,
             config,
@@ -205,7 +213,25 @@ class GameStateManager:
             summary_client,
             inner_monologue=inner_monologue,
             personal_reflection=personal_reflection,
+            heard_lines_store=self.__heard_lines_store,
+            heard_lines_text=self.__heard_lines_text,
         )
+
+    def __take_heard_lines(self, input_json: dict[str, Any], conversation: Conversation | None):
+        """Vanilla Dialogues: the lines the game caught since its last request. Taken first, before anything can turn the request
+        away, as the game hands each line over once. Without a conversation (a start, the NPC checks), every line is kept as a heard line"""
+        # Continue, player line and event requests name no world: without a conversation, their lines go to the last playthrough seen
+        if conversation:
+            self.__heard_lines_world_id = conversation.context.world_id
+        elif comm_consts.KEY_STARTCONVERSATION_WORLDID in input_json:
+            self.__heard_lines_world_id = self.__get_world_id(input_json)
+        hand_over = input_json.get(comm_consts.KEY_HEARDLINES)
+        if not hand_over:
+            return
+        try:
+            self.__heard_lines_receiver.receive(hand_over, self.__heard_lines_world_id, conversation)
+        except Exception as e:
+            logging.error(f"Vanilla Dialogues: could not handle the heard lines: {e}")
 
     def stop_voice_services(self) -> None:
         """Before Mantella starts over with new settings: stops the voice programs it started"""
@@ -491,6 +517,7 @@ class GameStateManager:
             ends_before (int | None): ends_requested when the request arrived. Those ends are for the conversation before, which ends here
                 if they haven't been handled yet. An end that arrived after this request is for the new conversation, and still ends it
         """
+        self.__take_heard_lines(input_json, None) # Lines from before a conversation are never "nearby, now"
         self.__conversation_start_count += 1 # Any NPC Initiative check still running is no longer needed
         if ends_before is not None and self.__ends_requested > ends_before:
             # The game ended this conversation while the request waited for the ones before. It was told so already, and the end
@@ -603,7 +630,8 @@ class GameStateManager:
         if conversation_llm_client != self.__client:
             self.__chat_manager.update_primary_client(conversation_llm_client)
         
-        self.__talk = Conversation(context_for_conversation, self.__chat_manager, self.__rememberer, conversation_llm_client, self.__stt, self.__mic_input, self.__mic_ptt)
+        self.__talk = Conversation(context_for_conversation, self.__chat_manager, self.__rememberer, conversation_llm_client, self.__stt, self.__mic_input, self.__mic_ptt,
+                                   heard_lines_text=self.__heard_lines_text, heard_lines_store=self.__heard_lines_store)
         # Just saying something and NPC Events: the conversation starts already shouting. Applied before the first
         # conversation type is chosen, so it starts as a Shout conversation, and before anything is said, so people who join heard it all
         if not self.__apply_shout(input_json):
@@ -629,6 +657,7 @@ class GameStateManager:
     
     @utils.time_it
     def continue_conversation(self, input_json: dict[str, Any]) -> dict[str, Any]:
+        self.__take_heard_lines(input_json, self.__talk)
         if(not self.__talk ):
             return self.error_message("No running conversation.")
         if self.__talk.is_stopping: # The game ended it after sending this request
@@ -717,6 +746,7 @@ class GameStateManager:
 
     @utils.time_it
     def player_input(self, input_json: dict[str, Any]) -> dict[str, Any]:
+        self.__take_heard_lines(input_json, self.__talk)
         if(not self.__talk ):
             return self.error_message("No running conversation.")
         if self.__talk.is_stopping: # The game ended it after sending this request
@@ -736,6 +766,7 @@ class GameStateManager:
         nothing = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_CONVERSATIONEVENT, comm_consts.KEY_EVENT_RESULT: False,
                    comm_consts.KEY_GAMEMASTERMODE: multi_npc_game_master.is_enabled(self.__config)}
         talk = self.__talk
+        self.__take_heard_lines(input_json, talk)
         if not talk:
             return nothing
         talk.forget_event_picked()
@@ -792,7 +823,7 @@ class GameStateManager:
             if bool(getattr(self.__config, f"{kind}_event_include_player", False)) and player_name and not hides_player:
                 names.append(player_name)
             bios_and_summaries = build_bios_and_summaries_text(described, self.__config, self.__rememberer, context.world_id, player_name or None,
-                                                               contains_player=True, always_multi_npc=True)
+                                                               contains_player=True, always_multi_npc=True, hide_player=hides_player)
             history_lines = talk.event_history_lines() if bool(getattr(self.__config, f"{kind}_event_send_history", False)) else []
             hint = str(input_json.get(comm_consts.KEY_EVENT_HINT, "")).strip()
             logging.log(26, f"Event ({kind}) about: {', '.join(names) or 'nobody'}. With bios and memories: {', '.join(c.name for c in described) or 'nobody'}."
@@ -939,6 +970,7 @@ class GameStateManager:
         """Decides whether one of the nearby NPCs in the request walks up to the player and starts a conversation.
         Runs alongside the other requests. Starting a conversation cancels it.
         Never replies with an error: any failure means nobody (refid 0)"""
+        self.__take_heard_lines(input_json, None) # Only sent while no conversation runs
         chosen_refid = 0
         start_count = self.__conversation_start_count
         is_cancelled = lambda: self.__conversation_start_count != start_count
@@ -1074,6 +1106,7 @@ class GameStateManager:
         The game then starts a conversation with the participants and the event's id, and they act the scene out.
         Runs alongside the other requests. Starting a conversation cancels it.
         Never replies with an error: any failure means no event (id 0)"""
+        self.__take_heard_lines(input_json, None) # Only sent while no conversation runs
         no_event = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCEVENT, comm_consts.KEY_NPCEVENT_ID: 0, comm_consts.KEY_NPCEVENT_PARTICIPANT_REFIDS: []}
         start_count = self.__conversation_start_count
         is_cancelled = lambda: self.__conversation_start_count != start_count

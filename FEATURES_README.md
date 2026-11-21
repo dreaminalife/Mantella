@@ -13,6 +13,7 @@ Trying my best to explain why I added these features and how to make the most of
 - [Lorebook](#lorebook)
 - [Bio Sections to Exclude](#bio-sections-to-exclude)
 - [Send Only Bios](#send-only-bios)
+- [Vanilla Dialogues](#vanilla-dialogues)
 
 **Roleplay and Immersion Enhancement** — what NPCs remember, think, and feel
 
@@ -1348,6 +1349,44 @@ The columns go in the character CSV, or in a character override file (see [File 
 2. **LLM** tab → **Feature Toggles** → turn on **Allow Per-Character LLM Overrides**.
 3. **Other** → **Reload Character Data** → **Reload**.
 4. Talk to Serana alone. The log shows `Created per-character LLM client for Serana using OpenRouter with model: ...` and `TTS for Serana: using xVASynth with voice '...'`.
+
+## Vanilla Dialogues
+
+### What it does
+
+NPCs remember Skyrim's own voiced lines they hear: lines from scenes, such as Mikael flirting with Carlotta in the Bannered Mare, and what you say in the dialogue menu. Talk to Mikael that evening and he knows Carlotta turned him down. Saadia, at the bar nearby, can mention it if you ask. Hulda, upstairs, heard nothing.
+
+- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Mikael says to Carlotta: "..."*. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
+- **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for a few in-game days. Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
+- **Overheard:** NPCs near a scene remember it as overheard, so they don't answer it as if it was said to them.
+- **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
+- **Older saves:** load a save from before a scene and NPCs forget it, once you next talk to someone.
+- Greetings, remarks as you walk past, combat shouts and grunts are never kept. Neither are Mantella's own lines.
+
+It needs the MantellaHeardLines plugin and the updated game add-on. It replaces the separate Mantella Vanilla Dialogue add-on: remove that one.
+
+### Where to find it
+
+- **Mantella MCM** -> **Vanilla Dialogues** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
+- **Conversation Wheel** -> **Vanilla** turns it on or off without opening the MCM.
+- **Other** tab (Advanced) -> **Vanilla Dialogue Memory (Days)**, **Most Vanilla Dialogue Lines per NPC** and **Lines That Only Open a Menu**.
+
+### Quick start
+
+1. Install the MantellaHeardLines plugin and the updated game add-on.
+2. In Whiterun, wait in the Bannered Mare until Mikael talks to Carlotta.
+3. Talk to Mikael or Saadia through Mantella and ask what just happened.
+
+A mod's menu line that only opens a menu, such as its settings, is not worth remembering. Add it to **Lines That Only Open a Menu**, with commas between lines and * for any text: `*orders for you*`.
+
+### For developers
+
+- The plugin catches lines from `RE::TESTopicInfoEvent` and keeps them in the save. The game add-on hands them over under `mantella_heard_lines` (`comm_consts.KEY_HEARDLINES`) with the start, continue, player input, event and NPC check requests.
+- `src/heard_lines/`: `HandOver.parse` reads them, `GameHeardLinesReceiver` sorts each line into the running conversation or into a listener's memory, `JsonHeardLinesStore` keeps `heard_lines.json` in each NPC's folder (chosen by `NpcFolder`, like the summaries) and the latest game time in `<world_id>/heard_lines_now.json`, and `PlainHeardLinesText` writes them in third person.
+- In a conversation they wait in the context apart from the in-game events, so Max Count Events, Ignored In-Game Events and Tidier In-Game Events never touch them. The log shows them under "Heard nearby since previous exchange". When the conversation ends, every line that went into it (or was still waiting) is kept as a heard line by the people in it who heard it, whether or not a summary is written. Not earlier: a prompt built again during the conversation (a join, each Game Master turn) would show the line twice.
+- In memory they are merged into the timeline by real time, never into "New developments". Writing a summary, thoughts or a reflection leaves them out.
+- A game time earlier than the latest one seen in a playthrough means an older save was loaded: every NPC of that playthrough loses the lines from after it.
+- Tests: `tests/heard_lines/`.
 
 ## Bio Sections to Exclude
 
@@ -3018,8 +3057,9 @@ Outside a conversation:
 | **Companion** | Shown when you're looking at someone. Puts them on your companions list, or takes them off |
 | **NPC Event** | Starts an [NPC Event](#npc-events) now |
 | **Approach** | Checks right away whether someone nearby has a reason to talk to you, like [NPC Initiative](#npc-initiative)'s **Check Now** |
+| **Vanilla** | Shown when the MantellaHeardLines plugin is installed. Turns [Vanilla Dialogues](#vanilla-dialogues) on or off. The description under the wheel says what a click does: **Turn on Vanilla Dialogues** or **Turn off Vanilla Dialogues** |
 
-In a conversation (while you watch NPCs talk without you, only **Step in** or **Join** and **Add / Remove** are shown):
+In a conversation (while you watch NPCs talk without you, only **Step in** or **Join** and **Vanilla** are shown):
 
 | Option | What it does |
 | --- | --- |
@@ -3027,10 +3067,10 @@ In a conversation (while you watch NPCs talk without you, only **Step in** or **
 | **Show** | The NPCs see what you see right now, with the next thing you say. See [Show Them What You See](#show-them-what-you-see) |
 | **Step in** | Shown while you watch an NPC Event. You join the scene |
 | **Join** | Shown during a conversation between NPCs that you're not in. You join it |
-| **Add / Remove** | Shown when you're looking at someone. Brings them in, or sends them away |
 | **Companions** | Brings in your companions nearby who aren't in the conversation yet |
 | **Shout / Private** | Switches [Shout](#shout) on or off |
 | **Talk Event / Nearby Event / Random Event** | Something happens. See [Talk, Nearby and Random Events](#talk-nearby-and-random-events) |
+| **Vanilla** | The same as outside a conversation |
 
 **Companions** are your followers who are following you right now, plus anyone on your companions list. Nearby means within 20 meters, at most the 6 nearest, and free to talk. The list is saved with your game.
 

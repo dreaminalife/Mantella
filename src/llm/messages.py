@@ -336,6 +336,7 @@ class UserMessage(Message):
         super().__init__(text, config, is_system_generated_message)
         self.__player_character_name: str = player_character_name
         self.__ingame_events: list[str] = []
+        self.__heard_dialogue: list[str] = [] # Vanilla Dialogues: Skyrim's own lines heard nearby, as narration. Kept apart from the in-game events
         self.__time: tuple[str,str] | None = None
         self.is_director_message: bool = False # Director mode: the text is a scene direction, shown as narration without the player's name
         # Show: the picture the player showed with this line (a VisionCapture). Sent with the replies to this line only (see
@@ -350,6 +351,7 @@ class UserMessage(Message):
     def get_formatted_content(self) -> str:
         result = ""
         result += self.get_ingame_events_text()
+        result += self.get_heard_dialogue_text()
         if self.__time:
             result += f"{self.narration_start}The time is {self.__time[0]} {self.__time[1]}.{self.narration_end}\n"
         if self.is_director_message:
@@ -384,7 +386,17 @@ class UserMessage(Message):
         for event in self.__ingame_events:
             result += f"{self.narration_start}{event}{self.narration_end}\n"
         return result
-    
+
+    def add_heard_dialogue(self, lines: list[str]):
+        """Vanilla Dialogues: lines heard nearby since the previous exchange, each one narration sentence"""
+        self.__heard_dialogue.extend(line for line in lines if line)
+
+    def get_heard_dialogue(self) -> list[str]:
+        return list(self.__heard_dialogue)
+
+    def get_heard_dialogue_text(self) -> str:
+        return "".join(f"{self.narration_start}{line}{self.narration_end}\n" for line in self.__heard_dialogue)
+
     def set_ingame_time(self, time: str, time_group: str):
         self.__time = time, time_group
 

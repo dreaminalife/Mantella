@@ -8,6 +8,7 @@ from src.http.communication_constants import communication_constants
 from src.conversation.conversation_log import conversation_log
 from src.characters_manager import Characters
 from src.remember.remembering import Remembering
+from src.heard_lines.heard_line import HeardLine
 from src import utils
 from src.utils import get_time_group
 from src.character_manager import Character
@@ -41,13 +42,14 @@ def append_reflection_to_bio(bio: str, character: Character, rememberer: Remembe
 
 
 def build_bios_and_summaries_text(characters: list[Character], config: ConfigLoader, rememberer: Remembering, world_id: str, player_name: str | None,
-                                  contains_player: bool, include_memories: bool = True, always_multi_npc: bool = False) -> str:
+                                  contains_player: bool, include_memories: bool = True, always_multi_npc: bool = False, hide_player: bool = False) -> str:
     """Gets the bios and summaries combined for each character, the text of the {bios_and_summaries} prompt variable
 
     Args:
         player_name (str | None): fills {player_name} in the texts. None or empty for "the player"
         contains_player (bool): the player takes part, so the configured bio sections are filtered out
         always_multi_npc (bool): uses the multi-NPC layout even for a single character
+        hide_player (bool): Director Mode: memories leave out the heard lines that tell about the player
 
     Returns:
         str: the bios and summaries paired together for each character
@@ -69,7 +71,7 @@ def build_bios_and_summaries_text(characters: list[Character], config: ConfigLoa
         # Get the summary for this specific character using the new interface method
         summary = ""
         if include_memories:
-            summary = rememberer.get_character_summary(character, world_id)
+            summary = rememberer.get_character_summary(character, world_id, hide_player=hide_player)
             if summary:
                 summary = utils.resolve_player_name_placeholder(summary, player_name)
 
@@ -119,6 +121,7 @@ class context:
         self.__custom_context_values: dict[str, Any] = {}
         self.__ingame_time: int = 12
         self.__ingame_events: list[str] = []
+        self.__heard_dialogue: list[HeardLine] = [] # Vanilla Dialogues: lines heard nearby, waiting for the next message. Apart from the in-game events
         self.__vision_hints: str = ''
         self.__have_actors_changed: bool = False
         self.npc_initiative: bool = False # The NPC walked up to the player: their first reply uses the NPC Initiative Prompt until the player answers
@@ -295,6 +298,17 @@ class context:
     @utils.time_it
     def clear_context_ingame_events(self):
         self.__ingame_events.clear()
+
+    def add_heard_dialogue(self, lines: list[HeardLine]):
+        """Vanilla Dialogues: Skyrim's own lines heard by people in the conversation. Never cut by Max Count Events or matched
+        by Ignored In-Game Events: they are dialogue, not events"""
+        self.__heard_dialogue.extend(lines)
+
+    def get_heard_dialogue(self) -> list[HeardLine]:
+        return list(self.__heard_dialogue)
+
+    def clear_heard_dialogue(self):
+        self.__heard_dialogue.clear()
 
     @utils.time_it
     def add_or_update_characters(self, new_list_of_npcs: list[Character]) -> add_or_update_result:
@@ -631,8 +645,9 @@ class context:
             self.__npcs_in_conversation.contains_player_character(),
             include_memories,
             always_multi_npc,
+            hide_player=self.hides_player(),
         )
-    
+
     @utils.time_it
     def get_npc_equipment_snapshot(self) -> str:
         """Returns a snapshot of all NPC equipment descriptions for comparison purposes.
@@ -812,7 +827,7 @@ class context:
         private_thoughts = ""
         is_single_npc = len(prompt_characters) == 1
         if include_memories:
-            conversation_summaries = self.__rememberer.get_prompt_text(prompt_characters, self.__world_id)
+            conversation_summaries = self.__rememberer.get_prompt_text(prompt_characters, self.__world_id, hide_player=self.hides_player())
             if conversation_summaries:
                 conversation_summaries = self._resolve_bio_player_name(conversation_summaries)
             if is_single_npc:
@@ -941,7 +956,7 @@ class context:
         if not characters:
             return NOBODY_DESCRIBED
         return build_bios_and_summaries_text(characters, self.__config, self.__rememberer, self.__world_id, player_name or None,
-                                             contains_player=True, include_memories=True, always_multi_npc=True)
+                                             contains_player=True, include_memories=True, always_multi_npc=True, hide_player=self.hides_player())
 
     @utils.time_it
     def get_characters_excluding_player(self) -> Characters:

@@ -82,6 +82,7 @@ def serialize_persistent_messages(messages: list[Message], config: ConfigLoader)
                 "text": m.text,
                 "player_character_name": m.player_character_name,
                 "ingame_events": events,
+                "heard_dialogue": m.get_heard_dialogue(),
                 "time": time_val,
                 "is_system_generated": m.is_system_generated_message,
                 "is_multi_npc": m.is_multi_npc_message,
@@ -157,6 +158,7 @@ def deserialize_persistent_messages(
             msg.is_director_message = bool(item.get("is_director", False))
             for ev in item.get("ingame_events", []):
                 msg.add_event([str(ev)])
+            msg.add_heard_dialogue([str(line) for line in item.get("heard_dialogue", []) or []])
             if item.get("time"):
                 t = item["time"]
                 if isinstance(t, (list, tuple)) and len(t) >= 2:

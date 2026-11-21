@@ -59,6 +59,26 @@ class OtherDefinitions:
         return ConfigValueString("ingame_events_filter","Ignored In-Game Events",description,"",tags=[ConfigValueTag.advanced])
 
     @staticmethod
+    def get_heard_lines_days_kept_config_value() -> ConfigValue:
+        description = """Vanilla Dialogues: how many in-game days NPCs remember Skyrim's own lines they heard, such as a scene in a tavern or the player's talk in the dialogue menu.
+                        Turn Vanilla Dialogues on or off in the Mantella MCM, or on the Conversation Wheel."""
+        return ConfigValueInt("heard_lines_days_kept","Vanilla Dialogue Memory (Days)",description,3,1,30,tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_heard_lines_most_per_npc_config_value() -> ConfigValue:
+        description = """Vanilla Dialogues: the most lines each NPC remembers. Older lines are forgotten first.
+                        Also the most lines NPCs pick up at once from a scene playing nearby during a conversation.
+                        Higher numbers cost more prompt tokens."""
+        return ConfigValueInt("heard_lines_most_per_npc","Most Vanilla Dialogue Lines per NPC",description,30,1,200,tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_heard_lines_menu_only_config_value() -> ConfigValue:
+        description = """Vanilla Dialogues: lines in the dialogue menu that only open a menu, such as a mod's settings. NPCs don't remember them, or the answer to them.
+                        Separate lines with commas. Use * for any text, as in Ignored In-Game Events: *orders for you* matches every line that contains those words."""
+        return ConfigValueString("heard_lines_menu_only","Lines That Only Open a Menu",description,
+                                 "Stage1Hello, I want you to.., DialogueGenericHello, Goodbye. (Remove from Mantella conversation)",tags=[ConfigValueTag.advanced])
+
+    @staticmethod
     def get_hourly_time_config_value() -> ConfigValue:
         description = """If enabled, NPCs will be made aware of the time every in-game hour. Otherwise, time updates will be less granular (eg 'The conversation now takes place in the morning' / 'at night' etc).
                         To remove mentions of the hour entirely, prompts also need to be edited from 'The time is {time} {time_group}.' to 'The conversation takes place {time_group}.'"""

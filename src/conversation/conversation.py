@@ -27,6 +27,9 @@ from src.conversation.conversation_type import conversation_type, multi_npc, mul
 from src.conversation.bystanders import NEWCOMERS_REMEMBER_EVERYTHING, NEWCOMERS_REMEMBER_LAST_LINE, EventPerson, ShoutState
 from src.conversation.game_master import GameMaster, GameMasterTurns, game_master_history_lines, is_player_line
 from src.conversation.ingame_event_tidy import tidy_events
+from src.heard_lines.heard_line import HeardLine, HeardPerson
+from src.heard_lines.heard_lines_store import HeardLinesStore
+from src.heard_lines.heard_lines_text import HeardLinesText
 from src.character_manager import Character
 from src.http.communication_constants import communication_constants as comm_consts
 from src.stt import Transcriber
@@ -50,8 +53,17 @@ class Conversation:
     __event_count: int = 0 # Each Conversation, Nearby or Random Event gets its own marker, so someone who joins right after it is known to react to it
     EVENT_MARKER_ATTRIBUTE: str = "event_marker" # Set on the event's message. Kept when the thread is reloaded, which copies every message
     """Controls the flow of a conversation."""
-    def __init__(self, context_for_conversation: Context, output_manager: ChatManager, rememberer: Remembering, llm_client: AIClient, stt: Transcriber | None, mic_input: bool, mic_ptt: bool) -> None:
-        
+    def __init__(self, context_for_conversation: Context, output_manager: ChatManager, rememberer: Remembering, llm_client: AIClient, stt: Transcriber | None, mic_input: bool, mic_ptt: bool,
+                 heard_lines_text: HeardLinesText | None = None, heard_lines_store: HeardLinesStore | None = None) -> None:
+        """
+        Args:
+            heard_lines_text (HeardLinesText | None): Vanilla Dialogues: writes the lines heard nearby into the next message
+            heard_lines_store (HeardLinesStore | None): Vanilla Dialogues: keeps the lines heard during the conversation when it ends
+        """
+        self.__heard_lines_text: HeardLinesText | None = heard_lines_text
+        self.__heard_lines_store: HeardLinesStore | None = heard_lines_store
+        self.__heard_for_memory: list[HeardLine] = [] # Vanilla Dialogues: every line heard during the conversation, kept as heard lines when it ends
+
         self.__context: Context = context_for_conversation
         self.__mic_input: bool = mic_input
         self.__mic_ptt: bool = mic_ptt
@@ -111,6 +123,11 @@ class Conversation:
     def is_stopping(self) -> bool:
         """The game ended the conversation (see stop_now). It ends here once the request still running is done"""
         return self.__is_stopping
+
+    @property
+    def start_ts(self) -> int:
+        """When the conversation started (epoch seconds)"""
+        return self.__conversation_start_ts
 
     @property
     def ended_unanswered(self) -> bool:
@@ -314,6 +331,18 @@ class Conversation:
         config = self.__context.config
         upcoming = self.__select_conversation_type(config)
         return upcoming.is_director_mode() or (isinstance(upcoming, npc_event) and multi_npc.is_director_enabled(config))
+
+    def passes_ingame_events(self) -> bool:
+        """Something that happens nearby reaches the NPCs with the next message. Not in a radiant conversation, or an NPC Event the player
+        only watches: no message passes it on. Read from the type for the people in the conversation now, like hides_player"""
+        upcoming = self.__select_conversation_type(self.__context.config)
+        return not isinstance(upcoming, (radiant, npc_event))
+
+    def add_heard_dialogue(self, lines: list[HeardLine]):
+        """Vanilla Dialogues: Skyrim's own lines heard by people in the conversation. They go with the next message, and are kept as
+        heard lines when the conversation ends"""
+        self.__context.add_heard_dialogue(lines)
+        self.__heard_for_memory.extend(lines)
 
     def event_history_lines(self) -> list[str]:
         """Conversation, Nearby and Random Events: the recent lines of the conversation for the event generator, the same ones the Game Master sees"""
@@ -685,7 +714,7 @@ class Conversation:
                 # character isn't part of the scene: it is the scene as it looks now
                 new_message.add_event(["This is how the scene looks right now." if is_director
                                        else f"{player_character.name} shows you what they are looking at."])
-            if not is_continue or new_message.count_ingame_events() > 0:
+            if not is_continue or new_message.count_ingame_events() > 0 or new_message.get_heard_dialogue():
                 self.__messages.add_message(new_message)
             elif not isinstance(self.__conversation_type, multi_npc_game_master):
                 # The LLM needs a new message to reply to. Flagged as system generated, so summaries leave it out.
@@ -871,10 +900,45 @@ class Conversation:
         message.add_event(all_ingame_events[-max_events:])
         self.__context.clear_context_ingame_events()        
 
-        if message.count_ingame_events() > 0:            
+        if message.count_ingame_events() > 0:
             logging.log(28, f'In-game events since previous exchange:\n{message.get_ingame_events_text()}')
 
+        self.__add_heard_dialogue_to(message)
         return message
+
+    def __add_heard_dialogue_to(self, message: UserMessage):
+        """Vanilla Dialogues: the lines heard nearby since the previous exchange, as narration apart from the in-game events.
+        At most Most Vanilla Dialogue Lines per NPC, the newest"""
+        lines = self.__context.get_heard_dialogue()
+        if not lines:
+            return
+        self.__context.clear_heard_dialogue()
+        if not self.__heard_lines_text:
+            return
+        hide_player = self.hides_player()
+        texts = [text for text in (self.__heard_lines_text.nearby_now(line, hide_player) for line in sorted(lines, key=lambda l: l.time)) if text]
+        message.add_heard_dialogue(texts[-max(1, self.__context.config.heard_lines_most_per_npc):])
+        if message.get_heard_dialogue():
+            logging.log(28, f'Heard nearby since previous exchange:\n{message.get_heard_dialogue_text()}')
+
+    def __store_heard_dialogue(self):
+        """Vanilla Dialogues: when the conversation ends, every line heard during it is kept as a heard line by the people in it who heard it,
+        whether or not it went with a message and whether or not a summary is written. Not before: while the conversation runs, the line
+        is already in it, and a prompt built again (a join, each Game Master turn) would show it twice"""
+        lines = self.__heard_for_memory
+        self.__heard_for_memory = []
+        self.__context.clear_heard_dialogue()
+        if not lines or not self.__heard_lines_store:
+            return
+        by_listener: dict[HeardPerson, list[HeardLine]] = {}
+        for line in lines:
+            for person in line.heard_by:
+                by_listener.setdefault(person, []).append(line)
+        for person, person_lines in by_listener.items():
+            try: # One NPC that can't be written loses no one else's lines
+                self.__heard_lines_store.add(self.__context.world_id, person, person_lines)
+            except Exception as e:
+                logging.error(f"Vanilla Dialogues: could not keep the lines {person.name} heard during the conversation: {e}")
 
     @utils.time_it
     def retrieve_sentence_from_queue(self, add_to_history: bool = True) -> Sentence | None:
@@ -948,6 +1012,7 @@ class Conversation:
         self.__cancel_game_master_turn()
         self.__stop_generation()
         self.__sentences.clear()
+        self.__store_heard_dialogue()
         self.__save_summary()
     
     def can_be_shown(self) -> bool:

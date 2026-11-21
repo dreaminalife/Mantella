@@ -89,6 +89,7 @@ class communication_constants:
     KEY_REPLYTYPE_VOICECLIP_SAVELOADED: str = PREFIX + "voice_clip_save_loaded_result"
     KEY_QUESTCHECKS_RESULTS: str = PREFIX + "quest_check_results" # In the context (start, player input), or top-level on the catch-up continue request
     KEY_NPCEVENT_PLAYERNOTICEABLE: str = PREFIX + "npc_event_player_noticeable"
+    KEY_HEARDLINES: str = PREFIX + "heard_lines" # Vanilla Dialogues: the MantellaHeardLines plugin's JSON text, top-level on start, continue, player input, event and check requests
 
     KEY_STARTCONVERSATION_WORLDID: str = PREFIX + "worldid"
     KEY_STARTCONVERSATION_USENARRATOR: str = PREFIX + "use_narrator"

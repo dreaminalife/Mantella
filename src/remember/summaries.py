@@ -16,6 +16,10 @@ from src.llm.messages import AssistantMessage, join_message, leave_message, User
 from src.characters_manager import Characters
 from src.character_manager import Character
 from src.remember.remembering import Remembering
+from src.remember.npc_folder import NpcFolder
+from src.heard_lines.heard_line import HeardPerson
+from src.heard_lines.heard_lines_store import HeardLinesStore
+from src.heard_lines.heard_lines_text import HeardLinesText
 from src.lorebook_manager import LorebookManager
 from src.prompt_profile_manager import PromptSectionError
 from src.prompt_label import label_prompt
@@ -130,6 +134,7 @@ def build_merged_timeline(
     dynamic_tag_events: List[Tuple[int, str]],
     dedupe_legacy: bool = False,
     exclude_events: List[Tuple[int, str]] | None = None,
+    heard_entries: List[Tuple[int, str]] | None = None,
 ) -> str:
     """Build the final memory text for one NPC.
 
@@ -145,6 +150,8 @@ def build_merged_timeline(
         exclude_events: Optional list of ``(ts, text)`` tuples to omit from
             the timeline (e.g. events that will appear in a separate
             "New developments" section).
+        heard_entries: ``(ts, text)`` entries of the lines the NPC heard
+            (Vanilla Dialogues), merged in by time. Never "New developments".
     """
     # --- legacy section --------------------------------------------------
     if dedupe_legacy:
@@ -162,13 +169,14 @@ def build_merged_timeline(
     # --- timestamped section ---------------------------------------------
     all_timestamped: List[Tuple[int, str]] = list(timestamped_summary_blocks)
     all_timestamped.extend(dynamic_tag_events)
+    all_timestamped = [item for item in all_timestamped if item not in excluded]
+    all_timestamped.extend(heard_entries or [])
     all_timestamped.sort(key=lambda item: item[0])
 
     # --- combine ---------------------------------------------------------
     parts: List[str] = list(legacy_blocks)
     for item in all_timestamped:
-        if item not in excluded:
-            parts.append(item[1])
+        parts.append(item[1])
 
     return '\n'.join(parts)
 
@@ -218,8 +226,9 @@ def build_memory_text(
     timestamped_summary_blocks: List[Tuple[int, str]],
     dynamic_events: List[Tuple[int, str]],
     dedupe_legacy: bool = False,
+    heard_entries: List[Tuple[int, str]] | None = None,
 ) -> str:
-    """Merge summary blocks and dynamic tag events into the memory text the LLM sees."""
+    """Merge summary blocks, dynamic tag events and heard lines into the memory text the LLM sees."""
     # Determine which dynamic events are "new since last meeting"
     new_events = get_new_events(timestamped_summary_blocks, dynamic_events)
 
@@ -230,6 +239,7 @@ def build_memory_text(
         dynamic_events,
         dedupe_legacy=dedupe_legacy,
         exclude_events=new_events,
+        heard_entries=heard_entries,
     )
 
     # --- "New developments since last meeting" section ---
@@ -295,7 +305,8 @@ class Summaries(Remembering):
     """ Stores a conversation as a summary in a text file.
         Loads the latest summary from disk for a prompt text.
     """
-    def __init__(self, game: Gameable, config: ConfigLoader, client: LLMClient, language_name: str, summary_client: ClientBase | None = None, summary_limit_pct: float = 0.3, inner_monologue=None, personal_reflection=None) -> None:
+    def __init__(self, game: Gameable, config: ConfigLoader, client: LLMClient, language_name: str, summary_client: ClientBase | None = None, summary_limit_pct: float = 0.3, inner_monologue=None, personal_reflection=None,
+                 heard_lines_store: HeardLinesStore | None = None, heard_lines_text: HeardLinesText | None = None) -> None:
         super().__init__()
         self.loglevel = 28
         self.__config = config
@@ -308,6 +319,8 @@ class Summaries(Remembering):
         self.__resummarize_prompt:str = config.resummarize_prompt
         self.__inner_monologue = inner_monologue
         self.__personal_reflection = personal_reflection
+        self.__heard_lines_store: HeardLinesStore | None = heard_lines_store # Vanilla Dialogues: the lines each NPC heard
+        self.__heard_lines_text: HeardLinesText | None = heard_lines_text
         if self.__personal_reflection is not None and self.__inner_monologue is not None:
             self.__personal_reflection.attach_inner_monologue(self.__inner_monologue)
         game_folder_name = "Fallout4" if game.game_name_in_filepath.lower() == "fallout4" else "Skyrim"
@@ -364,6 +377,8 @@ class Summaries(Remembering):
         dedupe_legacy: bool = False,
         conversation_start_ts: int | None = None,
         keep_latest_since: bool = False,
+        include_heard_lines: bool = True,
+        hide_player: bool = False,
     ) -> str:
         """Build the merged memory text for a single character.
 
@@ -377,6 +392,7 @@ class Summaries(Remembering):
         chronological timeline.
 
         *conversation_start_ts* / *keep_latest_since* filter summary blocks, see ``drop_blocks_since``.
+        *include_heard_lines* adds the lines the NPC heard (Vanilla Dialogues) to the timeline. *hide_player*: see ``HeardLinesText``.
         """
         legacy_blocks: List[str] = []
         timestamped_summary_blocks: List[Tuple[int, str]] = []
@@ -391,10 +407,28 @@ class Summaries(Remembering):
             )
 
         dynamic_events = self.__get_character_dynamic_events(character)
-        return build_memory_text(legacy_blocks, timestamped_summary_blocks, dynamic_events, dedupe_legacy=dedupe_legacy)
+        heard_entries = self.__get_heard_entries(character, world_id, hide_player) if include_heard_lines else []
+        return build_memory_text(legacy_blocks, timestamped_summary_blocks, dynamic_events, dedupe_legacy=dedupe_legacy, heard_entries=heard_entries)
+
+    def __get_heard_entries(self, character: Character, world_id: str, hide_player: bool) -> List[Tuple[int, str]]:
+        """Vanilla Dialogues: the memory entries of the lines the NPC heard"""
+        if not self.__heard_lines_store or not self.__heard_lines_text or character.is_player_character:
+            return []
+        try:
+            lines = self.__heard_lines_store.lines_for(world_id, character.name, character.ref_id)
+            if not lines:
+                return []
+            # The name the game uses for them, without the number added to repeated names in a conversation
+            listener = next((p for line in lines for p in line.heard_by if p.ref_id == character.ref_id),
+                            HeardPerson(character.ref_id, NpcFolder.base_name(character.name)))
+            return self.__heard_lines_text.memory_entries(lines, listener, self.__heard_lines_store.latest_now(world_id), hide_player)
+        except Exception as e:
+            logging.error(f"Vanilla Dialogues: could not read the lines {character.name} heard: {e}")
+            return []
 
     @utils.time_it
-    def get_prompt_text(self, npcs_in_conversation: Characters, world_id: str, include_private_thoughts: bool = True, conversation_start_ts: int | None = None) -> str:
+    def get_prompt_text(self, npcs_in_conversation: Characters, world_id: str, include_private_thoughts: bool = True, conversation_start_ts: int | None = None,
+                        include_heard_lines: bool = True, hide_player: bool = False) -> str:
         """Load the conversation summaries for all NPCs in the conversation and returns them as one string
 
         Args:
@@ -412,7 +446,8 @@ class Summaries(Remembering):
         if len(non_player_characters) == 1:
             # Single NPC conversation - thoughts use {private_thoughts}, not this string
             character = non_player_characters[0]
-            memory_text = self.__build_character_memory(character, world_id, dedupe_legacy=True, conversation_start_ts=conversation_start_ts)
+            memory_text = self.__build_character_memory(character, world_id, dedupe_legacy=True, conversation_start_ts=conversation_start_ts,
+                                                         include_heard_lines=include_heard_lines, hide_player=hide_player)
             if memory_text:
                 return f"Below is a summary of past events:\n{memory_text}"
             else:
@@ -421,7 +456,8 @@ class Summaries(Remembering):
             # Multi-NPC / radiant — live prompts append each NPC's newest thoughts. Summary generation does not.
             character_memories = []
             for character in non_player_characters:
-                memory_text = self.__build_character_memory(character, world_id, dedupe_legacy=False, conversation_start_ts=conversation_start_ts)
+                memory_text = self.__build_character_memory(character, world_id, dedupe_legacy=False, conversation_start_ts=conversation_start_ts,
+                                                             include_heard_lines=include_heard_lines, hide_player=hide_player)
                 if include_private_thoughts:
                     memory_text = self.__append_thought_to_memory(memory_text, character, world_id)
                 if memory_text:
@@ -437,7 +473,8 @@ class Summaries(Remembering):
                 return ""
 
     @utils.time_it
-    def get_character_summary(self, character: Character, world_id: str, conversation_start_ts: int | None = None, keep_latest_since: bool = False) -> str:
+    def get_character_summary(self, character: Character, world_id: str, conversation_start_ts: int | None = None, keep_latest_since: bool = False,
+                              include_heard_lines: bool = True, hide_player: bool = False) -> str:
         """ Gets the summary for a specific character
         
         Args:
@@ -455,6 +492,8 @@ class Summaries(Remembering):
             dedupe_legacy=True,
             conversation_start_ts=conversation_start_ts,
             keep_latest_since=keep_latest_since,
+            include_heard_lines=include_heard_lines,
+            hide_player=hide_player,
         )
 
     def get_character_private_thought(self, character: Character, world_id: str) -> str:
@@ -572,7 +611,7 @@ class Summaries(Remembering):
                     if (saved_summaries.get(npc_name) or "").strip()
                 }
                 thought_summaries = {
-                    npc_name: self.get_character_summary(characters[npc_name], world_id, conversation_start_ts)
+                    npc_name: self.get_character_summary(characters[npc_name], world_id, conversation_start_ts, include_heard_lines=False)
                     for npc_name in summarized_threads
                 }
                 self.__inner_monologue.save_thoughts(
@@ -591,7 +630,7 @@ class Summaries(Remembering):
             try:
                 # Reflections do not read the transcript, so keep the newest summary from this conversation.
                 full_summaries: Dict[str, str] = {
-                    npc_name: self.get_character_summary(npc, world_id, conversation_start_ts, keep_latest_since=True)
+                    npc_name: self.get_character_summary(npc, world_id, conversation_start_ts, keep_latest_since=True, include_heard_lines=False)
                     for npc_name, npc in characters.items()
                 }
                 reflection_characters = characters
@@ -661,7 +700,7 @@ class Summaries(Remembering):
         ts = save_timestamp if save_timestamp is not None else int(time.time())
         existing_summaries: Dict[str, str] = {}
         for npc_name, npc in characters.items():
-            existing_summaries[npc_name] = self.get_character_summary(npc, world_id, conversation_start_ts)
+            existing_summaries[npc_name] = self.get_character_summary(npc, world_id, conversation_start_ts, include_heard_lines=False)
 
         try:
             self.__inner_monologue.save_thoughts(
@@ -689,7 +728,7 @@ class Summaries(Remembering):
         ts = save_timestamp if save_timestamp is not None else int(time.time())
         existing_summaries: Dict[str, str] = {}
         for npc_name, npc in characters.items():
-            existing_summaries[npc_name] = self.get_character_summary(npc, world_id, conversation_start_ts, keep_latest_since=True)
+            existing_summaries[npc_name] = self.get_character_summary(npc, world_id, conversation_start_ts, keep_latest_since=True, include_heard_lines=False)
 
         try:
             self.__personal_reflection.save_reflections(
@@ -812,12 +851,8 @@ class Summaries(Remembering):
             str: Path to the latest conversation summary file
         """
         # Remove trailing numbers from character names (e.g., "Whiterun Guard 1" -> "Whiterun Guard")
-        base_name: str = utils.remove_trailing_number(character.name)
-        name_ref: str = f'{base_name} - {character.ref_id}'
-        
-        def get_folder_path(folder_name: str) -> str:
-            return os.path.join(self.__game.conversation_folder_path, world_id, folder_name).replace(os.sep, '/')
-        
+        base_name: str = NpcFolder.base_name(character.name)
+
         def get_latest_file_number(folder_path: str) -> int:
             if not os.path.exists(folder_path):
                 return 1
@@ -829,22 +864,12 @@ class Summaries(Remembering):
             file_numbers = [int(os.path.splitext(f)[0].split('_')[-1]) for f in txt_files]
             return max(file_numbers)
         
-        # Check folders in priority order
-        name_ref_path = get_folder_path(name_ref)
-        name_path = get_folder_path(base_name)
-        
-        # Determine which folder path to use based on existence
-        if os.path.exists(name_ref_path):
-            target_folder = name_ref_path
-            if log_file_info:
-                logging.info(f"Loaded latest summary file from: {target_folder}")
-        elif os.path.exists(name_path):
-            target_folder = name_path
-            if log_file_info:
-                logging.info(f"Loaded latest summary file from: {target_folder}")
-        else:
-            target_folder = name_ref_path  # Use name_ref format for new folders
-            logging.info(f"{name_ref_path} does not exist. A new summary file will be created.")
+        # The 'Name - ref_id' folder, else the older 'Name' folder, else a new 'Name - ref_id' folder
+        target_folder = NpcFolder(self.__game.conversation_folder_path).path(world_id, character.name, character.ref_id)
+        if not os.path.exists(target_folder):
+            logging.info(f"{target_folder} does not exist. A new summary file will be created.")
+        elif log_file_info:
+            logging.info(f"Loaded latest summary file from: {target_folder}")
         
         latest_file_number = get_latest_file_number(target_folder)
         return f"{target_folder}/{base_name}_summary_{latest_file_number}.txt"
@@ -871,7 +896,8 @@ class Summaries(Remembering):
             characters_obj.add_or_update_character(char)
 
         memory_conversation_summaries = self.get_prompt_text(
-            characters_obj, world_id, include_private_thoughts=False, conversation_start_ts=conversation_start_ts
+            characters_obj, world_id, include_private_thoughts=False, conversation_start_ts=conversation_start_ts,
+            include_heard_lines=False, # Heard lines stay heard lines: a new summary doesn't swallow and repeat them
         )
         prompt_values: Dict[str, str] = {
             "name": names,
