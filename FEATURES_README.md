@@ -426,7 +426,7 @@ What this gives you:
 
 ### Where to find it
 
-**LLM** tab → **Feature Toggles** → **Auto Quest Tag Outcomes**, next to **Enable Character Tag Reading**.
+**Large Language Model** tab → **Feature Toggles** → **Auto Quest Tag Outcomes**, next to **Enable Character Tag Reading**.
 
 ### What are quest tags?
 
@@ -555,7 +555,7 @@ New developments since last meeting:
 ### Quick start
 
 1. Install the community package and Mantella-Spell (with `MantellaQuestChecks.dll`) with your mod manager.
-2. In Mantella, **LLM** tab → **Feature Toggles** → set **Auto Quest Tag Outcomes** to **Static** or **Dynamic**.
+2. In Mantella, **Large Language Model** tab → **Feature Toggles** → set **Auto Quest Tag Outcomes** to **Static** or **Dynamic**.
 3. Load a save and start a conversation. Mantella's log should show the first check:
 
 ```
@@ -1003,7 +1003,7 @@ Each type of LLM request has its own apply toggle in the **Model Profiles** tab 
 
 When a toggle is **enabled** and a profile exists for that type's model, the profile's JSON parameters are used instead of the type's own parameters.
 
-When a toggle is **disabled**, or the model has no profile, Mantella uses the parameters configured for that type (for conversations, the **LLM** tab: temperature, max tokens, stop sequences, etc.). Profiles are ignored for that type.
+When a toggle is **disabled**, or the model has no profile, Mantella uses the parameters configured for that type (for conversations, the **Large Language Model** tab: temperature, max tokens, stop sequences, etc.). Profiles are ignored for that type.
 
 ### Which profile each type uses
 
@@ -1018,6 +1018,7 @@ There are two ways a slot is chosen:
 | Multi-NPC conversations (also each NPC reply with the Game Master, when more than one NPC is present) | **Apply Profile for Multi-NPC Conversations**                                                  | The multi-NPC model, or the model picked from a multi-NPC random / sequential pool                                   | Weighted pick, each request  |
 | NPC Event Generator (invents NPC Events and Talk/Nearby/Random Events) | **Apply Profile for NPC Event Generator** (on by default)                                   | The NPC Event Generator model                                                                                         | Weighted pick, each request  |
 | [Fallback](#fallback-model) (a reply rejected or too slow)          | **Apply Profile for Fallback** (on by default)                                                 | The Fallback model                                                                                                    | Weighted pick, each request  |
+| [Advanced Actions](#npc-actions) (a separate model picks the actions) | **Apply Profile for Advanced Actions** (on by default)                                       | The Advanced Actions model, while **Separate Model for Advanced Actions** is on                                       | Weighted pick, each request  |
 | Game Master (also Shout, NPC Initiative and NPC Events)             | **Apply Profile for Game Master**                                                              | The Game Master LLM. Ignored when the Game Master uses a decision model, see [Game Master Mode](#game-master-mode)    | Profile 1                    |
 | Summaries                                                           | **Apply Profile for Summaries**                                                                | The summary model                                                                                                     | Profile 1                    |
 | Private thoughts                                                    | **Apply Profile for Private Thoughts** (on by default)                                         | Its own model. While it follows the summary model, the summary client and **Apply Profile for Summaries** are used   | Profile 1                    |
@@ -1184,14 +1185,14 @@ Only the text for the situation at hand is sent. In Shout, the LLM reads the fir
 | Prompt | Conditions |
 |---|---|
 | Skyrim Game Master Prompt | `director`, `shout`, `say_to_room`, `npc_event` |
-| Skyrim Game Master NPC Prompt | `director`, `shout`, `npc_event`, `audio_tags`, `moods`, `directions` |
+| Skyrim Game Master NPC Prompt | `director`, `shout`, `npc_event`, `audio_tags`, `moods`, `directions`, `word_styles` |
 | Skyrim Talk/Nearby/Random Event Generator Prompt | `talk_event`, `nearby_event`, `random_event`, `director` |
 | Skyrim Game Master Decision Instructions | `after_event` |
 | Skyrim Game Master Decision Player Criteria | `after_event` |
 | Skyrim Decision Nearby Criteria | `shout`, `say_to_room`, `npc_event` |
 | Skyrim Say To Room Decision Nobody Criteria | `director` |
 | Memory Prompt | `director` |
-| Skyrim Prompt, Skyrim Multi-NPC Prompt, Skyrim Multi-NPC Director Prompt, Skyrim NPC Initiative Prompt, Skyrim Radiant Conversation Prompt | `audio_tags`, `moods`, `directions` |
+| Skyrim Prompt, Skyrim Multi-NPC Prompt, Skyrim Multi-NPC Director Prompt, Skyrim NPC Initiative Prompt, Skyrim Radiant Conversation Prompt | `audio_tags`, `moods`, `directions`, `word_styles` |
 
 The first six used to be 18 separate prompts: the Director, Shout, Say To Room and NPC Event versions of the Game Master and Game Master NPC prompts, the Conversation, Nearby and Random Event Generator prompts (now the Talk/Nearby/Random Event Generator Prompt, not to be confused with the NPC Event Generator Prompt, which writes the scenes of NPC Events), the Decision Event Instructions and Event Player Criteria, and the Shout and NPC Event Decision Nearby Criteria. The built-in text of each situation is exactly what the old prompt said.
 
@@ -1242,7 +1243,7 @@ Sequential selection **takes priority** over per-request random LLM selection. I
 
 ### Where to find it
 
-**LLM** tab → **Enable Per-Request Sequential LLM (One-on-One)** and **Enable Per-Request Sequential LLM (Multi-NPC)**, and the matching **Sequential LLM Pool (One-on-One)** and **Sequential LLM Pool (Multi-NPC)** fields.
+**Large Language Model** tab → **Enable Per-Request Sequential LLM (One-on-One)** and **Enable Per-Request Sequential LLM (Multi-NPC)**, and the matching **Sequential LLM Pool (One-on-One)** and **Sequential LLM Pool (Multi-NPC)** fields.
 
 ### Use cases
 
@@ -1288,13 +1289,13 @@ Start a conversation and look at the log: you should see sequential picks cyclin
 
 Some services reject a request outright, for example when the model's content filter blocks it (the log shows `LLM API Error: An error occurred during streaming`). Without a fallback, that NPC's reply is skipped, and later replies in the same conversation often fail the same way.
 
-With **Use Fallback Model on LLM Errors** on, Mantella asks the Fallback model for that reply instead. This happens when the service returns an error before any text of the reply, and when the model hasn't started its reply within **LLM Response Timeout** (60 seconds at first). Without a Fallback model, the NPC then says "I can't find the right words at the moment." A reply cut off halfway is handled as before. The Fallback model is asked once per reply, and the next reply goes back to your normal model.
+With **Use Fallback Model on LLM Errors** on, Mantella asks the Fallback model for that reply instead. This happens when the service returns an error before any text of the reply, and when the model hasn't started its reply within **LLM Response Timeout** (120 seconds at first). Without a Fallback model, the NPC then says "I can't find the right words at the moment." A reply cut off halfway is handled as before. The Fallback model is asked once per reply, and the next reply goes back to your normal model.
 
 It applies to NPC replies in all conversations, NPC Events included. Summaries, the Game Master and the NPC Event Generator do not use it.
 
 ### Where to find it
 
-**LLM** tab → **Use Fallback Model on LLM Errors**, **Fallback LLM Service**, **Fallback Model** and **Fallback LLM Parameters**. **Apply Profile for Fallback** is with the other profile settings.
+**Large Language Model** tab → **Use Fallback Model on LLM Errors**, **Fallback LLM Service**, **Fallback Model** and **Fallback LLM Parameters**. **Apply Profile for Fallback** is with the other profile settings.
 
 ## Per-Character LLM and TTS Service
 
@@ -1308,7 +1309,7 @@ You set it in the character CSV, one row per NPC, with these columns:
 | --- | --- | --- |
 | `llm_service` | `or` (OpenRouter), `nano` (NanoGPT) or `openai` (OpenAI) | The service this NPC's model comes from |
 | `model` | The model name, as the service spells it, e.g. `deepseek/deepseek-v4-pro-0813` | The model this NPC talks with |
-| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`), `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), or the name of one of your [voice setups](#text-to-speech-services) | The voice service this NPC is voiced with |
+| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`), `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or the name of one of your [voice setups](#text-to-speech-services) | The voice service this NPC is voiced with |
 | `voice_effect` | The name of a [voice effect](#text-to-speech-services), e.g. `ghost`, or `none` | This NPC's voice effect, instead of the one their race gets. Only an effect ticked under **Voice Effects** is heard. The **Bio Editor**'s **Voice effect** list writes it for you |
 
 Leave a cell empty to use your normal setting for that NPC.
@@ -1319,7 +1320,7 @@ Leave a cell empty to use your normal setting for that NPC.
 - Both cells must be filled. With only one, or with a service Mantella doesn't know, the NPC uses your normal model and the log says why.
 - If a [random or sequential pool](#sequential-llm-selection) picks the model for a reply, the pool wins.
 - With **Apply Profile for One-on-One Conversations** on, the NPC's model uses its saved [model profile](#multiple-profile-system), if it has one. Otherwise it uses your normal LLM parameters.
-- The service needs its usual API key file, the same as when you pick it on the LLM tab.
+- The service needs its usual API key file, the same as when you pick it on the Large Language Model tab.
 
 **The voice service (`tts_service`)**
 
@@ -1331,7 +1332,7 @@ Leave a cell empty to use your normal setting for that NPC.
 
 ### Where to find it
 
-**LLM** tab → **Feature Toggles** → **Allow Per-Character LLM Overrides** (off by default). **TTS** tab → **TTS Service** is the voice service everyone else uses.
+**Large Language Model** tab → **Feature Toggles** → **Allow Per-Character LLM Overrides** (off by default). **Text-to-Speech** tab → **TTS Service** is the voice service everyone else uses.
 
 The columns go in the character CSV, or in a character override file (see [File structure & override system](#file-structure--override-system)). The base `skyrim_characters.csv` already has the first three. `voice_effect` works in an override file as it is; in a CSV of your own, add it as a column. It's used by Pocket TTS, ElevenLabs, Inworld, HeyGen, Qwen, Boson AI, Iodine and your voice setups.
 
@@ -1348,9 +1349,9 @@ The columns go in the character CSV, or in a character override file (see [File 
 }
 ```
 
-2. **LLM** tab → **Feature Toggles** → turn on **Allow Per-Character LLM Overrides**.
+2. **Large Language Model** tab → **Feature Toggles** → turn on **Allow Per-Character LLM Overrides**.
 3. **Other** → **Reload Character Data** → **Reload**.
-4. Talk to Serana alone. The log shows `Created per-character LLM client for Serana using OpenRouter with model: ...` and `TTS for Serana: using xVASynth with voice '...'`.
+4. Talk to Serana alone. The log shows `Created per-character LLM client for Serana using OpenRouter with model: ...` and `TTS for Serana: xVASynth speaks with ...`.
 
 ## Vanilla Dialogues
 
@@ -1411,13 +1412,13 @@ Use it when bios are long and you want to save tokens or keep the model focused 
 
 ### Where to find it
 
-**LLM** tab → **Enable Bio Section Filter (Single + Multi)**, the nested **Also Apply to Summary, Inner Thoughts, and Personal Reflection** toggle, and **Bio Sections to Exclude (comma-separated)**.
+**Large Language Model** tab → **Enable Bio Section Filter (Single + Multi)**, the nested **Also Apply to Summary, Inner Thoughts, and Personal Reflection** toggle, and **Bio Sections to Exclude (comma-separated)**.
 
 ### Quick start
 
 **1. Turn the filter on**
 
-In the **LLM** tab, enable **Enable Bio Section Filter (Single + Multi)**. Optionally enable **Also Apply to Summary, Inner Thoughts, and Personal Reflection** if you also want those memory prompts to omit the same sections.
+In the **Large Language Model** tab, enable **Enable Bio Section Filter (Single + Multi)**. Optionally enable **Also Apply to Summary, Inner Thoughts, and Personal Reflection** if you also want those memory prompts to omit the same sections.
 
 **2. List sections to remove**
 
@@ -1512,7 +1513,7 @@ I played it like it was nothing... But I will figure it out.
 
 ### Where to find it
 
-**LLM** tab → **Save Private Thoughts**, and **Thoughts and Reflections** → **Send Private Thoughts to LLM**. **Use Summary Model for Private Thoughts** picks which model writes them (see [Private thoughts model](#private-thoughts-model)).
+**Large Language Model** tab → **Save Private Thoughts**, and **Thoughts and Reflections** → **Send Private Thoughts to LLM**. **Use Summary Model for Private Thoughts** picks which model writes them (see [Private thoughts model](#private-thoughts-model)).
 
 **Prompts** tab → **Inner Monologue Prompt** (the generation prompt). Put `{private_thoughts}` in a **single-NPC** conversation prompt if it is not already there (the default Skyrim / Fallout 4 prompts include it). Multi-NPC and radiant prompts do not accept `{private_thoughts}` — thoughts are appended to each NPC's memory instead (can be toggled off).
 
@@ -1579,7 +1580,7 @@ By default, private thoughts are written by the **summary model** (same service,
 
 To give private thoughts their own model:
 
-1. **LLM** tab → turn off **Use Summary Model for Private Thoughts** (on by default).
+1. **Large Language Model** tab → turn off **Use Summary Model for Private Thoughts** (on by default).
 2. Pick **Private Thoughts LLM Service** and **Private Thoughts Model**, and set **Private Thoughts LLM Parameters** (and **Private Thoughts Custom Token Count** under **Advanced** if the model is not recognised).
 3. Optional: **Model Profiles** tab → **Apply Profile for Private Thoughts** (on by default) uses that model's saved [profile](#multiple-profile-system) (Profile 1) instead of the parameters above.
 
@@ -1652,7 +1653,7 @@ I expect they will keep walking into danger like it is nothing....
 
 ### Where to find it
 
-**LLM** tab → **Save Personal Reflection**, and **Thoughts and Reflections** → **Send Personal Reflection to LLM**. **Use Summary Model for Personal Reflection** picks which model writes them (see [Personal reflection model](#personal-reflection-model)).
+**Large Language Model** tab → **Save Personal Reflection**, and **Thoughts and Reflections** → **Send Personal Reflection to LLM**. **Use Summary Model for Personal Reflection** picks which model writes them (see [Personal reflection model](#personal-reflection-model)).
 
 **Prompts** tab → **Personal Reflection Prompt**.
 
@@ -1724,7 +1725,7 @@ If a file has **no** `ts=` markers (older / hand-edited text), Mantella falls ba
 
 Like [private thoughts](#private-thoughts-model), reflections use the **summary model** by default and can have their own:
 
-1. **LLM** tab → turn off **Use Summary Model for Personal Reflection** (on by default).
+1. **Large Language Model** tab → turn off **Use Summary Model for Personal Reflection** (on by default).
 2. Pick **Personal Reflection LLM Service** and **Personal Reflection Model**, and set **Personal Reflection LLM Parameters** (and **Personal Reflection Custom Token Count** under **Advanced** if the model is not recognised).
 3. Optional: **Model Profiles** tab → **Apply Profile for Personal Reflection** (on by default) uses that model's saved [profile](#multiple-profile-system) (Profile 1) instead of the parameters above.
 
@@ -1851,7 +1852,7 @@ Ysolda: Come on, let's keep moving.
 
 **Thoughts and the sentence cap**
 
-> **⭐ Recommended: turn on Read Turn Thoughts After Sentence Cap** (**LLM** tab → **Thoughts and Reflections**). With it off, any reply that hits the sentence cap loses its thought.
+> **⭐ Recommended: turn on Read Turn Thoughts After Sentence Cap** (**Large Language Model** tab → **Thoughts and Reflections**). With it off, any reply that hits the sentence cap loses its thought.
 
 Thoughts come **after** the spoken lines, so **Max Sentences per Response** can cut the reply off before the thought is written. **Read Turn Thoughts After Sentence Cap** decides what happens:
 
@@ -1868,7 +1869,7 @@ Thoughts come **after** the spoken lines, so **Max Sentences per Response** can 
 
 **Prompts** tab — the conversation prompt has to ask for them (see the note above).
 
-**LLM** tab → **Thoughts and Reflections** → **Turn Thoughts to Keep** and **Read Turn Thoughts After Sentence Cap**.
+**Large Language Model** tab → **Thoughts and Reflections** → **Turn Thoughts to Keep** and **Read Turn Thoughts After Sentence Cap**.
 
 **Conversation** tab — turn thoughts show up as **💭 Thought** rows.
 
@@ -1888,7 +1889,7 @@ Thoughts come **after** the spoken lines, so **Max Sentences per Response** can 
 
    In the multi-NPC prompt, also paste the [multi-NPC example](#turn-thoughts) above as a response format example, so the LLM puts every NPC's thought at the end. Swap `<<action next turn Full Name>>` for [your own tags](#turn-thoughts) if you want to track something else.
 
-2. **Recommended:** **LLM** tab → **Thoughts and Reflections** → turn on **Read Turn Thoughts After Sentence Cap**, so the sentence cap does not cut off the thoughts.
+2. **Recommended:** **Large Language Model** tab → **Thoughts and Reflections** → turn on **Read Turn Thoughts After Sentence Cap**, so the sentence cap does not cut off the thoughts.
 3. Talk to the NPC. The thought is not spoken.
 4. Open **Conversation** → **Reload**. The thought shows as a **💭 Thought** row under the reply.
 5. On the next turn, check the prompt log: the last reply ends with the `<<thought ...>>` line.
@@ -1920,11 +1921,11 @@ At least **one** sentence is always kept. Set to **0** to disable (default).
 
 ### Where to find it
 
-**LLM** tab → **Quality of Life** → **Drop Last Sentences**.
+**Large Language Model** tab → **Quality of Life** → **Drop Last Sentences**.
 
 ### Quick start
 
-1. Open the **LLM** tab.
+1. Open the **Large Language Model** tab.
 2. Set **Drop Last Sentences** to `1` (a common starting point).
 3. Talk to an NPC. Trailing questions / wrap-up lines should disappear from speech and from the live history.
 
@@ -1942,11 +1943,11 @@ It is meant for **single-NPC and multi-NPC** player conversations, but radiant c
 
 ### Where to find it
 
-**LLM** tab → **Quality of Life** → **Send Only Bios (Single + Multi)**.
+**Large Language Model** tab → **Quality of Life** → **Send Only Bios (Single + Multi)**.
 
 ### Quick start
 
-Enable it in the **LLM** tab, start (or continue, with hot swap) a conversation, and confirm the prompt has bios but no “summary of past events” / thought block. Turn it off to send memories again.
+Enable it in the **Large Language Model** tab, start (or continue, with hot swap) a conversation, and confirm the prompt has bios but no “summary of past events” / thought block. Turn it off to send memories again.
 
 ## Reload Character Data
 
@@ -1985,7 +1986,7 @@ Suppose you just added a tag in `Documents\\My Games\\Mantella\\data\\Skyrim\\bi
 
 Normally Mantella writes a conversation summary (and log, if enabled) when a conversation **ends**. **Save Summary Now** triggers that save **immediately** while the conversation **keeps going**.
 
-The two nested toggles (both **on** by default) only affect **this button**. They do **not** change what happens when a conversation ends — that is still **Save Private Thoughts** / **Save Personal Reflection** on the LLM tab.
+The two nested toggles (both **on** by default) only affect **this button**. They do **not** change what happens when a conversation ends — that is still **Save Private Thoughts** / **Save Personal Reflection** on the Large Language Model tab.
 
 
 | Nested toggle                     | Extra work on this click                                                                                       |
@@ -2109,7 +2110,7 @@ Warnings and errors always show, whatever you pick, except Quest tags' warnings 
 | Startup | Mantella's version, its folders, the game, and the settings page link | All your settings | Short |
 | Timings | How long each reply took: the LLM, the voice, and in total | How long every step took | Off |
 
-Each line in the window starts with its topic, e.g. `[Voices] Lydia uses FemaleNord`, so you can tell at a glance where it comes from. Spoken lines have no topic and stand out, so the conversation reads like a script.
+Each line in the window starts with its topic, e.g. `[Voices] TTS for Lydia: Pocket TTS speaks with ...`, so you can tell at a glance where it comes from. Spoken lines have no topic and stand out, so the conversation reads like a script.
 
 The log file starts each run with Mantella's version and what each topic was set to, and notes it when you change a topic. When you send a log with a bug report, set the topics you are asking about to **Full** first.
 
@@ -2144,7 +2145,7 @@ Character CSV / bio template / lorebook file edits are different — those still
 
 1. Confirm **Other → Enable Hot-Swap Settings** is on.
 2. Start (or continue) a conversation with an NPC.
-3. Open the **LLM** tab and turn **Enable Bio Section Filter (Single + Multi)** on or off (optionally edit **Bio Sections to Exclude (comma-separated)**).
+3. Open the **Large Language Model** tab and turn **Enable Bio Section Filter (Single + Multi)** on or off (optionally edit **Bio Sections to Exclude (comma-separated)**).
 4. Keep talking in-game — on the next reply, the prompt uses the new filter state without ending the conversation.
 
 **Another example:** change a prompt or LLM parameter while chatting; with hot swap on, the next turn uses the updated settings instead of restarting the conversation.
@@ -2161,7 +2162,7 @@ Character CSV / bio template / lorebook file edits are different — those still
 
 ### What it does
 
-Shows the **active conversation as a table** so you can inspect it, edit a bad turn, or undo without ending the chat. Each row is one line: a player message, one NPC sentence, an in-game event, or an NPC joining/leaving. The **Kind** column tells them apart: **Speech**, **Narration**, **💭 Thought** (an NPC's [turn thought](#turn-thoughts), never spoken aloud), **Player**, **Director**, **System**, **Event** (an in-game event sent with that message, including the events picked on the [Conversation Wheel](#talk-nearby-and-random-events) and the opening scene of an [NPC Event](#npc-events)), **Joined**, **Left**. The **#** column groups sentences by reply (`3.1`, `3.2` are sentences of message 3; `3.e1` is the first event sent with message 3). Event rows can be edited and deleted like the others.
+Shows the **active conversation as a table** so you can inspect it, edit a bad turn, or undo without ending the chat. Each row is one line: a player message, one NPC sentence, an in-game event, or an NPC joining/leaving. The **Kind** column tells them apart: **Speech**, **Narration**, **💭 Thought** (an NPC's [turn thought](#turn-thoughts), never spoken aloud), **Player**, **Director**, **System**, **Event** (an in-game event sent with that message, including the events picked on the [Conversation Wheel](#talk-nearby-and-random-events) and the opening scene of an [NPC Event](#npc-events)), **Vanilla Dialogue** (a line of Skyrim's own the NPCs heard during the conversation, see [Vanilla Dialogues](#vanilla-dialogues)), **Joined**, **Left**. The **#** column groups sentences by reply (`3.1`, `3.2` are sentences of message 3; `3.e1` is the first event sent with message 3, `3.v1` the first Vanilla Dialogue line). Event and Vanilla Dialogue rows can be edited and deleted like the others.
 
 When a model returns garbage, a duplicated line, or you misspoke, you do not have to live with that text in history (and later in the summary). Reload the current thread, fix it, save it back.
 
@@ -2375,7 +2376,7 @@ Start the decision model's server first, following its own instructions. It must
 
 *Set up Mantella*
 
-On the **LLM** tab:
+On the **Large Language Model** tab:
 
 1. Turn on **Multi-NPC Game Master Mode**, and leave **Use Decision Model for Game Master** on (the default).
 2. In **Game Master Decision Service**, type the full address the server gives for decision requests, e.g. `http://localhost:8009/v1/systemone`. Mantella sends requests to exactly that address and adds nothing to it.
@@ -2420,7 +2421,7 @@ Even with no limit, the oldest lines are dropped from the Game Master's request 
 
 ### Where to find it
 
-**LLM** tab → **Multi-NPC Game Master Mode** and (**Thoughts and Reflections**) **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** (and **Game Master Custom Token Count** under **Advanced**, for a decision model on your own computer) — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction**, and, in **All Conversations**, **Game Master Spoken To Threshold** and **Game Master Message Limit**.
+**Large Language Model** tab → **Multi-NPC Game Master Mode** and (**Thoughts and Reflections**) **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** (and **Game Master Custom Token Count** under **Advanced**, for a decision model on your own computer) — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction**, and, in **All Conversations**, **Game Master Spoken To Threshold** and **Game Master Message Limit**.
 
 **Prompts** tab → **Skyrim Game Master Prompt**, **Skyrim Game Master NPC Prompt**, and the three decision prompts (**Skyrim Game Master Decision Instructions**, **Skyrim Game Master Decision NPC Criteria**, **Skyrim Game Master Decision Player Criteria**). Who a line was spoken to is asked with **Skyrim Shout Decision Spoken To Criteria**, **Skyrim Shout Decision Not Spoken To Criteria**, **Skyrim Shout Decision Part Of Event Criteria** and **Skyrim Shout Decision Not Part Of Event Criteria**, and **Skyrim Shout Group Answer Note** asks for a short answer; despite their names, these are used in every group conversation with the Game Master, not only in Shout. All of them can be overlaid with [prompt profiles](#prompt-profiles).
 
@@ -2429,7 +2430,7 @@ Even with no limit, the oldest lines are dropped from the Game Master's request 
 ### Quick start
 
 1. Make sure your OpenRouter key is in `GPT_SECRET_KEY.txt` (or your NanoGPT key in `NANOGPT_SECRET_KEY.txt` and switch **Game Master Decision Service** to **NanoGPT**).
-2. **LLM** tab → turn on **Multi-NPC Game Master Mode**. Leave **Use Decision Model for Game Master** on.
+2. **Large Language Model** tab → turn on **Multi-NPC Game Master Mode**. Leave **Use Decision Model for Game Master** on.
 3. Start a conversation in Skyrim with two or more NPCs and say something.
 4. Check the log. Each decision is logged, for example:
 
@@ -2502,13 +2503,13 @@ What your prompts say about you is up to them: variables like `{player_name}` or
 
 ### Where to find it
 
-**LLM** tab → **Multi Conversation Director Mode**.
+**Large Language Model** tab → **Multi Conversation Director Mode**.
 
 **Prompts** tab → **Skyrim Multi-NPC Director Prompt** (without Game Master Mode), and the `{if director}` parts of the **Skyrim Game Master Prompt** and **Skyrim Game Master NPC Prompt** (with [Game Master Mode](#game-master-mode), and always in Shout; see [Conditional blocks](#conditional-blocks)). **Max NPC Turns per Direction** and the talk settings (**Use its own settings**) in the **Director Mode** section of the **Conversation** page.
 
 ### Quick start
 
-1. **LLM** tab → turn on **Multi Conversation Director Mode** (optionally also [Multi-NPC Game Master Mode](#game-master-mode)).
+1. **Large Language Model** tab → turn on **Multi Conversation Director Mode** (optionally also [Multi-NPC Game Master Mode](#game-master-mode)).
 2. Start a conversation with one or more NPCs.
 3. Type a direction, for example *Lydia and Serana sit by the fire after a long day of travel.*
 4. Let the NPCs talk. Send `.` to keep it going, or type a new direction to change the scene.
@@ -2745,6 +2746,8 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 | **NPC Initiative** | **NPC Initiative Threshold**: how sure Mantella must be before a nearby NPC walks up to you and starts a conversation |
 | **Conversation Event**, **Nearby Event**, **Random Event** (one section each) | **Use its own settings** and its talk settings, **Send the Conversation So Far**, **Include Me** and **Max NPC Turns per Player Turn** |
 | **Watched NPC Event** | **Use its own settings** and its talk settings, **Most Replies per Person**, and the NPC Event scene settings |
+| **Vanilla Dialogues** | How long NPCs remember Skyrim's own lines they heard. See [Vanilla Dialogues](#vanilla-dialogues) |
+| **Actions** | Which actions NPCs may use in each kind of conversation. See [NPC Actions](#npc-actions) |
 
 ### Quick start
 
@@ -2876,7 +2879,7 @@ While you have not joined, the scene ends:
 
 When the scene ends, the conversation ends like any other: with **Enable Conversation Summaries** on, the participants' summaries are saved, so they remember what happened.
 
-**Mantella settings** (the model on the **LLM** tab, the rest on the **Conversation** page → **Watched NPC Event**)
+**Mantella settings** (the model on the **Large Language Model** tab, the rest on the **Conversation** page → **Watched NPC Event**)
 
 
 | Setting                                | Default                     | What it does                                                                                                                      |
@@ -2909,7 +2912,7 @@ When the scene ends, the conversation ends like any other: with **Enable Convers
 
 In game: **MCM → Mantella → Events** → **NPC Event** section (the page was called NPC Events), and **NPC Event** on the [Conversation Wheel](#conversation-wheel). Requires the Mantella game plugin version that includes this page.
 
-**LLM** tab → **NPC Event Generator LLM Service**, **NPC Event Generator Model**, **NPC Event Generator LLM Parameters** (and **NPC Event Generator Custom Token Count** under **Advanced**), plus, on the **Conversation** page, **Max Participants**, **Player Notice Delay**, **Max Lines Without Player**, **Wind-Down Lines** and, in the **Watched NPC Event** section, its talk settings.
+**Large Language Model** tab → **NPC Event Generator LLM Service**, **NPC Event Generator Model**, **NPC Event Generator LLM Parameters** (and **NPC Event Generator Custom Token Count** under **Advanced**), plus, on the **Conversation** page, **Max Participants**, **Player Notice Delay**, **Max Lines Without Player**, **Wind-Down Lines** and, in the **Watched NPC Event** section, its talk settings.
 
 **Prompts** tab → **Skyrim NPC Event Generator Prompt** and **Skyrim NPC Event Wind-Down Prompt**, and the `{if npc_event}` parts of the **Skyrim Game Master Prompt**, **Skyrim Game Master NPC Prompt** and **Skyrim Decision Nearby Criteria** (see [Conditional blocks](#conditional-blocks)). All of them can be overlaid with [prompt profiles](#prompt-profiles).
 
@@ -2918,7 +2921,7 @@ In game: **MCM → Mantella → Events** → **NPC Event** section (the page was
 ### Quick start
 
 1. Set up the Game Master model as in [Game Master Mode](#game-master-mode) → **Quick start** step 1. You do not need to turn on **Multi-NPC Game Master Mode**.
-2. **LLM** tab → pick **NPC Event Generator LLM Service** and **NPC Event Generator Model**. A creative roleplay model works better here than a summary model.
+2. **Large Language Model** tab → pick **NPC Event Generator LLM Service** and **NPC Event Generator Model**. A creative roleplay model works better here than a summary model.
 3. In game, bind **MCM → Mantella → Events → NPC Event → Check Now** (or use **NPC Event** on the [Conversation Wheel](#conversation-wheel)), and optionally turn on **Show Debug Messages**.
 4. Stand near a few NPCs and press **Check Now**. Check the log for the scene, for example:
 
@@ -3004,11 +3007,11 @@ In game: **Talk Event**, **Nearby Event** and **Random Event** on the [Conversat
 
 **Prompts** tab → **Skyrim Talk/Nearby/Random Event Generator Prompt** (with its `{if talk_event}`, `{if nearby_event}` and `{if random_event}` parts), and the `{if after_event}` parts of **Skyrim Game Master Decision Instructions** and **Skyrim Game Master Decision Player Criteria**.
 
-The events are written by the NPC Event Generator model (**LLM** tab), whether [NPC Events](#npc-events) are on or not.
+The events are written by the NPC Event Generator model (**Large Language Model** tab), whether [NPC Events](#npc-events) are on or not.
 
 ### Quick start
 
-1. Set up the Game Master model as in [Game Master Mode](#game-master-mode) → **Quick start** step 1, and pick an **NPC Event Generator Model** on the **LLM** tab.
+1. Set up the Game Master model as in [Game Master Mode](#game-master-mode) → **Quick start** step 1, and pick an **NPC Event Generator Model** on the **Large Language Model** tab.
 2. Turn on **Multi-NPC Game Master Mode**.
 3. In game, start a conversation, hold the wheel key and pick **Talk Event**.
 4. Read what happened, close the box, and listen to the NPCs react.
@@ -3019,7 +3022,7 @@ The events are written by the NPC Event Generator model (**LLM** tab), whether [
 - With **Multi-NPC Game Master Mode** off, the events do nothing: you get the note *Events need Game Master Mode*.
 - In a one-on-one conversation, the Game Master is asked once who reacts first to a Talk Event, then it's back to normal.
 - If nothing is written or the request fails, you get the note *Nothing happened* and it's your turn. A Nearby Event with nobody nearby gives *Nobody is nearby*.
-- Pressing **End** while the event is being written cancels it.
+- Ending the conversation while the event is being written cancels it.
 - With [Director Mode](#multi-conversation-director-mode) on, the events are never about you.
 - The full rules are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Events".
 
@@ -3047,7 +3050,7 @@ NPCs can do things while they talk. An NPC starts its line with the action's nam
 | Listen | Gives you more time to speak | Say or type "listen" (see below), or ask them to hear you out |
 | Look | Sees what you see (needs Vision on), see below | Ask them to look at something, or what they see |
 
-The last column is what the NPC is told to react to. The NPC still decides whether to do it, and you can also type just the action's name (see below). On by default: Attack, Inventory, Barter, Flee and MoveTo in One-on-one, Group and Shout conversations, and StandDown in every kind. The others start off.
+The last column is what the NPC is told to react to. The NPC still decides whether to do it, and you can also type just the action's name (see below). On by default: Attack, Flee, MoveTo and StandDown in every kind of conversation, and Inventory and Barter in One-on-one, Group and Shout conversations. The others start off. (Where the NPCs don't know you're there, Attack, Flee and MoveTo only do something with Advanced Actions on, see below.)
 
 With **Advanced Actions** on, NPCs can also use these. They are off by default:
 
@@ -3095,7 +3098,7 @@ How actions fit the kinds of conversation:
 
 **Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
 
-**LLM** tab → **Separate Model for Advanced Actions**: a separate model picks the actions, set with **Advanced Actions LLM Service** and **Advanced Actions Model**, so each NPC keeps its own model for speaking, even one that can't pick actions. Its instructions are the **Advanced Actions Prompt** on the **Prompts** tab. That model must be able to pick actions (on OpenRouter, models that can call tools); it starts as the same model as the Game Master Model's default, which can. With one that can't, no action happens, and the log says why. Mantella doesn't check that a model can pick actions: keep models that can't out of the random model pool while Advanced Actions is on, unless a separate model picks them.
+**Large Language Model** tab → **Separate Model for Advanced Actions**: a separate model picks the actions, set with **Advanced Actions LLM Service** and **Advanced Actions Model**, so each NPC keeps its own model for speaking, even one that can't pick actions. Its instructions are the **Advanced Actions Prompt** on the **Prompts** tab. That model must be able to pick actions (on OpenRouter, models that can call tools); it starts as the same model as the Game Master Model's default, which can. With one that can't, no action happens, and the log says why. Mantella doesn't check that a model can pick actions: keep models that can't out of the random model pool while Advanced Actions is on, unless a separate model picks them.
 
 Emote's animations are listed in `data/Skyrim/skyrim_idles.csv`: the ones with an `x` in the `enabled` column can be used. A row whose id starts with `xx` belongs to another game file, which Emote can't play, so it is skipped even when marked.
 
@@ -3162,7 +3165,7 @@ In game: **MCM → Mantella → General → Controls → Open Conversation Wheel
 
 - Skyrim only.
 - The wheel's text spaces are small, so names and descriptions are short, and anything longer is shrunk to fit.
-- The options that need the Game Master (Say, Shout, the events) give you a note when it isn't set up.
+- The options that need the Game Master (Say to Room, Shout, the events) give you a note when it isn't set up.
 
 ## Interrupt Hotkey
 
@@ -3174,7 +3177,7 @@ Press the hotkey while NPCs are talking to cut them off and take the turn:
 - You get the turn. The game shows an `Interrupting...` notification.
 - Your next message carries an `Interrupting...` event, so the NPCs know they were cut off and can react to it.
 
-This works with text input. Before, only the microphone could interrupt (**STT** tab → **Allow Interruption**, which still works the same way).
+This works with text input. Before, only the microphone could interrupt (**Speech-to-Text** tab → **Allow Interruption**, which still works the same way).
 
 Nothing happens when:
 
@@ -3208,7 +3211,7 @@ Example: you spot a dragon on a ridge, press Show, turn to Lydia and say "What d
 - It needs a model that can read pictures: your conversation model, or the **Custom Vision Model** in the **Vision** tab. If the model can't read it, you hear the error sound and the NPC answers without it.
 - With Vision on, the NPCs use the picture you showed for that line instead of a new one.
 - The picture uses the **Vision** tab's settings (size, quality). The game window must be visible on screen.
-- To check what the NPCs saw, open `Documents\My Games\Mantella\data	mp\images\last_picture.jpg` (**Vision** tab → **Save Screenshots**, on by default). Only the newest picture is kept, from Show or Vision: each one replaces the one before, so the folder never grows. Screenshots saved one by one by older versions are removed when Mantella starts.
+- To check what the NPCs saw, open `Documents\My Games\Mantella\data\tmp\images\last_picture.jpg` (**Vision** tab → **Save Screenshots**, on by default). Only the newest picture is kept, from Show or Vision: each one replaces the one before, so the folder never grows. Screenshots saved one by one by older versions are removed when Mantella starts.
 
 In [Director Mode](#multi-conversation-director-mode), your character isn't in the scene, so the NPCs are told it's how the scene looks right now.
 
@@ -3344,13 +3347,13 @@ The handshake is only sent with **After system prompt**.
 
 ### Where to find it
 
-**LLM** tab → **Quality of Life** → **Enable Decensor Bypass** (off by default) and **Decensor Assistant Placement**.
+**Large Language Model** tab → **Quality of Life** → **Enable Decensor Bypass** (off by default) and **Decensor Assistant Placement**.
 
 **Prompts** tab → **Decensor Handshake Prompt** and **Decensor Assistant Prompt**. Both can be overlaid with [prompt profiles](#prompt-profiles).
 
 ### Quick start
 
-1. **LLM** tab → **Quality of Life** → turn on **Enable Decensor Bypass**.
+1. **Large Language Model** tab → **Quality of Life** → turn on **Enable Decensor Bypass**.
 2. Optional: adjust the two prompts in the **Prompts** tab to fit your model or setting, and pick a **Decensor Assistant Placement**.
 3. Start a conversation, then check the request in the log to see what is being sent.
 
@@ -3385,7 +3388,7 @@ It applies to one-on-one, multi-NPC, summary, private thoughts, personal reflect
 
 ### Where to find it
 
-**LLM** tab → **Advanced** → **LLM Response Timeout** (seconds, default **120**, range 1–999).
+**Large Language Model** tab → **Advanced** → **LLM Response Timeout** (seconds, default **120**, range 1–999).
 
 ## Which Voice and Speech Service to Pick
 
@@ -3495,7 +3498,7 @@ Their first line waits up to 10 seconds for those lines, so it's in their own vo
 - **Switching services:** if the new one wants more lines than a voice has, Mantella asks the game for more the next time that voice speaks. Your own changes stay; the new lines go after them.
 - **Voice mods work.** The clip is the line you hear in game. Install a voice replacer later and Mantella takes the same line again in the new voice. An NPC with a voice mod just for them (a new voice for Lydia) gets a voice of their own.
 - **NPCs with no voice lines** (such as an unvoiced follower) use the voice type in their `skyrim_voice_folder` column, or else the one for their race and gender (an Imperial man gets Male Even Toned).
-- **The narrator** uses the voice type in **Narrator Voice**.
+- **The narrator** uses the voice type in **Narrator voice** (**Large Language Model** tab → **Narrations**).
 - This needs `MantellaVoiceClips.dll`, which comes with the game add-on. Clips are kept in `Documents\My Games\Mantella\voice_clips\`.
 
 <details>
