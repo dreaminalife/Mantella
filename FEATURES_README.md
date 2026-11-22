@@ -1230,8 +1230,6 @@ The first six used to be 18 separate prompts: the Director, Shout, Say To Room a
 
 Only the display changes: what is saved and sent is the plain text.
 
-**For developers.** The tags are applied by `apply_conditions` in `src/prompt_conditions.py`. Each merged prompt's conditions are in `PromptDefinitions.PROMPT_CONDITIONS`, the preview situations in `PREVIEW_SITUATIONS`. The conversation types pass the conditions (`prompt_conditions` in `src/conversation/conversation_type.py`), and `Context.generate_system_message` applies them after the shared sections are expanded and before the lorebook search. `tests/test_prompt_snapshots.py` holds the text sent in each situation, recorded before the merge. The colours come from `src/ui/prompt_highlight.py`: a script draws a coloured copy of the text behind each box with the `prompt-highlight` class, and makes the box's own text transparent. The box's `ph-type-<prompt type>` class (`prompt_box_classes`) tells it which conditions that prompt knows; the profile editor updates it with the chosen prompt type. If drawing fails, the box goes back to plain text, and the script sets its own layout styles, so it doesn't depend on style.css. Its tag patterns mirror `TAG_RE` and `_NEAR_MISS_RE`; `tests/ui/test_prompt_highlight.py` runs the script in Node.
-
 ## Sequential LLM Selection
 
 ### What it does
@@ -1358,10 +1356,12 @@ The columns go in the character CSV, or in a character override file (see [File 
 
 ### What it does
 
-NPCs remember Skyrim's own voiced lines they hear: lines from scenes, such as Mikael flirting with Carlotta in the Bannered Mare, and what you say in the dialogue menu. Talk to Mikael that evening and he knows Carlotta turned him down. Saadia, at the bar nearby, can mention it if you ask. Hulda, upstairs, heard nothing.
+Skyrim has its own voiced lines: the scenes NPCs play out with each other, and the talk you pick in the dialogue menu. Vanilla Dialogues lets NPCs remember those lines when they hear them. The people talking remember what they said, and anyone close enough remembers what they overheard. Later, when you talk to them through Mantella, they know what was said and who said it. NPCs who were too far away know nothing about it.
+
+For example, Mikael flirts with Carlotta in the Bannered Mare and she turns him down. Talk to Mikael that evening and he knows it happened. Saadia, at the bar nearby, can mention it if you ask. Hulda, upstairs, heard nothing.
 
 - **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Mikael says to Carlotta: "..."*. When Mikael or Carlotta is in the conversation, it leaves out "Nearby": *Mikael says to Carlotta: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
-- **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for a few in-game days. Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
+- **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for 3 in-game days at first (change it with **Vanilla Dialogue Memory (Days)**). Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
 - **Overheard:** NPCs near a scene remember it as overheard, so they don't answer it as if it was said to them.
 - **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
 - **Older saves:** load a save from before a scene and NPCs forget it, once you next talk to someone.
@@ -1373,32 +1373,24 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 
 - **Mantella MCM** -> **Vanilla Dialogues** page: **Enabled** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
 - **Conversation Wheel** -> **Vanilla Dialogues** turns it on or off without opening the MCM.
-- **Other** tab (Advanced) -> **Vanilla Dialogue Memory (Days)**, **Most Vanilla Dialogue Lines per NPC** and **Lines That Only Open a Menu**.
+- **Conversation** page -> **Vanilla Dialogues** section: **Vanilla Dialogue Memory (Days)** (how many in-game days NPCs remember a line, 3 at first), **Most Vanilla Dialogue Lines per NPC** and **Ignored Dialogue Menu Choices**.
 
 ### Quick start
 
 1. Install the MantellaHeardLines plugin and the updated game add-on.
-2. In Whiterun, wait in the Bannered Mare until Mikael talks to Carlotta.
-3. Talk to Mikael or Saadia through Mantella and ask what just happened.
+2. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is on by default, but stays off if you turned off **Enable Vanilla Dialogue Awareness** in an older version of Mantella.
+3. In Whiterun, wait in the Bannered Mare until Mikael talks to Carlotta.
+4. Talk to Mikael or Saadia through Mantella and ask what just happened.
 
-A mod's menu line that only opens a menu, such as its settings, is not worth remembering. Add it to **Lines That Only Open a Menu**, with commas between lines and * for any text: `*orders for you*`.
+**Ignored Dialogue Menu Choices** is a list of choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history (it never touches scenes NPCs play out with each other): the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings. Without the list, Lydia's history could hold *You said "I want you to..", and she said "Yes?"*, and she might bring it up. When you pick a choice on the list, neither your choice nor the NPC's reply is added to the history. The list already has the follower commands' **I want you to..** and Mantella's own **Goodbye. (Remove from Mantella conversation)**.
 
-### For developers
+Only the NPC's reply to that one choice is left out. If the choice opens more choices, like **I want you to..** opening **Wait here**, what you pick next and the NPC's reply to it are kept as usual, unless that choice is on the list too. Other people nearby don't get the left-out reply either.
 
-- The plugin catches lines from `RE::TESTopicInfoEvent` and keeps them in the save. The game add-on hands them over under `mantella_heard_lines` (`comm_consts.KEY_HEARDLINES`) with the start, continue, player input, event and NPC check requests.
-- `src/heard_lines/`: `HandOver.parse` reads them, `GameHeardLinesReceiver` sorts each line into the running conversation or into a listener's memory, `JsonHeardLinesStore` keeps `heard_lines.json` in each NPC's folder (chosen by `NpcFolder`, like the summaries) and the latest game time in `<world_id>/heard_lines_now.json`, and `PlainHeardLinesText` writes them in third person.
-- In a conversation they wait in the context apart from the in-game events, so Max Count Events, Ignored In-Game Events and Tidier In-Game Events never touch them. The log shows them under "Heard nearby since previous exchange", with Vanilla Dialogues at Full. When the conversation ends, every line that went into it (or was still waiting) is kept as a heard line by the people in it who heard it, whether or not a summary is written. Not earlier: a prompt built again during the conversation (a join, each Game Master turn) would show the line twice.
-- In memory they are merged into the timeline by real time, never into "New developments". Writing a summary, thoughts or a reflection leaves them out.
-- A game time earlier than the latest one seen in a playthrough means an older save was loaded: every NPC of that playthrough loses the lines from after it.
-- Tests: `tests/heard_lines/`, the plugin's own unit tests (run on GitHub with every push), and the add-on checks in `tests/test_game_scripts.py`.
-- In-game test: `tests/ingame/heard_lines/heard_lines_ingame.py` with `MantellaHeardLinesTest.psc` in Mantella-Spell. The game plays Vignar and Olfrid's argument in the Bannered Mare five times under different settings, with people placed near, far, disabled and dead, and hands the lines over with its usual requests. The script checks what the game sent and what each NPC keeps, PASS or FAIL:
-  1. Run `python tests/ingame/heard_lines/heard_lines_ingame.py setup --game "<Skyrim folder>"` and restart Mantella. Use text input.
-  2. Load a save where Vignar Gray-Mane, Olfrid Battle-Born, Hulda and Mikael are alive. Console: `bat mhl`. It saves as `mhl_before` and runs by itself until "run 1 done".
-  3. Console: `bat mhl2`. It saves and loads the game. Then do what the two messages say: ask Hulda a question, ask to rent a room, pick Mantella's line, then open and close Vignar's dialogue. Wait for "run 2 done" and press Enter in the script's window. To do run 2 again, load `mhl_waiting` from the Load menu: typing `bat mhl2` again saves over it in the middle of run 2.
-  4. Console: `bat mhl3`. It loads `mhl_before`. Wait for "done" and press Enter. The script puts your config.ini back and removes its batch files and saves.
+To add a choice, for example a mod's menu line that keeps showing up in the Vanilla Dialogue history:
 
-  It covers the words, who a line was said to, who heard it (near, far, disabled, dead, never the player), whether the player was there, Nearby NPCs Overhear off, Vanilla Dialogues off, a scene during a conversation (narration, kept when it ends), Mantella's own lines and menu line never caught, lines waiting in a save and the most waiting lines, dialogue-menu talk and a greeting, Lines That Only Open a Menu, each line kept once, and loading an older save.
-  Not covered, check by hand: what the AI makes of the lines, a forced greeting's question, scenes with three or more people, other mods' scenes, game versions other than yours, non-English games, a new game (`coc whiterun` from the main menu), the upgrade of an old save, and the old Mantella Vanilla Dialogue mod's warning.
+1. Open the **Conversation** page -> **Vanilla Dialogues** section -> **Ignored Dialogue Menu Choices**.
+2. Type a comma at the end of the list, then the choice exactly as it shows in the dialogue menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
+3. Use `*` for any text, so you only need part of a choice: `*orders for you*` catches every choice with "orders for you" in it, and `Rent a room*` catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
 
 ## Bio Sections to Exclude
 
@@ -2127,18 +2119,6 @@ The LLM and web libraries Mantella uses only show their warnings and errors.
 
 **Other** tab → **Log**. There is one row for each topic, with Off, Short and Full (and Prompt and replies for LLM requests and replies). This replaces the old **Debug Mode** and **Show HTTP Debug Messages** switches.
 
-### For developers
-
-- `src/logs/`: `LogTopic` (the topics, with their labels, colours, defaults and the Short and Full texts the settings page shows), `LogDetail` (Off, Short and Full are the levels WARNING, INFO and DEBUG), `get_topic_logger(topic)` (the logger `mantella.<topic>`), `spoken_line(...)`, `hold_players_line(...)` (the player's line waits so it shows right above the reply, after the lines about asking the LLM; the next spoken line, the conversation ending, an error or an actions-only reply shows it through `show_players_line()`), and `ILogSetup` / `MantellaLogSetup`, which starts the window and file log and applies the choices.
-- Prompt and replies: a topic with a `prompt_text` offers it (`LogTopic.details`). Its topic logger is at INFO, like Short, and `get_prompt_logger(topic)` (the logger `mantella.<topic>.prompt`) is at INFO for Prompt and replies and Full, WARNING otherwise. The NPC prompt in `context.py` and the raw reply (`Full raw response`) in `output_manager.py` are `info` lines on it.
-- A line can have its own colour in the window: `log.info(text, extra=in_colour(LINE_WHITE))` (each LLM request line is white). Every line of a prompt logger (`get_prompt_logger`: the prompt and the raw reply) is dimmed to deep grey by `WindowFormatter` (`PROMPT_STYLE`). Warnings and errors keep theirs. The raw reply is put on the end-of-reply sentence (`Sentence.raw_reply_log`) and logged when the conversation takes that sentence from the queue, so it comes after the reply's lines.
-- In code, `log = get_topic_logger(LogTopic.VOICES)`. `log.info` shows at Short, `log.debug` at Full, and `log.warning` / `log.error` always. There are no custom level numbers. Lines that cost something to build only for Full go behind `log.isEnabledFor(logging.DEBUG)`.
-- The root logger stays at WARNING, which is what keeps the libraries quiet. A line written straight to `logging` instead of a topic logger only shows when it is a warning or an error.
-- Something that went wrong is a `log.warning` or `log.error`, never info or debug, so the player sees it whatever they picked. The settings load before the log starts: `catch_early_problems` shows their warnings in the window right away and adds them to logging.log once it starts.
-- LLM requests are logged once, under the topic of the feature that asks: `request_call(..., topic_log=...)` and `request_tool_calls(..., topic_log=...)`. NPC replies are under LLM requests and replies. `ClientBase.__log_request` writes the model, base URL and params as an `info` line (Short), as the default log did before the topics, and the whole request as `debug` (Full).
-- Settings: `src/config/definitions/log_definitions.py`, `log_<topic>` in config.ini. `ConfigLoader.log_choices` holds them, and the log setup gets every change right away.
-- Tests: `tests/logs/`, `tests/config/test_log_settings.py`.
-
 ## Hot Swap
 
 ### What it does
@@ -2203,7 +2183,7 @@ The handshake and commitment of [Decensor Bypass](#decensor-bypass) are not part
 
 ### Where to find it
 
-The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold, Game Master Message Limit and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained. **NPC Initiative** holds NPC Initiative Threshold.
+The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold, Game Master Message Limit and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained. **NPC Initiative** holds NPC Initiative Threshold, and **Vanilla Dialogues** holds how long NPCs remember Skyrim's own lines they heard (see [Vanilla Dialogues](#vanilla-dialogues)).
 
 ### Quick start
 
@@ -2539,19 +2519,6 @@ What your prompts say about you is up to them: variables like `{player_name}` or
 - The default director prompts use [`{bios_and_summaries}`](#bios_and_summaries-prompt-variable).
 - If your prompt profile overrides the **Skyrim Game Master Prompt**, **Skyrim Game Master NPC Prompt**, **Skyrim Multi-NPC Director Prompt**, **Skyrim Say To Room Decision Nobody Criteria**, **Skyrim Talk/Nearby/Random Event Generator Prompt** or **Memory Prompt**, it needs the director parts too, or Director Mode uses your text as it is.
 
-### For developers
-
-- Which conversations are directed is decided in `Conversation.__select_conversation_type`: with Director Mode on, a conversation with the player and one NPC uses `multi_npc` / `multi_npc_game_master` instead of `pc_to_npc`. `shout` follows the setting through `multi_npc.is_director_mode()`; `npc_event` never does.
-- `context.started_by_npc` (set from the NPC Initiative start, never reset) makes every type pass `can_direct=False`.
-- In the merged prompts, `director` is true together with `shout` or `say_to_room`, so the default prompts keep it in its own `{if director}` blocks (checked by `tests/test_prompt_merge.py`). The **Skyrim Say To Room Decision Nobody Criteria** also knows `director`.
-- Directed conversations use the Director Mode actions however many NPCs are in them (`conversation_type.action_kind`, see [NPC Actions](#npc-actions)). With one directed NPC, the Game Master isn't asked when nobody nearby can join. When someone can, it may still bring them in, but picking the NPC who just spoke ends the turn (`GameMaster.__lone_npc_spoke_last`). Either way the NPC answers each direction once.
-- In Shout, a direction is asked about like a wheel event ("Is X part of what just happened?"), with no speaker, and the people it involves count as the people you talk to (see [Talk Level](#talk-level)).
-- Keeping the player out: `context.hides_player()` (set by the `Conversation` to `Conversation.hides_player()`: its type's `is_director_mode()`, or watching an NPC Event with the Director Mode setting on) switches off the player's combat, attack and trust events and the vision hint event in `context.py`. With the same check, `GameStateManager.__update_context` drops the game's events that name the player or say "the player" (`__without_player_events`), then adds the quest tag announcements. `conversation_event` ignores Include Player and passes `hides_player`, which adds `director` to the event generator's conditions.
-- `ShoutState.free_places` / `nearby_choices` get `has_player=False` while directing, and `is_direction`, which lets people join past Most People. `NpcEvent.can_notice_player` is False whenever the Director Mode setting is on.
-- Memories: the `Conversation` remembers whether it was ever directed (also when the player only sent `.`) and passes `was_directed` to `save_conversation_state`, which makes `director` true in the Memory Prompt.
-- `tests/test_director_hides_player.py` covers this. The old texts in `tests/prompt_merge_fixtures` check that nothing changes without Director Mode.
-- `tests/test_director_mode_flow.py` plays whole conversations as the game sends them, with made-up models, each with Director Mode on and off: one-on-one, group, saying something to the room, Shout then Private, NPC Initiative, wheel events, NPC Events watched and joined, game events and view lists about the player, actions, the player's voice and interruptions, Most People in Conversation, and memories. Quest news in Director Mode is in `tests/quest_tags/test_conversation_flow.py`. Run them with `MantellaEnv\Scripts\python.exe -m pytest tests/test_director_mode_flow.py tests/test_director_hides_player.py tests/test_director_mode.py`; no game is needed. The hiding check reads the type the conversation is about to switch to (`Conversation.hides_player`), since a request that adds someone is handled before the switch.
-
 ## Shout
 
 ### What it does
@@ -2792,12 +2759,6 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 - Only conversations with the Game Master use these settings: groups with Game Master Mode on, Shout, saying something to the room, Director Mode with Game Master Mode, events and NPC Events. A one-on-one conversation without Shout is unchanged.
 - If the service refuses the extra "spoken to" questions, or the answer can't be read, the Game Master's pick stands, as before.
 - More examples are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Talk Level".
-
-### For developers
-
-- Settings: `src/config/definitions/conversation_definitions.py` (the three option lists, `talk_key`, `use_own_key`, `resolve_ticks`, `greyed_choices`); which set applies to a turn: `turn_rules` in `src/conversation/answer_rules.py`, which also has the answer order (`AnswerOrder`). The turn itself: `GameMasterTurns` in `src/conversation/game_master.py` (`__apply_decision`, `__at_reply_limit`, `__start_round`). The page: tick boxes, radio buttons, settings shown by a switch (`ConfigValue.shown_when`) and greying in `src/ui/settings_ui_constructor.py`.
-- Console tests (no game needed): `pytest tests/test_answer_rules.py tests/test_answer_rules_flow.py tests/config/test_conversation_settings.py tests/ui/test_conversation_page.py`. `test_answer_rules_flow.py` first checks six common setups give the expected speakers, then has one test for each rule above.
-- In-game test: `tests/ingame/talk_settings/talk_settings_ingame.py` with `MantellaTalkTest.psc` in Mantella-Spell. See [docs/conversation_wheel.md](docs/conversation_wheel.md), "Automated tests".
 
 ## NPC Initiative
 
@@ -3307,8 +3268,6 @@ When your party brings down an enemy, the NPCs hear who landed the killing blow:
 
 This one needs an extra mod, [powerofthree's Papyrus Extender](https://www.nexusmods.com/skyrimspecialedition/mods/22854), because Skyrim only tells a mod about a death when the one who died is being watched, and enemies aren't. It is optional: without it, everything else works the same and only these lines are missing.
 
-For developers: the add-on signs up for the extender's `OnActorKilled` through `MantellaKillEvents.psc`, which holds every reference to the extender so no always-loaded script names its types; the handler is in `MantellaListenerScript.psc`. The install check is `SKSE.GetPluginVersion`. A downed NPC is told apart from a dead one with `IsEssential() || (IsBleedingOut() && !IsDead())`: `IsDead()` alone isn't set yet when the kill is reported, and `IsBleedingOut()` alone would drop the real deaths that pass through bleedout, which is how dragons die. The handler words the line exactly as the `OnDying` handlers do, so that a death reported by both is merged into one line. Compiling the add-on needs the extender's `PO3_*.psc` sources on the build machine (see the imports in `build-addon.ps1`); players don't need them.
-
 ### Where to find it
 
 **Other** tab → **Advanced** → **Ignored In-Game Events**.
@@ -3355,11 +3314,6 @@ There is no setting: it always happens. The heal and buff wording needs the Mant
 
 - [Ignored In-Game Events](#in-game-events) is checked before the tidying, against each event as the game sent it. The log shows the tidied lines, so write patterns for the single form (`*Black Hand*` still works).
 - With an older game plugin, every spell still says `hit`. The merging works either way.
-
-### For developers
-
-- The tidying is `tidy_events` in `src/conversation/ingame_event_tidy.py`, called from `Conversation.update_game_events`. It matches the sentences written by `MantellaListenerScript.psc` and `MantellaTargetListenerScript.psc`, so a change of wording there needs the patterns updated.
-- The friendly wording comes from `IsFriendlySpell` in those two scripts (`Spell.IsHostile()`).
 
 ## Decensor Bypass
 

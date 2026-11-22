@@ -141,11 +141,11 @@ def test_nothing_readable_does_nothing(store, text):
 
 
 @pytest.mark.parametrize("patterns, asked, dropped", [
-    (["stage1hello"], "Stage1Hello", True),                       # Exact, any case
+    (["i want you to.."], "I Want You To..", True),                      # Exact, any case
     (["*orders for you*"], "Other aspects & orders for you.", True),
     (["*orders for you*"], "What orders do you have?", False),
     (["goodbye. (remove from mantella conversation)"], "Goodbye. (Remove from Mantella conversation)", True),
-    ([], "Stage1Hello", False),
+    ([], "I want you to..", False),
 ])
 def test_lines_that_only_open_a_menu_are_dropped(store, patterns, asked, dropped):
     receive(store, hand_over(menu_line(asked, "As you wish.", heard_by=[HULDA, SAADIA])), config=settings(menu_only=patterns))
@@ -153,12 +153,12 @@ def test_lines_that_only_open_a_menu_are_dropped(store, patterns, asked, dropped
 
 
 def test_a_menu_only_pattern_never_drops_scene_lines(store):
-    receive(store, hand_over(scene_line("Stage1Hello")), config=settings(menu_only=["*"]))
-    assert store.kept["Saadia"] == ["Stage1Hello"]
+    receive(store, hand_over(scene_line("I want you to..")), config=settings(menu_only=["*"]))
+    assert store.kept["Saadia"] == ["I want you to.."]
 
 
-def test_the_old_add_ons_list_is_the_default(default_config):
-    assert default_config.heard_lines_menu_only == ["stage1hello", "i want you to..", "dialoguegenerichello", "goodbye. (remove from mantella conversation)"]
+def test_the_default_list(default_config):
+    assert default_config.heard_lines_menu_only == ["i want you to..", "goodbye. (remove from mantella conversation)"]
 
 
 def test_one_npc_that_cant_be_written_loses_no_one_elses_lines(store):
@@ -193,10 +193,10 @@ def test_at_full_each_heard_line_is_written_out_with_where_it_went(store, caplog
 
 def test_at_full_menu_talk_shows_the_question_and_a_left_out_pick_says_why(store, caplog):
     written = full_log(caplog)
-    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty."), menu_line("Stage1Hello", "Hm?")), config=settings(menu_only=["stage1hello"]))
+    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty."), menu_line("I want you to..", "Hm?")), config=settings(menu_only=["i want you to.."]))
     kept, left_out = sorted(written(), key=lambda text: "Left out" in text)
     assert 'Hulda, answering Kit\'s "Heard any rumors?": "Plenty."' in kept and kept.endswith("Kept by all 1 as a heard line.")
-    assert '"Stage1Hello"' in left_out and "Left out: the pick only opens a menu" in left_out
+    assert '"I want you to.."' in left_out and "Left out: the pick only opens a menu" in left_out
 
 
 def test_below_full_no_line_is_written_out(store, caplog):

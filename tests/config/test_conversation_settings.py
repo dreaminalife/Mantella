@@ -188,7 +188,7 @@ MOVED_FROM_LLM_TAB = ["game_master_addressed_threshold", "multi_npc_game_master_
 
 def test_the_conversation_page_holds_its_settings_in_order_and_the_llm_tab_no_longer_does(config: ConfigLoader):
     groups = [group for group in config.definitions.base_groups if group.page == CONVERSATION_PAGE]
-    assert [group.name for group in groups] == ["All Conversations", "Group Conversation", "Shout", "Director Mode", "NPC Initiative", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event", "Actions"]
+    assert [group.name for group in groups] == ["All Conversations", "Group Conversation", "Shout", "Director Mode", "NPC Initiative", "Conversation Event", "Nearby Event", "Random Event", "Watched NPC Event", "Vanilla Dialogues", "Actions"]
     on_page = [value.identifier for group in groups for value in group.value]
     for identifier in MOVED_FROM_LLM_TAB + ["shout_max_people", "shout_max_answering", "shout_newcomers_remember", "group_conversation_max_answering"]:
         assert identifier in on_page

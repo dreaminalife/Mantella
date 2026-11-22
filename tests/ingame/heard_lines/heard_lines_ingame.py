@@ -14,7 +14,7 @@ What it covers:
   4. The scene during a conversation: it goes into the conversation as narration, the NPC in it keeps it when it ends, and Mantella's own
      lines are never caught
   5. Lines still waiting when the game is saved come back from the save, and past the most waiting lines the oldest are dropped
-  6. Dialogue-menu talk the player does: the answer with the question, a line in Lines That Only Open a Menu not kept, Mantella's own menu
+  6. Dialogue-menu talk the player does: the answer with the question, a line in Ignored Dialogue Menu Choices not kept, Mantella's own menu
      line and a greeting never caught
   Each NPC's heard lines: each line once although the scene played four times (the repeat rule), in the right NPCs' memory only
   7. Loading the save from before the test: every line from after it is forgotten
@@ -57,7 +57,7 @@ SPEAKERS = {VIGNAR, OLFRID}
 MOST_WAITING = 200  # The most lines the plugin keeps waiting outside part 5 (the add-on's MantellaRepository.heardLinesMostWaiting)
 
 GREETING = "hello"  # The text of the topic the game picks itself when the dialogue menu opens
-ROOM_PATTERN = "*room*"  # Added to Lines That Only Open a Menu for the test: the player asks Hulda to rent a room
+ROOM_PATTERN = "*room*"  # Added to Ignored Dialogue Menu Choices for the test: the player asks Hulda to rent a room
 MANTELLA_PICK = "start mantella conversation"  # In Mantella's own dialogue-menu line
 SAVE_BEFORE = "mhl_before"
 SAVE_WAITING = "mhl_waiting"
@@ -388,7 +388,7 @@ def check_memory(report: Report, kept: dict[int, list[dict[str, Any]]], one_scen
     report.check(bool(question) and question[0] in asked, "Hulda keeps her answer to the player's question")
     room_sent = any(fnmatch.fnmatch(a.lower(), ROOM_PATTERN) for a in sent)  # Else there was no room line to leave out
     report.check(room_sent and not any(fnmatch.fnmatch(a.lower(), ROOM_PATTERN) for a in asked),
-                 "Hulda doesn't keep the room line (Lines That Only Open a Menu)")
+                 "Hulda doesn't keep the room line (Ignored Dialogue Menu Choices)")
     overheard = [line for line in kept.get(VIGNAR, []) if line.get("menu")]
     report.info(f"Vignar keeps {len(overheard)} dialogue-menu lines he overheard")
 

@@ -60,23 +60,24 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_days_kept_config_value() -> ConfigValue:
-        description = """Vanilla Dialogues: how many in-game days NPCs remember Skyrim's own lines they heard, such as a scene in a tavern or the player's talk in the dialogue menu.
-                        Turn Vanilla Dialogues on or off in the Mantella MCM, or on the Conversation Wheel."""
-        return ConfigValueInt("heard_lines_days_kept","Vanilla Dialogue Memory (Days)",description,3,1,30,tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
+        description = """How many in-game days NPCs remember Skyrim's own lines they heard, such as a scene in a tavern or the player's talk in the dialogue menu."""
+        return ConfigValueInt("heard_lines_days_kept","Vanilla Dialogue Memory (Days)",description,3,1,30,tags=[ConfigValueTag.share_row])
 
     @staticmethod
     def get_heard_lines_most_per_npc_config_value() -> ConfigValue:
-        description = """Vanilla Dialogues: the most lines each NPC remembers. Older lines are forgotten first.
+        description = """The most lines each NPC remembers. Older lines are forgotten first.
                         Also the most lines NPCs pick up at once from a scene playing nearby during a conversation.
                         Higher numbers cost more prompt tokens."""
-        return ConfigValueInt("heard_lines_most_per_npc","Most Vanilla Dialogue Lines per NPC",description,30,1,200,tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
+        return ConfigValueInt("heard_lines_most_per_npc","Most Vanilla Dialogue Lines per NPC",description,30,1,200,tags=[ConfigValueTag.share_row])
 
     @staticmethod
     def get_heard_lines_menu_only_config_value() -> ConfigValue:
-        description = """Vanilla Dialogues: lines in the dialogue menu that only open a menu, such as a mod's settings. NPCs don't remember them, or the answer to them.
-                        Separate lines with commas. Use * for any text, as in Ignored In-Game Events: *orders for you* matches every line that contains those words."""
-        return ConfigValueString("heard_lines_menu_only","Lines That Only Open a Menu",description,
-                                 "Stage1Hello, I want you to.., DialogueGenericHello, Goodbye. (Remove from Mantella conversation)",tags=[ConfigValueTag.advanced])
+        description = """Choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history: the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings.
+                        When you pick one of these, neither your choice nor the NPC's reply to it is added to the history, also for everyone nearby who heard it. Only that one reply is left out: if the choice opens more choices, like I want you to.. opening Wait here, what you pick next and the reply to it are kept as usual, unless that choice is on the list too. Scenes NPCs play out with each other are never left out by this list.
+                        To add a choice, type what your dialogue menu shows. It has to match the whole choice, with the same punctuation (the two dots in I want you to..), but capital letters don't matter. Put a comma between choices.
+                        Use * for any text, so you only need part of a choice: *orders for you* catches every choice with "orders for you" in it, and Rent a room* catches "Rent a room (10 gold)" and "Rent a room (25 gold)"."""
+        return ConfigValueString("heard_lines_menu_only","Ignored Dialogue Menu Choices",description,
+                                 "I want you to.., Goodbye. (Remove from Mantella conversation)")
 
     @staticmethod
     def get_hourly_time_config_value() -> ConfigValue:

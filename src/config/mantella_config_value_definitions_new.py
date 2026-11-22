@@ -408,9 +408,6 @@ class MantellaConfigValueDefinitionsNew:
         other_category.add_config_value(OtherDefinitions.get_max_count_events_config_value())
         other_category.add_config_value(OtherDefinitions.get_events_refresh_time_config_value())
         other_category.add_config_value(OtherDefinitions.get_ingame_events_filter_config_value())
-        other_category.add_config_value(OtherDefinitions.get_heard_lines_days_kept_config_value())
-        other_category.add_config_value(OtherDefinitions.get_heard_lines_most_per_npc_config_value())
-        other_category.add_config_value(OtherDefinitions.get_heard_lines_menu_only_config_value())
         other_category.add_config_value(OtherDefinitions.get_hourly_time_config_value())
         other_category.add_config_value(OtherDefinitions.get_player_character_description())
         other_category.add_config_value(OtherDefinitions.get_voice_player_input())
@@ -523,4 +520,11 @@ class MantellaConfigValueDefinitionsNew:
         npc_event.add_config_value(LLMDefinitions.get_npc_event_player_notice_delay_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_max_lines_without_player_config_value())
         npc_event.add_config_value(LLMDefinitions.get_npc_event_wind_down_lines_config_value())
-        return [all_conversations, group, shout, director, npc_initiative, *event_sections, npc_event, actions_section]
+
+        vanilla_dialogues = section("ConversationVanillaDialogues", "Vanilla Dialogues", "NPCs remember Skyrim's own voiced lines they hear: the "
+                                    "scenes NPCs play out, and your talk in the dialogue menu. Switch it on or off in the Mantella MCM, or on the "
+                                    "Conversation Wheel.")
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_days_kept_config_value())
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_most_per_npc_config_value())
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_menu_only_config_value())
+        return [all_conversations, group, shout, director, npc_initiative, *event_sections, npc_event, vanilla_dialogues, actions_section]

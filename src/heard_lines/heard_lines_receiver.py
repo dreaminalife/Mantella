@@ -46,7 +46,7 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
         full = log.isEnabledFor(logging.DEBUG) # Each line is written out only at Full
         for line in hand_over.lines:
             if full and line not in lines:
-                log.debug(f"Vanilla Dialogues: {self.__describe(line)} Left out: the pick only opens a menu (Lines That Only Open a Menu)")
+                log.debug(f"Vanilla Dialogues: {self.__describe(line)} Left out: the pick only opens a menu (Ignored Dialogue Menu Choices)")
         to_conversation: list[HeardLine] = []
         to_store: dict[HeardPerson, list[HeardLine]] = {}
         for line in lines:
@@ -98,7 +98,7 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
         return f"{into}; kept as a heard line by the other {kept}." if kept else f"{into}."
 
     def __only_opens_menu(self, line: HeardLine) -> bool:
-        """Menu talk whose pick only opens a menu (Lines That Only Open a Menu), matched like Ignored In-Game Events"""
+        """Menu talk whose pick only opens a menu (Ignored Dialogue Menu Choices), matched like Ignored In-Game Events"""
         if not line.is_menu_talk or not line.asked:
             return False
         text = line.asked.strip().lower()
