@@ -515,6 +515,24 @@ class ChatManager:
             return
         self._get_or_create_tts(backup)
 
+    def get_voices_ready(self, characters: list[Character], one_on_one: bool) -> None:
+        """NPCs joined the conversation: the voice service that speaks for each asks the game for clips they have none of yet, so the
+        clips arrive while the AI writes and their first line is in their own voice. A service on this PC makes their voices as soon as
+        the clips arrive; an online one only in a one-on-one conversation (*one_on_one*), where the NPC is sure to speak: in a group,
+        cloning everyone ahead would use up voice slots on NPCs who may never speak. An NPC whose own voice service hasn't started yet
+        is left to their first line"""
+        for character in characters:
+            if character.is_player_character:
+                continue
+            try:
+                service = self._parse_tts_service_str(getattr(character, 'tts_service', None) or "")
+                instance = self.__running_tts(service) if service is not None else self.__tts
+                if isinstance(instance, ClipVoiceService):
+                    instance.get_ready_for(VoiceSpeaker.from_character(character), character.advanced_voice_model,
+                                           make_ahead=one_on_one or not instance.info.runs_online)
+            except Exception as e:
+                logging.warning(f"Could not get {character.name}'s voice ready: {e}")
+
     def __voice_chain(self, first: TTSable) -> list[TTSable | VoiceServiceInfo]:
         """Who speaks a line, in order, when the one before fails.
         A newer service or voice setup goes to the Backup Voice Service. Piper, XTTS and xVASynth keep the old way: an NPC's own one goes to the TTS Service.

@@ -180,6 +180,9 @@ class mantella_route(routeable):
             if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_NPCEVENT:
                 # Not queued either, for the same reason
                 return await asyncio.to_thread(self.__process_npc_event_check, received_json)
+            if received_json and received_json.get(comm_consts.KEY_REQUESTTYPE) == comm_consts.KEY_REQUESTTYPE_VOICECLIP_DELIVERED:
+                # Not queued either: the request a new voice's first line is made for may be waiting for these clips
+                return await self.__with_extras(await asyncio.to_thread(self.__process_voice_clips_delivered, received_json))
             # Handled in a worker thread, so the server stays free to receive an interruption
             request_type = received_json.get(comm_consts.KEY_REQUESTTYPE) if received_json else None
             if request_type not in self.ENDABLE_REQUESTS:
@@ -362,10 +365,6 @@ class mantella_route(routeable):
                             reply = self.__game.quest_check_list()
                         case comm_consts.KEY_REQUESTTYPE_VOICECLIP_SAVELOADED:
                             reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_SAVELOADED}
-                        case comm_consts.KEY_REQUESTTYPE_VOICECLIP_DELIVERED:
-                            changed = self.__voice_clip_requests().collect()
-                            logging.debug(f"Voice clips: request {received_json.get(comm_consts.KEY_VOICECLIP_REQUESTID, '')} delivered, {changed} clip(s) changed")
-                            reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_DELIVERED}
                         case _:
                             reply = self.error_message(f"Request type '{request_type}' was not recognized")
                 except Exception:
@@ -375,6 +374,17 @@ class mantella_route(routeable):
             else:
                 reply = self.error_message(f"Request did not contain properly formatted json!")
             return reply # The route adds the voice clip requests and notices, on the reply that reaches the game (see __with_extras)
+
+    def __process_voice_clips_delivered(self, received_json: dict[str, Any]) -> dict[str, Any]:
+        """The game copied the lines of a request: they are taken in"""
+        if self._show_debug_messages:
+            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        try:
+            changed = self.__voice_clip_requests().collect()
+            logging.debug(f"Voice clips: request {received_json.get(comm_consts.KEY_VOICECLIP_REQUESTID, '')} delivered, {changed} clip(s) changed")
+        except Exception:
+            logging.exception("Voice clips: could not take in what the game delivered")
+        return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_DELIVERED}
 
     def __voice_clip_requests(self):
         return clip_requests_for(shared_clip_store(voice_clips_folder(self._config.save_folder)))

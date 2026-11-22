@@ -156,6 +156,7 @@ class GameStateManager:
         self.__rememberer: Remembering = self._create_rememberer(game, config, client, summary_client, thoughts_client, reflection_client)
 
         self.__talk: Conversation | None = None
+        self.__voices_readied: tuple[Conversation | None, set[str]] = (None, set()) # the NPCs whose voices were got ready, in which conversation
         self.__heard_lines_world_id: str = "default" # Vanilla Dialogues: the playthrough of the latest request that named one
         self.__npc_initiative_client: "ClientBase | None" = None # Created on the first NPC Initiative check
         self.__npc_event_clients: "dict[int, AIClient]" = {} # The event generator, by model profile slot (0 for no profile). Created on first use
@@ -1559,6 +1560,7 @@ class GameStateManager:
                         if actor:
                             actors_in_json.append(actor)
                 self.__talk.add_or_update_character(actors_in_json)
+                self.__get_voices_ready(actors_in_json)
             
             location = None
             time = None
@@ -1589,6 +1591,23 @@ class GameStateManager:
                 ingame_events = list(ingame_events or []) + quest_events
             self.__talk.update_context(location, time, ingame_events, weather, custom_context_values)
     
+    def __get_voices_ready(self, actors: list[Character]) -> None:
+        """NPCs who joined the conversation: their clips are asked for now, once per conversation, so their first line can be in their own voice"""
+        talk = self.__talk
+        if talk is None:
+            return
+        if self.__voices_readied[0] is not talk:
+            self.__voices_readied = (talk, set())
+        readied = self.__voices_readied[1]
+        joined = [a for a in actors if not a.is_player_character and a.ref_id + a.name not in readied]
+        if not joined:
+            return
+        readied.update(a.ref_id + a.name for a in joined)
+        try:
+            talk.output_manager.get_voices_ready(joined, one_on_one=not talk.context.npcs_in_conversation.contains_multiple_npcs())
+        except Exception as e: # their first line still gets their voice ready, as before
+            logging.warning(f"Could not get the voices of {', '.join(a.name for a in joined)} ready: {e}")
+
     @utils.time_it
     def load_character(self, json: dict[str, Any], world_id: str | None = None) -> Character | None:
         """Loads a character from the game's actor JSON. *world_id* is the playthrough, for its quest tag outcomes. None for an empty one"""

@@ -6,6 +6,9 @@ type its NPCs use, and makes their voices in the background, one at a time, most
 presses the button: the work would otherwise make the game heavier for everyone.
 
 Voices are made ahead only for services that run on this PC: an online service would spend the player's money or voice slots.
+
+The voice of an NPC who joins a conversation is made too, as soon as the game delivers their clips (make_soon), so their first line
+needn't wait for it. Only for the NPCs in the conversation, whose lines are coming.
 """
 from __future__ import annotations
 
@@ -15,7 +18,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from src.tts.voice_picker import VOICE_TYPE_CLIP, VoiceSpeaker
+from src.tts.voice_picker import STAND_INS, VOICE_TYPE_CLIP, VoiceSpeaker
 from src.voice_clips.clip_store import ClipStore, voice_key
 from src.voice_clips.requests import ClipRequests
 
@@ -24,6 +27,7 @@ LOOK_AGAIN_SECONDS = 2.0
 LIST_WAIT_SECONDS = 60 # pressing the button again sooner doesn't ask the game a second time
 TRY_AGAIN_SECONDS = 60 # after a voice couldn't be made
 TRIES = 3
+SOON_GIVE_UP_SECONDS = 120 # an NPC's voice whose clips haven't come by then is made by their first line instead
 
 # Mantella can't call the game: the request goes with Mantella's next reply to it. After that, each batch of clips the game hands over
 # brings the next batch, so the game never has to check in
@@ -46,6 +50,15 @@ def in_background() -> bool:
 
 
 @dataclass
+class Soon:
+    """An NPC in the conversation whose voice is made once their clips arrive"""
+    service: Any
+    speaker: VoiceSpeaker
+    named_voice: str | None
+    since: float
+
+
+@dataclass
 class Wanted:
     voice_type: str
     since: float
@@ -64,7 +77,9 @@ class VoicePreparation:
         self.__thread: threading.Thread | None = None
         self.__all: list[str] | None = None # the voice types of Prepare all voices, once the game listed them
         self.__all_asked: float | None = None # when Prepare all voices was pressed
+        self.__soon: list[Soon] = [] # NPCs in the conversation, whose voices come first
         requests.on_voice_types = self.__voice_types_listed
+        requests.on_arrival = self.__wake.set
 
     # ---- services ----
 
@@ -144,6 +159,45 @@ class VoicePreparation:
             return text + ". Done."
         return text + ". Working on it while you play..."
 
+    # ---- the NPCs in the conversation ----
+
+    def make_soon(self, service: Any, speaker: VoiceSpeaker, named_voice: str | None = None) -> None:
+        """An NPC joined the conversation: their voice is made as soon as the game delivers their clips. At once if they have them already"""
+        with self.__lock:
+            self.__soon = [s for s in self.__soon if not (s.service is service and s.speaker == speaker)]
+            self.__soon.append(Soon(service, speaker, named_voice, time.time()))
+        self.__start()
+
+    def __make_soon(self) -> bool:
+        """Makes at most one voice of an NPC in the conversation. True when one was tried"""
+        with self.__lock:
+            soon, services = list(self.__soon), list(self.__services)
+        now = time.time()
+        for item in soon:
+            service = item.service
+            done = service not in services # stopped (the settings changed)
+            pick = None
+            if not done:
+                pick = service.pick_voice(item.speaker, item.named_voice)
+                if pick.kind in STAND_INS and not self.__requests.voice_type_settled(item.speaker.voice_type):
+                    done = now - item.since > SOON_GIVE_UP_SECONDS # their own clips are still on the way
+                    if not done:
+                        continue
+                done = done or not pick.clip_path or service.voice_ready(pick)
+            if not done and not service.is_ready():
+                continue # the program is starting or downloading its model
+            with self.__lock:
+                if item in self.__soon:
+                    self.__soon.remove(item)
+            if done:
+                continue
+            try:
+                service.prepared_voice(pick)
+            except Exception as e:
+                logging.debug(f"{service.info.name}: could not make the voice '{pick.label}' ahead: {e}. Their first line makes it")
+            return True
+        return False
+
     # ---- making voices ----
 
     @staticmethod
@@ -170,7 +224,10 @@ class VoicePreparation:
             self.__wake.clear()
             try:
                 self.__requests.collect()
-                self.__make_next()
+                if self.__make_soon():
+                    self.__wake.set() # look again at once: there may be more
+                else:
+                    self.__make_next()
             except Exception as e:
                 logging.warning(f"Voice clips: could not get a voice ready ahead: {e}")
                 time.sleep(LOOK_AGAIN_SECONDS)

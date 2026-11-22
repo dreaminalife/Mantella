@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import threading
+import time
 from abc import abstractmethod
 from typing import Any
 
@@ -21,14 +22,16 @@ from src.tts.registry import VoiceServiceInfo, voice_services
 from src.tts.synthesization_options import SynthesizationOptions
 from src.tts.ttsable import TTSable
 from src.tts.voice_folders import pronunciation_folder, voice_clips_folder
-from src.tts.voice_picker import NAMED, OWN_CLIP, VoicePick, VoicePicker, VoiceSpeaker, file_value
+from src.tts.voice_picker import NAMED, OWN_CLIP, STAND_INS, VoicePick, VoicePicker, VoiceSpeaker, file_value
 from src.tts.voice_style import ServiceStyle, style_for
 from src.tts.word_lists import replace_words, shared_word_lists
-from src.voice_clips.clip_store import MOST_CHOSEN, NPCS, VOICE_TYPES, ClipStore, clip_seconds, lines_within, shared_clip_store
+from src.voice_clips.clip_store import MOST_CHOSEN, NPCS, VOICE_TYPES, ClipStore, clip_seconds, lines_within, shared_clip_store, voice_key
 from src.voice_clips.preparing import preparation_for
 from src.voice_clips.requests import clip_requests_for
 
 TRIES = 2 # one retry, then the line goes to the backup service
+FIRST_LINE_WAIT_SECONDS = 10.0 # a new voice's first line waits at most this long for its clips from the game, then a stand-in speaks it
+LOOK_SECONDS = 0.5 # how often the folder is looked in meanwhile, in case the game's message saying they came is held up
 _warned_languages: set[tuple[str, str]] = set()
 
 
@@ -268,21 +271,74 @@ class ClipVoiceService(TTSable):
         if speaker is None: # narration, or a caller that only knows the voice names
             speaker = VoiceSpeaker(voice_type=in_game_voice or csv_in_game_voice, file_voice_type=file_value(csv_in_game_voice))
         self._clip_requests.collect() # clips the game delivered since the last line
-        self._pick = self.pick_voice(speaker, advanced_voice_model)
-        if self._pick.kind != NAMED and self.clones_voices:
-            # No clip yet: asked for now, and this line uses a stand-in. Also notices a changed game line, once per run
-            named = file_value(advanced_voice_model)
-            count = self._info.clip_lines
-            if named and not self.has_voice(named):
-                self._clip_requests.ask_for(named, count=count) # a voice type named for them in the character file, with no clip yet
-            self._clip_requests.ask_for(speaker.voice_type, speaker.plugin, speaker.local_id, speaker.name, stand_ins=speaker.stand_ins(), count=count)
-        self._top_up(self._pick)
+        self._pick = self.__wait_for_own_voice(speaker, advanced_voice_model, self.pick_voice(speaker, advanced_voice_model))
+        self.__ask_for_clips(speaker, advanced_voice_model, self._pick)
         self._last_voice = self._pick.label # the voice is chosen here, so TTSable doesn't change it again
         self._effect = self._effects.choose(speaker)
         self._pitch = self.pitch_for(self._pick)
         logging.debug(f"{self._info.name}: {speaker.name or 'narrator'} speaks with {self._pick.kind} '{self._pick.label}'"
                       + (f", voice effect {self._effect.name}" if self._effect else ""))
         return super().synthesize(self._pick.label, voiceline, in_game_voice, csv_in_game_voice, voice_accent, synth_options, advanced_voice_model)
+
+    def get_ready_for(self, speaker: VoiceSpeaker, advanced_voice_model: str | None = None, make_ahead: bool = True) -> None:
+        """An NPC joined the conversation: clips they have none of yet are asked for now, so the request goes with this reply to the game
+        and the clips arrive while the AI writes. *make_ahead*: their voice is made as soon as the clips arrive, so their first line
+        needn't wait for it"""
+        if not self.clones_voices:
+            return
+        self._clip_requests.collect()
+        self.__ask_for_clips(speaker, advanced_voice_model, self.pick_voice(speaker, advanced_voice_model))
+        if make_ahead:
+            self._preparation.make_soon(self, speaker, advanced_voice_model)
+
+    def __ask_for_clips(self, speaker: VoiceSpeaker, advanced_voice_model: str | None, pick: VoicePick) -> None:
+        """No clip yet: asked for, and a line before it comes uses a stand-in. Also notices a changed game line, once per run, and asks for
+        more lines for a voice shorter than this service wants"""
+        if pick.kind != NAMED and self.clones_voices:
+            named = file_value(advanced_voice_model)
+            count = self._info.clip_lines
+            if named and not self.has_voice(named):
+                self._clip_requests.ask_for(named, count=count) # a voice type named for them in the character file, with no clip yet
+            self._clip_requests.ask_for(speaker.voice_type, speaker.plugin, speaker.local_id, speaker.name, stand_ins=speaker.stand_ins(), count=count)
+        self._top_up(pick)
+
+    def __wait_for_own_voice(self, speaker: VoiceSpeaker, advanced_voice_model: str | None, pick: VoicePick) -> VoicePick:
+        """A stand-in while the NPC's own clips are on their way from the game: the line waits for them, up to FIRST_LINE_WAIT_SECONDS.
+        Only for clips already handed to the game (asked for when the NPC joined), and each request is waited for once, so a voice
+        whose clips don't come holds up one line at most"""
+        if pick.kind not in STAND_INS or not self.clones_voices or not getattr(self, "can_copy_voices", True):
+            return pick
+        if not (speaker.plugin and speaker.local_id):
+            return pick # the game sends where an NPC comes from only with MantellaVoiceClips.dll installed: without it no clips come
+        started = time.monotonic()
+        waited: list[str] = []
+        try:
+            while pick.kind in STAND_INS:
+                on_the_way = self._clip_requests.on_the_way(self.__better_voices(speaker, advanced_voice_model, pick))
+                left = started + FIRST_LINE_WAIT_SECONDS - time.monotonic()
+                if not on_the_way or left <= 0:
+                    break
+                waited += [r for r in on_the_way if r not in waited]
+                self._clip_requests.wait_for_delivery(min(left, LOOK_SECONDS))
+                pick = self.pick_voice(speaker, advanced_voice_model)
+        finally:
+            self._clip_requests.waited_for(waited)
+        if waited:
+            outcome = "a stand-in speaks it, as they didn't come in time" if pick.kind in STAND_INS else f"it uses {pick.kind} '{pick.label}'"
+            logging.info(f"{self._info.name}: {speaker.name or 'the narrator'}'s line waited {time.monotonic() - started:.1f} s for their clips "
+                         f"from the game, and {outcome}")
+        return pick
+
+    @staticmethod
+    def __better_voices(speaker: VoiceSpeaker, advanced_voice_model: str | None, pick: VoicePick) -> list[str]:
+        """The voices the game may still bring that the NPC would speak with instead of the stand-in *pick*: the one named for them,
+        their voice type, then the stand-ins before *pick*"""
+        names = [file_value(advanced_voice_model), speaker.voice_type or ""]
+        for stand_in in speaker.stand_ins():
+            if pick.clip_path and voice_key(stand_in) == pick.key:
+                break
+            names.append(stand_in)
+        return [f"{VOICE_TYPES}/{voice_key(name)}" for name in dict.fromkeys(names) if voice_key(name)]
 
     @property
     def voice_in_use(self) -> str:
@@ -325,6 +381,8 @@ class ClipVoiceService(TTSable):
                      voice_accent: str | None = None, voice_gender: int | None = None, voice_race: str | None = None):
         """Getting a voice ready ahead of an NPC's first line"""
         pick = self.pick_voice(VoiceSpeaker(gender=voice_gender, race=voice_race, voice_type=in_game_voice or csv_in_game_voice), advanced_voice_model)
+        if pick.kind in STAND_INS and not self._clip_requests.voice_type_settled(in_game_voice or csv_in_game_voice):
+            return # their own clips are on the way: their voice is made when they arrive (get_ready_for), not the stand-in's
         try:
             self.prepared_voice(pick)
         except Exception as e:

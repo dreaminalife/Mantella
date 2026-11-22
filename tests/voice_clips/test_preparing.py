@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.tts.voice_picker import BUILT_IN, VOICE_TYPE_CLIP, VoicePick
+from src.tts.voice_picker import BUILT_IN, VOICE_TYPE_CLIP, VoicePick, VoiceSpeaker
 from src.voice_clips import preparing
 from src.voice_clips.clip_store import VOICE_TYPES, ClipStore
 from src.voice_clips.preparing import VoicePreparation
@@ -43,7 +43,7 @@ class FakeService:
         self.fail = False
         self.can_copy_voices = True
 
-    def pick_voice(self, speaker):
+    def pick_voice(self, speaker, named_voice=None):
         clip = self.store.voice_type_clip(speaker.voice_type)
         return VoicePick(VOICE_TYPE_CLIP, speaker.voice_type.lower(), clip) if clip else VoicePick(BUILT_IN, "alba")
 
@@ -214,3 +214,59 @@ def test_with_only_online_services_there_is_nothing_to_prepare(preparation, requ
     assert preparation.progress() == ""
     preparation.add_service(FakeService(store)) # an NPC on Pocket TTS too
     assert "Nothing to prepare" not in preparation.prepare_all()
+
+
+# ---- an NPC who joins a conversation ----
+
+def make_soon(preparation) -> bool:
+    return preparation._VoicePreparation__make_soon()
+
+
+def test_a_new_voices_request_is_on_the_way_from_when_it_is_handed_to_the_game_until_it_is_delivered(requests):
+    requests.ask_for("MaleNord")
+    requests.ask_for("FemaleNord")
+    assert requests.on_the_way(["voice_types/malenord"]) == [] # still waiting for a reply to ride on
+    male, female = sent_requests(requests)
+    assert requests.on_the_way(["voice_types/malenord", "voice_types/femalenord"]) == [male["id"], female["id"]]
+
+    deliver(male, voice_type="MaleNord")
+    requests.collect()
+    assert requests.on_the_way(["voice_types/malenord"]) == []
+    requests.waited_for([female["id"]])
+    assert requests.on_the_way(["voice_types/femalenord"]) == [] # a line waited for it once already
+
+
+def test_an_npc_who_joins_gets_their_voice_made_as_soon_as_their_clips_arrive(preparation, requests, store):
+    service = FakeService(store)
+    preparation.add_service(service)
+    preparation.make_soon(service, VoiceSpeaker(voice_type="MaleNord"))
+    requests.ask_for("MaleNord")
+    request = sent_requests(requests)[0]
+    assert not make_soon(preparation) and service.made == [] # not the stand-in while their clips are on the way
+
+    deliver(request, voice_type="MaleNord")
+    requests.collect()
+    assert make_soon(preparation)
+    assert service.made == ["malenord"] and service.in_background == [False] # needed now: not at the lower priority
+    assert not make_soon(preparation) # done
+
+
+def test_an_npc_whose_clips_never_come_is_left_to_their_first_line(preparation, requests, store, monkeypatch):
+    service = FakeService(store)
+    preparation.add_service(service)
+    preparation.make_soon(service, VoiceSpeaker(voice_type="MaleNord"))
+    monkeypatch.setattr(preparing, "SOON_GIVE_UP_SECONDS", -1)
+    assert not make_soon(preparation)
+    assert service.made == [] and preparation._VoicePreparation__soon == []
+
+
+def test_a_voice_program_still_starting_makes_the_voice_once_it_is_ready(preparation, requests, store):
+    service = FakeService(store, ready=False)
+    preparation.add_service(service)
+    preparation.make_soon(service, VoiceSpeaker(voice_type="MaleNord"))
+    requests.ask_for("MaleNord")
+    deliver(sent_requests(requests)[0], voice_type="MaleNord")
+    requests.collect()
+    assert not make_soon(preparation) and service.made == [] # the program is still starting: tried again later
+    service.ready = True
+    assert make_soon(preparation) and service.made == ["malenord"]

@@ -89,10 +89,33 @@ class ClipRequests:
         self.__in_turn: list[str] = [] # voice types waiting their turn (Prepare all voices)
         self.__in_turn_sent: dict[str, float] = {} # request id -> when it was handed to the game
         self.on_voice_types: Any = None # called with the voice types the game listed
+        self.on_arrival: Any = None # called when delivered clips were taken in
+        self.__on_the_way: dict[str, str] = {} # a new voice's clips handed to the game and not delivered yet: what for -> request id
+        self.__waited: set[str] = set() # requests a line waited for already: no other line waits for them
+        self.__arrival = threading.Condition()
 
     @property
     def incoming_folder(self) -> str:
         return os.path.join(self.__store.folder, INCOMING)
+
+    # ---- a line waiting for its voice ----
+
+    def on_the_way(self, keys: list[str]) -> list[str]:
+        """The requests for these voices (voice_types/<key>, npcs/<key>) handed to the game and not delivered yet, that no line waited for before"""
+        with self.__lock:
+            found = [self.__on_the_way[key] for key in keys if key in self.__on_the_way]
+            return [request_id for request_id in dict.fromkeys(found) if request_id not in self.__waited]
+
+    def waited_for(self, request_ids: list[str]) -> None:
+        """A line waited for these requests: one that doesn't come in time holds up no other line"""
+        with self.__lock:
+            self.__waited.update(request_ids)
+
+    def wait_for_delivery(self, seconds: float) -> None:
+        """Until clips are taken in, or *seconds* pass, then looks in the folder: the game's message saying they came may be held up"""
+        with self.__arrival:
+            self.__arrival.wait(max(0.0, seconds))
+        self.collect()
 
     # ---- asking ----
 
@@ -231,6 +254,10 @@ class ClipRequests:
                 logging.warning(f"Voice clips: left out the request {request.id} for {request.npc_name or request.voice_type}: {e}")
                 continue
             sent.append(for_game)
+            if request.why == FIRST:
+                with self.__lock:
+                    for key in request.keys:
+                        self.__on_the_way[key] = request.id
             logging.debug(f"Voice clips: asking the game for {request.why} lines ({request.id}: {', '.join(request.keys) or len(request.lines)})")
         return sent
 
@@ -242,6 +269,7 @@ class ClipRequests:
         if not os.path.isdir(folder):
             return 0
         changed = 0
+        taken = False
         for request_id in sorted(os.listdir(folder)):
             request_folder = os.path.join(folder, request_id)
             if not os.path.exists(os.path.join(request_folder, RESULT_FILE)):
@@ -256,6 +284,14 @@ class ClipRequests:
                     logging.warning(f"Voice clips: could not take in {request_id}: {e}")
                 shutil.rmtree(request_folder, ignore_errors=True)
                 self.__in_turn_sent.pop(request_id, None)
+                for key in [k for k, v in self.__on_the_way.items() if v == request_id]:
+                    del self.__on_the_way[key]
+                taken = True
+        if taken:
+            with self.__arrival:
+                self.__arrival.notify_all()
+            if self.on_arrival is not None:
+                self.on_arrival()
         return changed
 
     @staticmethod

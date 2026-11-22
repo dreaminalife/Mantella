@@ -22,6 +22,7 @@ VOICE_TYPE_CLIP = "voice type clip"
 FILE_CLIP = "character file clip"
 RACE_CLIP = "race and gender clip"
 BUILT_IN = "built-in voice"
+STAND_INS = (FILE_CLIP, RACE_CLIP, BUILT_IN) # another voice than the NPC's own, while theirs has no clip
 
 # One race and gender table for every new service. Piper, XTTS and xVASynth keep their own tables in skyrim.py
 MALE_VOICE_TYPES: dict[str, str] = {

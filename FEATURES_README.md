@@ -3387,7 +3387,7 @@ Picks the voices NPCs speak with. Besides Piper, XTTS and xVASynth, you can now 
 
 What's different about them:
 
-- **Voices are cloned on the fly, not trained ahead.** The first time an NPC speaks, the game hands Mantella a few of their real lines, and the service clones the voice from them right then. There are no voice models to download, train or prepare for each voice type.
+- **Voices are cloned on the fly, not trained ahead.** The first time an NPC joins a conversation, the game hands Mantella a few of their real lines, and the service clones the voice from them right then. There are no voice models to download, train or prepare for each voice type.
 - **NPCs with custom voices just work.** Followers and other NPCs from mods with a voice of their own are cloned from their own lines like everyone else, instead of falling back to a generic voice. A mod that gives one NPC a new voice (a new voice for Lydia, say) gives her a voice of her own, while everyone else with her voice type keeps theirs. Voice replacers work too: install one later and NPCs pick up the new voice.
 - **Each voice can be tuned on its own.** Every voice type, and every NPC with a voice of their own, can have its own **Pitch** and its own service settings, such as how lively it sounds. Make the Male Nord voice deeper and every NPC who uses it changes, or give Lydia her own voice and tune just her.
 
@@ -3425,7 +3425,9 @@ The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per
 
 ### How NPCs get their voice
 
-The first time an NPC of a new voice type speaks, the game hands Mantella a few of their real lines (5–10 seconds each, never a bard song), and the service clones the voice from them. Until then they speak with a stand-in voice. Every NPC with that voice type then shares it.
+When an NPC of a new voice type joins a conversation, the game hands Mantella a few of their real lines (5–10 seconds each, never a bard song) while the AI writes what they say, and the service clones the voice from them. Every NPC with that voice type then shares it.
+
+Their first line waits up to 10 seconds for those lines, so it's in their own voice. Lines that haven't come by then don't hold it up any longer: that line uses a stand-in voice, and the next one uses theirs. Online services clone a voice ahead like this only in a one-on-one conversation. In a group, each NPC's voice is cloned when they first speak, so no voice slots go to people who never say a word.
 
 | Service | Lines a new voice gets | Cloned from |
 |---|---|---|
