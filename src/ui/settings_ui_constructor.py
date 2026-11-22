@@ -2,7 +2,6 @@ import json
 import typing
 import gradio as gr
 from typing import Any, Callable, TypeVar, NamedTuple, Dict, TypedDict, Optional
-import logging
 
 from src.llm.client_base import ClientBase
 from src.model_profile_manager import ModelProfileManager
@@ -38,6 +37,11 @@ from src.config.definitions.stt_definitions import (GREYED_UNLESS_ON, SERVICE_DE
 from src.stt_backends.model_lists import speech_models
 from src.stt_backends.presets import ONLINE_PRESETS, takes_name_list
 from src.ui.stt_ui import render_key_box, render_stt_test
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.SETTINGS_PAGE)
+models_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 
 # Global reference to the game manager for character data reload functionality
 _game_manager_ref = None
@@ -214,7 +218,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                                     
                                     # Clear parameters when service changes
                                     parameters_config.value = ""
-                                    logging.info(f"Service changed to {new_service_value}, cleared profile parameters")
+                                    log.debug(f"Service changed to {new_service_value}, cleared profile parameters")
                                     
                                     # Return updated model dropdown and cleared parameters
                                     updated_dropdown = update_func()
@@ -268,17 +272,17 @@ class SettingsUIConstructor(ConfigValueVisitor):
                                 import json
                                 parameters_json = json.dumps(profile.parameters, indent=4)
                                 parameters_config.value = parameters_json
-                                logging.info(f"Loaded profile for {new_model_value}")
+                                models_log.info(f"Loaded profile for {new_model_value}")
                                 return parameters_json
                             else:
                                 # Clear parameters if no profile exists
                                 parameters_config.value = ""
-                                logging.info(f"No profile found for {new_model_value}")
+                                models_log.debug(f"No profile found for {new_model_value}")
                                 return ""
                         else:
                             return ""
                     except Exception as e:
-                        logging.error(f"Error loading profile on model change: {e}")
+                        models_log.error(f"Error loading profile on model change: {e}")
                         return ""
                 
                 # Set up profile loading when model changes
@@ -360,7 +364,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     try:
                         button.click(btn_action, outputs=input_ui)
                     except Exception as e:
-                        logging.error(f"Failed to connect button '{btn_label}' click event: {e}")
+                        log.error(f"Failed to connect button '{btn_label}' click event: {e}")
             if not additional_buttons:
                 reset_button = gr.Button("Default", size='sm')
                 if hasattr(reset_button, "_id"):
@@ -576,7 +580,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
         if result.is_success:
             if config_value.value != new_value:
                 config_value.value = new_value
-                logging.info(f'{config_value.name} set to {config_value.value}')
+                log.debug(f'{config_value.name} set to {config_value.value}')
             return self.__update_error_message_panel('', is_visible=False)
         else:
             return self.__update_error_message_panel(result.error_message, is_visible=True)
@@ -1471,7 +1475,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             self.__render_row_group(group_id)
         
         for name, settings in folded_parts.items():
-            self.__render_folded_part(name, settings)
+            self.__render_folded_part(name, settings, config_value.folded_part_intros.get(name))
         if has_advanced_values:
             self.__render_folded_part("Advanced", advanced_settings)
 
@@ -1623,12 +1627,14 @@ class SettingsUIConstructor(ConfigValueVisitor):
         ui.wire()
         return ui
 
-    def __render_folded_part(self, name: str, settings: list[ConfigValue]):
-        """Settings in a part of the page that starts folded, e.g. XTTS or Advanced"""
+    def __render_folded_part(self, name: str, settings: list[ConfigValue], intro: str | None = None):
+        """Settings in a part of the page that starts folded, e.g. XTTS or Advanced, under its intro line if it has one"""
         if self.__pending_shared_setting is not None: # a setting from above doesn't share a row with this part's first
             self.__create_single_setting(self.__pending_shared_setting)
             self.__pending_shared_setting = None
         with gr.Accordion(label=name, open=False):
+            if intro:
+                gr.Markdown(intro)
             self.__render_settings(settings)
 
     def __render_settings(self, settings: list[ConfigValue]):
@@ -1875,24 +1881,24 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 global _game_manager_ref
                 try:
                     # Log that the button was clicked
-                    logging.info("Attempting character data reload via UI button...")
+                    log.info("Attempting character data reload via UI button...")
                     
                     # Use the global game manager reference
                     if _game_manager_ref:
-                        logging.info("Game manager reference found. Calling reload_character_data()...")
+                        log.info("Game manager reference found. Calling reload_character_data()...")
                         success = _game_manager_ref.reload_character_data()
                         if success:
-                            logging.info("Character data reloaded successfully!")
+                            log.info("Character data reloaded successfully!")
                             return " Character data reloaded successfully!"
                         else:
-                            logging.error("reload_character_data() returned False.")
+                            log.error("reload_character_data() returned False.")
                             return " Reload failed. Check logs for details."
                     else:
-                        logging.warning("Button clicked, but game manager reference is not set. The game might not have been started.")
+                        log.warning("Button clicked, but game manager reference is not set. The game might not have been started.")
                         return " Game not started. Please start the game first."
                         
                 except Exception as e:
-                    logging.error(f"Error during character data reload: {e}", exc_info=True)
+                    log.error(f"Error during character data reload: {e}", exc_info=True)
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Reload", on_reload_click))
@@ -1903,16 +1909,16 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 global _game_manager_ref
                 try:
                     if _game_manager_ref:
-                        logging.info("Manual summary trigger via UI button (will save summary/log if enabled)...")
+                        log.info("Manual summary trigger via UI button (will save summary/log if enabled)...")
                         ok = _game_manager_ref.save_summary_only()
                         if ok:
                             return " Summary/log save triggered (conversation continues)."
                         return " No active conversation to summarize."
                     else:
-                        logging.warning("Manual summary clicked, but game manager reference is not set. The game might not have been started.")
+                        log.warning("Manual summary clicked, but game manager reference is not set. The game might not have been started.")
                         return " Game not started. Please start the game first."
                 except Exception as e:
-                    logging.error(f"Error triggering summary-only via UI: {e}", exc_info=True)
+                    log.error(f"Error triggering summary-only via UI: {e}", exc_info=True)
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Save Summary", on_save_summary_click))
@@ -1923,16 +1929,16 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 global _game_manager_ref
                 try:
                     if _game_manager_ref:
-                        logging.info("Manual inner-thoughts trigger via UI button...")
+                        log.info("Manual inner-thoughts trigger via UI button...")
                         ok = _game_manager_ref.save_inner_thoughts_only()
                         if ok:
                             return " Inner thoughts save triggered (conversation continues)."
                         return " No active conversation to save thoughts for."
                     else:
-                        logging.warning("Manual inner thoughts clicked, but game manager reference is not set. The game might not have been started.")
+                        log.warning("Manual inner thoughts clicked, but game manager reference is not set. The game might not have been started.")
                         return " Game not started. Please start the game first."
                 except Exception as e:
-                    logging.error(f"Error triggering inner-thoughts save via UI: {e}", exc_info=True)
+                    log.error(f"Error triggering inner-thoughts save via UI: {e}", exc_info=True)
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Save Inner Thoughts", on_save_inner_thoughts_click))
@@ -1943,16 +1949,16 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 global _game_manager_ref
                 try:
                     if _game_manager_ref:
-                        logging.info("Manual personal-reflection trigger via UI button...")
+                        log.info("Manual personal-reflection trigger via UI button...")
                         ok = _game_manager_ref.save_personal_reflection_only()
                         if ok:
                             return " Personal reflection save triggered (conversation continues)."
                         return " No active conversation to save personal reflections for."
                     else:
-                        logging.warning("Manual personal reflection clicked, but game manager reference is not set. The game might not have been started.")
+                        log.warning("Manual personal reflection clicked, but game manager reference is not set. The game might not have been started.")
                         return " Game not started. Please start the game first."
                 except Exception as e:
-                    logging.error(f"Error triggering personal-reflection save via UI: {e}", exc_info=True)
+                    log.error(f"Error triggering personal-reflection save via UI: {e}", exc_info=True)
                     return f" An error occurred: {str(e)}"
 
             additional_buttons.append(("Save Personal Reflection", on_save_personal_reflection_click))
@@ -1964,7 +1970,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 try:
                     return str(int(datetime.now(timezone.utc).timestamp()))
                 except Exception as e:
-                    logging.error(f"Error getting timestamp: {e}")
+                    log.error(f"Error getting timestamp: {e}")
                     return f"Error: {str(e)}"
             additional_buttons.append(("Get Timestamp", on_get_timestamp_click))
         
@@ -1972,27 +1978,27 @@ class SettingsUIConstructor(ConfigValueVisitor):
         elif config_value.identifier == "profile_parameters":
             def on_save_profile_click() -> str:
                 """Handle save profile button click"""
-                logging.info("Save Profile button clicked")
+                log.info("Save Profile button clicked")
                 try:
                     # Get values from profile config fields
                     service = self.__identifier_to_config_value.get("profile_selected_service", None)
                     model = self.__identifier_to_config_value.get("profile_selected_model", None)
                     parameters_json = self.__identifier_to_config_value.get("profile_parameters", None)
                     
-                    logging.debug(f"Profile save attempt - Service: {service.value if service else 'None'}, Model: {model.value if model else 'None'}")
+                    models_log.debug(f"Profile save attempt - Service: {service.value if service else 'None'}, Model: {model.value if model else 'None'}")
                     
                     # Check if config values exist
                     if not all([service, model, parameters_json]):
-                        logging.error("Missing profile configuration fields")
+                        models_log.error("Missing profile configuration fields")
                         return " Please select Service, Model, and enter Parameters"
                     
                     # Check if values are not empty/default
                     if not service.value or service.value.strip() == "":
-                        logging.error("Service not selected")
+                        models_log.error("Service not selected")
                         return " Please select a Service"
                     
                     if not model.value or model.value.strip() == "" or model.value == "Select a service first":
-                        logging.error("Model not selected") 
+                        models_log.error("Model not selected") 
                         return " Please select a Model"
                     
                     # Handle empty parameters - allow empty JSON object as default
@@ -2007,10 +2013,10 @@ class SettingsUIConstructor(ConfigValueVisitor):
                         import json
                         parameters = json.loads(parameters_text)
                         if not isinstance(parameters, dict):
-                            logging.error("Parameters is not a JSON object")
+                            models_log.error("Parameters is not a JSON object")
                             return " Parameters must be a JSON object"
                     except json.JSONDecodeError as e:
-                        logging.error(f"JSON parsing error: {e}")
+                        models_log.error(f"JSON parsing error: {e}")
                         return f" Invalid JSON: {str(e)}"
                     
                     # Create or update the profile
@@ -2021,17 +2027,17 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     )
                     
                     if success:
-                        logging.info(f"Profile saved successfully for {service.value}/{model.value}")
+                        models_log.info(f"Profile saved successfully for {service.value}/{model.value}")
                         # Update the parameters field with properly formatted JSON
                         formatted_json = json.dumps(parameters, indent=4)
                         parameters_json.value = formatted_json
                         return formatted_json
                     else:
-                        logging.error(f"Failed to save profile for {service.value}/{model.value}")
+                        models_log.error(f"Failed to save profile for {service.value}/{model.value}")
                         return " ❌ Failed to save profile. Check logs for details."
                         
                 except Exception as e:
-                    logging.error(f"Error saving profile: {e}")
+                    models_log.error(f"Error saving profile: {e}")
                     # Return current parameters unchanged on error
                     return f" ❌ Error: {str(e)}"
             
@@ -2055,7 +2061,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     success = self.get_profile_manager().delete_profile(profile_id)
                     
                     if success:
-                        logging.info(f"Profile deleted successfully for {service.value}/{model.value}")
+                        models_log.info(f"Profile deleted successfully for {service.value}/{model.value}")
                         # Clear parameters to default
                         parameters_config = self.__identifier_to_config_value.get("profile_parameters")
                         if parameters_config:
@@ -2070,13 +2076,13 @@ class SettingsUIConstructor(ConfigValueVisitor):
                             parameters_config.value = default_json
                             return default_json
                     else:
-                        logging.error(f"Failed to delete profile for {service.value}/{model.value} (may not exist)")
+                        models_log.error(f"Failed to delete profile for {service.value}/{model.value} (may not exist)")
                         # Return current parameters unchanged
                         parameters_config = self.__identifier_to_config_value.get("profile_parameters")
                         return parameters_config.value if parameters_config else ""
                         
                 except Exception as e:
-                    logging.error(f"Error deleting profile: {e}")
+                    models_log.error(f"Error deleting profile: {e}")
                     # Return current parameters unchanged on error
                     parameters_config = self.__identifier_to_config_value.get("profile_parameters")
                     return parameters_config.value if parameters_config else ""

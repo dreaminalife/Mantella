@@ -38,6 +38,12 @@ def setup_mantella_conversation(
             jsonschema.validate(response.json(), models.NpcTalkResponse.model_json_schema())
 
 
+def test_mantella_init_says_whether_the_player_speaks_first(production_like_client: TestClient):
+    response = production_like_client.post("/mantella", json=models.InitRequest(request_type=comm_consts.KEY_REQUESTTYPE_INIT).model_dump(by_alias=True))
+    assert response.status_code == 200
+    assert isinstance(response.json()[comm_consts.KEY_PLAYERSPEAKSFIRST], bool)
+
+
 def test_mantella_player_talk_endpoint(
         production_like_client: TestClient, 
         example_start_conversation_request: models.StartConversationRequest, 
@@ -136,8 +142,7 @@ def test_setup_route_combinations(default_config: ConfigLoader, english_language
         stt_secret_key_file='STT_SECRET_KEY.txt', 
         image_secret_key_file='IMAGE_SECRET_KEY.txt', 
         secret_key_file='GPT_SECRET_KEY.txt', 
-        language_info=english_language_info, 
-        show_debug_messages=False
+        language_info=english_language_info
     )
     
     # Call setup_route
@@ -154,8 +159,7 @@ def test_setup_route_ends_conversation(default_config: ConfigLoader, english_lan
         stt_secret_key_file='STT_SECRET_KEY.txt', 
         image_secret_key_file='IMAGE_SECRET_KEY.txt', 
         secret_key_file='GPT_SECRET_KEY.txt', 
-        language_info=english_language_info, 
-        show_debug_messages=False
+        language_info=english_language_info
     )
     
     # First setup to create a game

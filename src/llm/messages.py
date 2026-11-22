@@ -7,8 +7,11 @@ from src.character_manager import Character
 
 from src.llm.sentence import Sentence
 from src import utils
-import logging
 from typing import TYPE_CHECKING
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CONVERSATION)
 if TYPE_CHECKING:
     from src.llm.image_client import VisionCapture
 
@@ -103,7 +106,7 @@ class Message(ABC):
             return True
             
         except Exception as e:
-            logging.error(f"Message hot-swap failed: {e}")
+            log.error(f"Message hot-swap failed: {e}")
             return False
 
 class join_message(Message):

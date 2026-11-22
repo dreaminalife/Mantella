@@ -1,10 +1,14 @@
 import src.utils as utils
-import logging
 from openai import AsyncOpenAI
 from src.config.config_loader import ConfigLoader
 from src.llm.image_client import ImageClient
 from src.llm.client_base import ClientBase
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
+models_and_profiles_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 
 class LLMClient(ClientBase):
     '''LLM class to handle NPC responses
@@ -32,13 +36,13 @@ class LLMClient(ClientBase):
                 # Log profile application
                 has_profile = profile_manager.has_profile(config.llm_api, config.llm)
                 if has_profile:
-                    logging.info(f"Applied profile for one-on-one conversations: {config.llm_api}/{config.llm}")
-                    logging.info(f"Profile Parameters: {llm_params}")
+                    models_and_profiles_log.info(f"Applied profile for one-on-one conversations: {config.llm_api}/{config.llm}")
+                    models_and_profiles_log.debug(f"Profile Parameters: {llm_params}")
                 else:
-                    logging.info(f"No profile found for {config.llm_api}/{config.llm}, using manual parameters: {llm_params}")
+                    models_and_profiles_log.info(f"No profile found for {config.llm_api}/{config.llm}, using manual parameters: {llm_params}")
                     
             except Exception as e:
-                logging.error(f"Error applying profile for one-on-one conversations: {e}")
+                models_and_profiles_log.error(f"Error applying profile for one-on-one conversations: {e}")
                 llm_params = config.llm_params
         
         ClientBase.replace_braille_blank = config.replace_braille_blank
@@ -51,14 +55,14 @@ class LLMClient(ClientBase):
             self._sonnet_cache_connector = SonnetCacheConnector(False)
 
         if self._is_local:
-            logging.info(f"Running Mantella with local language model")
+            log.info(f"Running Mantella with local language model")
         else:
-            logging.log(23, f"Running Mantella with '{config.llm}'. The language model can be changed in the Mantella UI: http://localhost:4999/ui")
+            log.info(f"Running Mantella with '{config.llm}'. The language model can be changed in the Mantella UI: http://localhost:4999/ui")
 
         self._startup_async_client: AsyncOpenAI | None = self.generate_async_client() # initialize first client in advance of sending first LLM request to save time
 
         if config.vision_enabled:
-            logging.info(f"Setting up vision language model...")
+            log.info(f"Setting up vision language model...")
             self._image_client: ImageClient | None = ImageClient(config, secret_key_file, image_secret_key_file)
     
     @utils.time_it
@@ -96,13 +100,13 @@ class LLMClient(ClientBase):
                     # Log profile application during hot-swap
                     has_profile = profile_manager.has_profile(config.llm_api, config.llm)
                     if has_profile:
-                        logging.info(f"Hot-swap: Applied profile for one-on-one conversations: {config.llm_api}/{config.llm}")
-                        logging.info(f"Hot-swap Profile Parameters: {llm_params}")
+                        models_and_profiles_log.info(f"Hot-swap: Applied profile for one-on-one conversations: {config.llm_api}/{config.llm}")
+                        models_and_profiles_log.debug(f"Hot-swap Profile Parameters: {llm_params}")
                     else:
-                        logging.info(f"Hot-swap: No profile found for {config.llm_api}/{config.llm}, using manual parameters: {llm_params}")
+                        models_and_profiles_log.info(f"Hot-swap: No profile found for {config.llm_api}/{config.llm}, using manual parameters: {llm_params}")
                         
                 except Exception as e:
-                    logging.error(f"Error applying profile for one-on-one conversations during hot-swap: {e}")
+                    models_and_profiles_log.error(f"Error applying profile for one-on-one conversations during hot-swap: {e}")
                     llm_params = config.llm_params
             
             # Update base client settings
@@ -122,7 +126,7 @@ class LLMClient(ClientBase):
             try:
                 self._sonnet_cache_connector = SonnetCacheConnector(getattr(config, 'sonnet_prompt_caching_enabled', False))
             except Exception as e:
-                logging.debug(f"Failed to update Sonnet cache connector during hot-swap: {e}")
+                log.warning(f"Failed to update Sonnet cache connector during hot-swap: {e}")
             
             # Prewarm a new async client so the very next request uses updated headers (e.g., Sonnet caching)
             try:
@@ -138,15 +142,15 @@ class LLMClient(ClientBase):
                         self._image_client.hot_swap_settings(config, secret_key_file, image_secret_key_file)
                 else:
                     # Create new image client
-                    logging.info(f"Setting up vision language model...")
+                    log.info(f"Setting up vision language model...")
                     self._image_client = ImageClient(config, secret_key_file, image_secret_key_file)
             else:
                 # Disable image client if vision is disabled
                 self._image_client = None
             
-            logging.info("LLMClient hot-swap completed successfully")
+            log.info("LLMClient hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"LLMClient hot-swap failed: {e}")
+            log.error(f"LLMClient hot-swap failed: {e}")
             return False

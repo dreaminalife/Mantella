@@ -1,7 +1,6 @@
 """Voice Effects on the Text-to-Speech page: tick the effects to use, change how each one sounds, and hear a line with and without one"""
 from __future__ import annotations
 
-import logging
 import os
 import re
 import shutil
@@ -16,6 +15,10 @@ from src.tts import voice_effects
 from src.tts.registry import voice_services
 from src.tts.test_line import TEST_LINE, as_in_game, speak_with_service, voice_type_choices
 from src.tts.voice_effects import RACE_GROUPS, SLIDER_KEYS, SLIDERS, race_ids, race_names
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 EFFECT_LINE = "You dare enter this place? Your bones will join the others."
 KEEP_LINE_SECONDS = 300 # both buttons play the same spoken line for this long, so an online service is paid once
@@ -192,7 +195,7 @@ def render_voice_effects_editor(config: ConfigLoader, chat_manager_getter: Calla
         try:
             effects.set_on(names or [])
         except Exception as e:
-            logging.warning(f"Could not tick the voice effects: {e}")
+            log.warning(f"Could not tick the voice effects: {e}")
             return in_use_update(), f"Could not save: {e}"
         return in_use_update(), tick_message(effects)
 
@@ -284,7 +287,7 @@ def render_voice_effects_editor(config: ConfigLoader, chat_manager_getter: Calla
             volume, pitch = as_in_game(config, service, voice_type)
             voice_effects.finish_line(out, effect, volume, pitch)
         except Exception as e:
-            logging.warning(f"Voice effect test failed: {e}")
+            log.warning(f"Voice effect test failed: {e}")
             return gr.update(value=None, visible=False), f"Could not play the line: {e}"
         what = f"{effect.title} · Strength {effect.strength:g}" if effect else "No effect"
         return gr.update(value=out, visible=True), f"{service} · {what}"

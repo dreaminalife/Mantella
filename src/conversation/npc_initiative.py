@@ -1,18 +1,24 @@
 import json
 import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, cast
 from src.config.config_loader import ConfigLoader
-from src.conversation.game_master import (DECISIONS_URLS, fill_prompt_variables, format_confidence, format_decision_request,
+from src.conversation.game_master import (fill_prompt_variables, format_confidence, format_decision_request,
                                           format_response_text, post_decision_with_retry)
 from src.llm.ai_client import AIClient
 from src.llm.client_base import ClientBase
+from src.llm.decision_service_resolver import UNUSABLE_SERVICE_MESSAGE, decision_service_resolver
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
 from src.prompt_label import describe_prompt, label_prompt
 from src.utils import get_time_group
+
+log = get_topic_logger(LogTopic.GAME_MASTER)
+timings_log = get_topic_logger(LogTopic.TIMINGS)
 
 NOBODY = "Nobody"
 DECISION_QUESTION = "npc_initiative"
@@ -99,21 +105,22 @@ def choose_initiator(config: ConfigLoader, client: AIClient | None, candidates: 
             chosen = _choose_with_llm(config, client, labelled, question)
         return None if is_cancelled() else chosen
     except Exception as e:
-        logging.error(f"NPC Initiative check failed: {e}")
+        log.error(f"NPC Initiative check failed: {e}")
         return None
 
 
 def _choose_with_decision_model(config: ConfigLoader, client: ClientBase, labelled: dict[str, InitiativeCandidate],
                                  question: dict[str, Any], is_cancelled: Callable[[], bool],
                                  skip_threshold: bool = False) -> InitiativeCandidate | None:
-    url = DECISIONS_URLS.get(client.service_name)
+    url = decision_service_resolver.get_decisions_url(client.service_name)
     if not url:
-        logging.error(f"NPC Initiative decision models only work through OpenRouter or NanoGPT, not {client.service_name}.")
+        log.error(f"NPC Initiative: {UNUSABLE_SERVICE_MESSAGE.format(service=client.service_name)}")
         return None
     # The scene is in the question's instructions. The empty scene keeps the request in the Game Master's shape
     body = {"model": client.model_name, "state": {"scene": "", "conversation": []}, "questions": {DECISION_QUESTION: question}}
-    logging.log(15, "NPC Initiative decision request:\n" + format_decision_request(body))
-    logging.info(f"NPC Initiative decision request for {describe_prompt(config.prompt_profile_manager, INSTRUCTIONS)}: model='{client.model_name}', url='{url}'")
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug("NPC Initiative decision request:\n" + format_decision_request(body))
+    log.info(f"NPC Initiative decision request for {describe_prompt(config.prompt_profile_manager, INSTRUCTIONS)}: model='{client.model_name}', url='{url}'")
     headers = {
         "Authorization": f"Bearer {client.api_key}",
         "HTTP-Referer": "https://art-from-the-machine.github.io/Mantella/",
@@ -124,9 +131,9 @@ def _choose_with_decision_model(config: ConfigLoader, client: ClientBase, labell
         response = post_decision_with_retry(url, headers, body, min(config.llm_response_timeout, NPC_INITIATIVE_TIMEOUT),
                                             should_retry=lambda: not is_cancelled())
     finally:
-        logging.log(26, f"NPC Initiative request took {time.time() - started_at:.2f} seconds")
+        timings_log.debug(f"NPC Initiative request took {time.time() - started_at:.2f} seconds")
     if response.status_code != 200:
-        logging.error(f"NPC Initiative decision call failed with status {response.status_code}:\n{format_response_text(response.text)}")
+        log.error(f"NPC Initiative decision call failed with status {response.status_code}:\n{format_response_text(response.text)}")
         return None
     answer = response.json()["answers"][DECISION_QUESTION]
     probabilities: dict[str, float] = answer.get("probabilities") or {}
@@ -136,13 +143,13 @@ def _choose_with_decision_model(config: ConfigLoader, client: ClientBase, labell
     else:
         top = str(answer["choice"])
         probability = float(answer.get("confidence", 0))
-    logging.log(26, f"NPC Initiative: {format_confidence(answer)}")
+    log.info(f"NPC Initiative: {format_confidence(answer)}")
     if top == NOBODY or top not in labelled:
         return None
     if probability < config.npc_initiative_threshold and not skip_threshold:
-        logging.log(26, f"NPC Initiative: {top} ({probability:.2f}) is below the threshold of {config.npc_initiative_threshold:.2f}")
+        log.info(f"NPC Initiative: {top} ({probability:.2f}) is below the threshold of {config.npc_initiative_threshold:.2f}")
         return None
-    logging.log(26, f"NPC Initiative: {top} approaches the player")
+    log.info(f"NPC Initiative: {top} approaches the player")
     return labelled[top]
 
 
@@ -156,12 +163,12 @@ def _choose_with_llm(config: ConfigLoader, client: AIClient, labelled: dict[str,
     request.add_message(UserMessage(config, request_text, "", True))
     started_at = time.time()
     try:
-        reply = client.request_call(request)
+        reply = client.request_call(request, topic_log=get_topic_logger(LogTopic.GAME_MASTER))
     finally:
-        logging.log(26, f"NPC Initiative request took {time.time() - started_at:.2f} seconds")
+        timings_log.debug(f"NPC Initiative request took {time.time() - started_at:.2f} seconds")
     choice, reason = parse_choice(reply)
     candidate = match_label(choice, labelled)
-    logging.log(26, f"NPC Initiative: {candidate.name if candidate else NOBODY} ({reason or reply})")
+    log.info(f"NPC Initiative: {candidate.name if candidate else NOBODY} ({reason or reply})")
     return candidate
 
 

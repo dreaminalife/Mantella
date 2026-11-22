@@ -1,4 +1,5 @@
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 import os
 import time
 from typing import Dict, List, Tuple
@@ -22,6 +23,8 @@ from src.remember.summaries import (
     player_name_from_thread,
     thread_contains_player,
 )
+
+log = get_topic_logger(LogTopic.MEMORIES)
 
 PRIVATE_THOUGHT_HEADER = "--- PRIVATE THOUGHT (unspoken; other people must not know this) ---"
 PRIVATE_THOUGHT_FOOTER = "--- END PRIVATE THOUGHT ---"
@@ -91,7 +94,6 @@ class InnerMonologue:
         language_name: str,
         summary_client: ClientBase | None = None,
     ) -> None:
-        self.loglevel = 28
         self.__config = config
         self.__game = game
         self.__client: LLMClient = client
@@ -153,7 +155,7 @@ class InnerMonologue:
                 if thought:
                     self.__append_thought(thought, npc, world_id, save_timestamp)
             except Exception as e:
-                logging.error(f"Failed to save private thought for {npc_name}: {e}", exc_info=True)
+                log.error(f"Failed to save private thought for {npc_name}: {e}", exc_info=True)
 
     def _parse_thought_file(self, character: Character, world_id: str) -> Tuple[List[str], List[Tuple[int, str]]]:
         thought_file = self.__get_latest_thought_file_path(character, world_id)
@@ -163,7 +165,7 @@ class InnerMonologue:
             with open(thought_file, "r", encoding="utf-8") as f:
                 raw_text = f.read()
         except Exception as e:
-            logging.error(f"Failed to read private thoughts for {character.name}: {e}")
+            log.error(f"Failed to read private thoughts for {character.name}: {e}")
             return [], []
         return parse_summary_blocks(raw_text)
 
@@ -227,7 +229,7 @@ class InnerMonologue:
                 "inner_monologue_prompt", self.__config.inner_monologue_prompt
             )
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             return ""
         prompt = monologue_template.format(
             name=npc.name,
@@ -275,35 +277,34 @@ class InnerMonologue:
 
         with open(thought_file, "w", encoding="utf-8") as f:
             f.write(previous + separator + block)
-        logging.info(f"Private thought saved for {npc.name}")
+        log.info(f"Private thought saved for {npc.name}")
 
     def __request_thought(self, text_to_reflect_on: str, prompt: str) -> str:
         thought = ""
         if len(text_to_reflect_on) <= 5:
-            logging.info("Private thought not saved. Not enough dialogue spoken.")
+            log.info("Private thought not saved. Not enough dialogue spoken.")
             return ""
 
         messages = message_thread(self.__config, prompt)
         messages.add_message(UserMessage(self.__config, text_to_reflect_on))
-        logging.log(23, f"Inner monologue prompt sent to LLM: {prompt.strip()}")
 
         max_retries = 3
         for attempt in range(1, max_retries + 1):
             try:
-                thought = self.__summary_client.request_call(messages)
+                thought = self.__summary_client.request_call(messages, topic_log=get_topic_logger(LogTopic.MEMORIES))
                 if thought:
                     break
-                logging.info(f"Generating private thought failed (attempt {attempt}/{max_retries}).")
+                log.info(f"Generating private thought failed (attempt {attempt}/{max_retries}).")
             except Exception as e:
-                logging.error(f"Generating private thought error (attempt {attempt}/{max_retries}): {e}")
+                log.error(f"Generating private thought error (attempt {attempt}/{max_retries}): {e}")
                 thought = ""
             if attempt < max_retries:
                 time.sleep(5)
 
         if not thought:
-            logging.info(f"Generating private thought failed after {max_retries} attempts.")
+            log.error(f"Generating private thought failed after {max_retries} attempts.")
             return ""
 
         thought = thought.strip()
-        logging.log(self.loglevel, f"Private thought: {thought}")
+        log.debug(f"Private thought: {thought}")
         return thought

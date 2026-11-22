@@ -6,7 +6,10 @@ from src.llm.key_file_resolver import key_file_resolver
 from src.llm.messages import UserMessage
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.prompt_label import label_text
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CHARACTERS)
 
 
 class BioLLMRequester:
@@ -40,18 +43,12 @@ class BioLLMRequester:
                 # Enable Sonnet caching for Bio Editor prompts too (OpenRouter-only)
                 client._sonnet_cache_connector = SonnetCacheConnector(getattr(self._config, 'sonnet_prompt_caching_enabled', False))
             except Exception as e:
-                logging.debug(f"Failed to attach Sonnet cache connector to Bio client: {e}")
-            # Log prompt similar to dialogue flow
-            try:
-                token_count = client.get_count_tokens(prompt_text)
-            except Exception:
-                token_count = len(prompt_text) if prompt_text else 0
-            logging.log(23, f"Prompt sent to LLM ({token_count} tokens): {prompt_text.strip() if prompt_text else ''}")
+                log.warning(f"Failed to attach Sonnet cache connector to Bio client: {e}")
             message = UserMessage(self._config, label_text(prompt_text, "the Bio Editor"), is_system_generated_message=True)
-            reply = client.request_call(message)
+            reply = client.request_call(message, topic_log=log)
             return reply or ""
         except Exception as e:
-            logging.error(f"BioLLMRequester error: {e}")
+            log.error(f"BioLLMRequester error: {e}")
             return ""
 
 

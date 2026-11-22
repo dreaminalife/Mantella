@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 from typing import Any, List, Tuple
@@ -15,6 +14,12 @@ from src.config.definitions.tts_definitions import TTSEnum
 from src.bio_template_manager import BioTemplateManager, effective_tags, split_tags
 from src.config.definitions.llm_definitions import AutoQuestTagOutcomesEnum
 from src.quest_tags.conditions import CheckList, build_ref_to_base_map
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CONVERSATION)
+characters_log = get_topic_logger(LogTopic.CHARACTERS)
+actions_log = get_topic_logger(LogTopic.ACTIONS)
 
 
 class Skyrim(Gameable):
@@ -37,7 +42,7 @@ class Skyrim(Gameable):
         # Initialize bio template manager with override support
         # Use resolve_path() to handle packaged exe correctly
         bio_templates_path = os.path.join(utils.resolve_path(), 'data', 'Skyrim', 'bio_templates')
-        logging.info(f"Skyrim: Initializing BioTemplateManager with path: {bio_templates_path}")
+        characters_log.debug(f"Skyrim: Initializing BioTemplateManager with path: {bio_templates_path}")
         self.__bio_templates_path = bio_templates_path
         self.__bio_template_manager = BioTemplateManager(bio_templates_path, config)
         self.__config = config
@@ -52,7 +57,7 @@ class Skyrim(Gameable):
             encoding = utils.get_file_encoding(weather_file)
             self.__weather_table: pd.DataFrame = pd.read_csv(weather_file, engine='python', encoding=encoding)
         except:
-            logging.error(f'Unable to read / open "data/Skyrim/skyrim_weather.csv". If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters, or saving the CSV in an incompatible format.')
+            log.error(f'Unable to read / open "data/Skyrim/skyrim_weather.csv". If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters, or saving the CSV in an incompatible format.')
             input("Press Enter to exit.")
 
         try:
@@ -61,7 +66,7 @@ class Skyrim(Gameable):
             encoding = utils.get_file_encoding(idles_file)
             self.__idles_table: pd.DataFrame = pd.read_csv(idles_file, engine='python', encoding=encoding)
         except Exception:
-            logging.warning(f'Unable to read / open "data/Skyrim/skyrim_idles.csv". The Emote action will not be available.')
+            log.warning(f'Unable to read / open "data/Skyrim/skyrim_idles.csv". The Emote action will not be available.')
             self.__idles_table = pd.DataFrame()
 
     @property
@@ -135,7 +140,7 @@ class Skyrim(Gameable):
             try:
                 character_info, is_generic_npc = self.find_character_info(character.base_id, character.name, character.race, character.gender, character.in_game_voice_model)
             except Exception as e:
-                logging.debug(f"Tag Editor: could not look up {character.name} to refresh their tags: {e}")
+                characters_log.warning(f"Tag Editor: could not look up {character.name} to refresh their tags: {e}")
                 continue
             if is_generic_npc:
                 continue
@@ -283,8 +288,8 @@ class Skyrim(Gameable):
         if config.save_audio_data_to_character_folder:
             voice_folder_path = os.path.join(mod_folder, queue_output.speaker.in_game_voice_model)
             if not os.path.exists(voice_folder_path):
-                logging.warning(f"{voice_folder_path} has been created for the first time. Please restart Skyrim to interact with this NPC.")
-                logging.info("Creating voice folders...")
+                log.warning(f"{voice_folder_path} has been created for the first time. Please restart Skyrim to interact with this NPC.")
+                log.info("Creating voice folders...")
                 self._create_all_voice_folders(mod_folder, "skyrim_voice_folder")
         else:
             voice_folder_path = os.path.join(mod_folder, self.MANTELLA_VOICE_FOLDER)
@@ -313,7 +318,7 @@ class Skyrim(Gameable):
             # only warn on failure
             pass
 
-        logging.log(23, f"{speaker.name} should speak")
+        log.debug(f"{speaker.name} should speak")
 
     @utils.time_it
     def hot_swap_settings(self, config: ConfigLoader) -> bool:
@@ -335,17 +340,17 @@ class Skyrim(Gameable):
             self.__config = config
             # Note: __image_analysis_filepath is empty for Skyrim, no update needed
             
-            logging.info("Skyrim hot-swap completed successfully")
+            log.debug("Skyrim hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"Skyrim hot-swap failed: {e}")
+            log.error(f"Skyrim hot-swap failed: {e}")
             return False
 
     @utils.time_it
     def is_sentence_allowed(self, text: str, count_sentence_in_text: int) -> bool:
         if ('assist' in text) and (count_sentence_in_text > 0):
-            logging.log(23, f"'assist' keyword found. Ignoring sentence: {text.strip()}")
+            log.debug(f"'assist' keyword found. Ignoring sentence: {text.strip()}")
             return False
         return True
     
@@ -373,7 +378,7 @@ class Skyrim(Gameable):
         if matched.shape[0] < 1:
             return None
         idle_id = int(str(matched.sample(n=1).iloc[0]['id']).strip(), 16)
-        logging.log(23, f"Resolved idle name '{idle_name}' to ID {idle_id}")
+        actions_log.debug(f"Resolved idle name '{idle_name}' to ID {idle_id}")
         return idle_id
 
     @utils.time_it

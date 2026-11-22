@@ -2,7 +2,6 @@
 (mono, 16-bit WAV), and cut the silence at the start and end of the line, keeping a few hundredths of a second so the first sound isn't clipped.
 Then the voice's Talking speed (voice_speed.py).
 """
-import logging
 from typing import BinaryIO
 
 import av
@@ -10,6 +9,10 @@ import numpy as np
 import soundfile as sf
 
 from src.tts.voice_speed import SPEED_CHANGE, SpeedChange
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 KEEP_SECONDS = 0.03 # silence kept before the first and after the last sound
 WINDOW_SECONDS = 0.01
@@ -62,7 +65,7 @@ def clean_up(source: str, destination: str, trim: bool = True, speed: float = 1.
     if trim:
         samples = trim_silence(samples, rate)
     samples = speed_change.apply(samples, rate, speed)
-    logging.debug(f"Voice clean-up: {before / rate:.2f}s -> {samples.size / rate:.2f}s at {rate} Hz" + (f", Talking speed {speed:g}" if speed != 1.0 else ""))
+    log.debug(f"Voice clean-up: {before / rate:.2f}s -> {samples.size / rate:.2f}s at {rate} Hz" + (f", Talking speed {speed:g}" if speed != 1.0 else ""))
     sf.write(destination, np.clip(samples, -1.0, 1.0), rate, subtype="PCM_16")
 
 

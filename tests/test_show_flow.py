@@ -1,6 +1,7 @@
 """Show (hotkey or Conversation Wheel): during a conversation the player shows the NPCs what they see. The game asks Mantella right away
 to take a picture of the game window, and the picture goes with the player's next line. Whole conversations on the pretend game and
 models of tests/test_actions_flow.py, with the picture taking replaced by a set picture"""
+import logging
 from copy import deepcopy
 from unittest.mock import MagicMock
 
@@ -162,7 +163,7 @@ def test_a_model_that_cant_read_the_picture_answers_without_it(game: ActionGame,
     model.fail_with_picture = True
     game.start(HULDA)
     show(manager)
-    with caplog.at_level(30):
+    with caplog.at_level(logging.DEBUG):
         game.say("What do you make of that?")
     assert images(model)[-2:] == ["picture 1", None]
     assert game.lines_of(HULDA.name) # She still answers
@@ -218,9 +219,8 @@ def test_a_failed_show_never_ends_the_conversation(caplog):
     # The game ends the conversation on an error reply. A failure only means the picture wasn't taken
     from src.http.routes.mantella_route import mantella_route
     route = mantella_route.__new__(mantella_route)
-    route._show_debug_messages = False
     route._mantella_route__game = MagicMock(show_picture=MagicMock(side_effect=RuntimeError("window gone")))
-    with caplog.at_level(40):
+    with caplog.at_level(logging.DEBUG):
         reply = route._mantella_route__process_show({comm_consts.KEY_REQUESTTYPE: comm_consts.KEY_REQUESTTYPE_SHOW})
     assert reply == {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_SHOWRECEIVED, comm_consts.KEY_SHOW_TAKEN: False}
     assert "Show failed" in caplog.text

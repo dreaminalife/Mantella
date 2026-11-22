@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import datetime
 import winsound
-import logging
 from src.config.config_loader import ConfigLoader
 import src.utils as utils
 import os
@@ -13,6 +12,10 @@ from src.tts.synthesization_options import SynthesizationOptions
 import requests
 import shutil
 from src.config.definitions.game_definitions import GameEnum
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 class TTSable(ABC):
     """Base class for different TTS services
@@ -21,7 +24,6 @@ class TTSable(ABC):
     def __init__(self, config: ConfigLoader) -> None:
         super().__init__()
         self._config: ConfigLoader = config
-        self._loglevel = 29
         self._lipgen_path = config.lipgen_path
         self.__has_lipgen_warning_happened = False
         self._facefx_path = config.facefx_path
@@ -49,11 +51,11 @@ class TTSable(ABC):
     def synthesize(self, voice: str, voiceline: str, in_game_voice: str, csv_in_game_voice: str, voice_accent: str, synth_options: SynthesizationOptions, advanced_voice_model: str | None = None):
         """Synthesizes a given voiceline
         """
-        logging.debug(f'last_voice: {self._last_voice}, voice: {voice}, in_game_voice: {in_game_voice}, csv_in_game_voice: {csv_in_game_voice}, advanced_voice_model: {advanced_voice_model}, voice_accent: {voice_accent}')
+        log.debug(f'last_voice: {self._last_voice}, voice: {voice}, in_game_voice: {in_game_voice}, csv_in_game_voice: {csv_in_game_voice}, advanced_voice_model: {advanced_voice_model}, voice_accent: {voice_accent}')
         if self._last_voice == '' or (isinstance(self._last_voice, str) and self._last_voice.lower() not in {isinstance(v, str) and v.lower() for v in {voice, in_game_voice, csv_in_game_voice, advanced_voice_model, f'fo4_{voice}'}}):
             self.change_voice(voice, in_game_voice, csv_in_game_voice, advanced_voice_model, voice_accent)
 
-        logging.log(22, f'Synthesizing voiceline: {voiceline.strip()}')
+        log.debug( f'Synthesizing voiceline: {voiceline.strip()}')
 
         final_voiceline_file_name = 'out' # "out" is the file name used by XTTS
         final_voiceline_file =  f"{self._voiceline_folder}/{final_voiceline_file_name}.wav"
@@ -64,11 +66,11 @@ class TTSable(ABC):
             if os.path.exists(final_voiceline_file.replace(".wav", ".lip")):
                 os.remove(final_voiceline_file.replace(".wav", ".lip"))
         except:
-            logging.warning("Failed to remove spoken voicelines")
+            log.warning("Failed to remove spoken voicelines")
 
         self.tts_synthesize(voiceline, final_voiceline_file, synth_options)
         if not os.path.exists(final_voiceline_file):
-            logging.error(f'TTS failed to generate voiceline at: {Path(final_voiceline_file)}')
+            log.error(f'TTS failed to generate voiceline at: {Path(final_voiceline_file)}')
             raise FileNotFoundError()
         
         if (self._lip_generation_enabled == 'enabled') or (self._lip_generation_enabled == 'lazy' and not synth_options.is_first_line_of_response):
@@ -112,12 +114,12 @@ class TTSable(ABC):
                         try:
                             shutil.copy2(final_voiceline_file, new_wav_file_name)
                             renamed_successfully = True
-                            logging.info(f"Used copy instead of rename due to file lock")
+                            log.info(f"Used copy instead of rename due to file lock")
                             # Note: We keep the original file too in this case
                         except Exception as copy_ex:
-                            logging.warning(f'Copy fallback also failed: {copy_ex} — keeping original file')
+                            log.warning(f'Copy fallback also failed: {copy_ex} — keeping original file')
                 except Exception as ex:
-                    logging.warning(f'{type(ex).__name__}: {ex.args}')
+                    log.warning(f'{type(ex).__name__}: {ex.args}')
                     break
 
             if (self._lip_generation_enabled == 'enabled') or (self._lip_generation_enabled == 'lazy' and not synth_options.is_first_line_of_response):
@@ -126,7 +128,7 @@ class TTSable(ABC):
                         os.remove(new_lip_file_name)
                     os.rename(final_voiceline_file.replace(".wav", ".lip"), new_lip_file_name)
                 except:
-                    logging.error(f'Could not rename {final_voiceline_file.replace(".wav", ".lip")}')
+                    log.error(f'Could not rename {final_voiceline_file.replace(".wav", ".lip")}')
             try:
                 fuz_file_name = final_voiceline_file.replace(".wav", ".fuz")
                 if (os.path.exists(fuz_file_name)):
@@ -134,7 +136,7 @@ class TTSable(ABC):
                         os.remove(new_fuz_file_name)
                     os.rename(fuz_file_name, new_fuz_file_name)
             except:
-                logging.error(f'Could not rename {final_voiceline_file.replace(".wav", ".fuz")}')
+                log.error(f'Could not rename {final_voiceline_file.replace(".wav", ".fuz")}')
             
             # Only point to the new file if the rename actually succeeded
             if renamed_successfully:
@@ -239,20 +241,20 @@ class TTSable(ABC):
                                                                          creationflags=subprocess.CREATE_NO_WINDOW)
                 if run_result.returncode != 0 and len(voiceline) > 11 :
                     #Very short sentences sometimes fail to generate a .lip file, so skip warning
-                    logging.warning(f'Lipgen returned {run_result.returncode}')
+                    log.warning(f'Lipgen returned {run_result.returncode}')
             else:
                 if not self.__has_lipgen_warning_happened:
-                    logging.info(f'Could not find {LipGen_path}. (Optional) Install or update the Creation Kit from Steam for faster lip sync generation')
+                    log.info(f'Could not find {LipGen_path}. (Optional) Install or update the Creation Kit from Steam for faster lip sync generation')
                     self.__has_lipgen_warning_happened = True
                 # Fall back to using FaceFXWrapper if LipGen not detected
                 face_wrapper_executable: Path = Path(self._facefx_path) / "FaceFXWrapper.exe"
                 if not face_wrapper_executable.exists():
-                    logging.error(f'Could not find FaceFXWrapper.exe in "{face_wrapper_executable.parent}" with which to create a lip sync file, download it from: https://github.com/Nukem9/FaceFXWrapper/releases')
+                    log.error(f'Could not find FaceFXWrapper.exe in "{face_wrapper_executable.parent}" with which to create a lip sync file, download it from: https://github.com/Nukem9/FaceFXWrapper/releases')
                     raise FileNotFoundError()
 
                 cdf_path = Path(facefx_path) / 'FonixData.cdf' 
                 if not cdf_path.exists():
-                    logging.error(f'Could not find FonixData.cdf in "{cdf_path.parent}" required by FaceFXWrapper.')
+                    log.error(f'Could not find FonixData.cdf in "{cdf_path.parent}" required by FaceFXWrapper.')
                     raise FileNotFoundError()
         
                 # Run FaceFXWrapper.exe
@@ -284,18 +286,18 @@ class TTSable(ABC):
                 run_result: subprocess.CompletedProcess = subprocess.run(args, cwd=self._voiceline_folder, stdout=DEVNULL, stderr=DEVNULL,
                                                                          creationflags=subprocess.CREATE_NO_WINDOW)
                 if run_result.returncode != 0:
-                    logging.warning(f'LipFuzer returned {run_result.returncode}')
+                    log.warning(f'LipFuzer returned {run_result.returncode}')
             else:
                 #Fall back to using Fuz_extractor and xWMAencode if LipFuzer not found
-                logging.warning(f'Could not find {LipFuz_path}: please install or update the creation kit from Steam')
+                log.warning(f'Could not find {LipFuz_path}: please install or update the creation kit from Steam')
                 fuz_extractor_executable = Path(facefx_path) / "Fuz_extractor.exe"
                 if not fuz_extractor_executable.exists():
-                    logging.error(f'Could not find Fuz_extractor.exe in "{facefx_path}" with which to create a fuz file, download it from: https://www.nexusmods.com/skyrimspecialedition/mods/55605')
+                    log.error(f'Could not find Fuz_extractor.exe in "{facefx_path}" with which to create a fuz file, download it from: https://www.nexusmods.com/skyrimspecialedition/mods/55605')
                     raise FileNotFoundError()
         
                 xWMAEncode_executable = Path(facefx_path) / "xWMAEncode.exe"
                 if not xWMAEncode_executable.exists():
-                    logging.error(f'Could not find xWMAEncode.exe in "{facefx_path}" with which to create a fuz file, download it from: https://www.nexusmods.com/skyrimspecialedition/mods/55605')
+                    log.error(f'Could not find xWMAEncode.exe in "{facefx_path}" with which to create a fuz file, download it from: https://www.nexusmods.com/skyrimspecialedition/mods/55605')
                     raise FileNotFoundError()
 
                 xwm_file = wav_file.replace(".wav", ".xwm")
@@ -333,4 +335,4 @@ class TTSable(ABC):
                 generate_fuz_file(self._facefx_path,wav_file, lip_file)
         
         except Exception as e:
-            logging.warning(e)
+            log.warning(e)

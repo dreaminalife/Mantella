@@ -3,8 +3,11 @@ the online services cloned on the player's account. Each button acts on all of t
 service and play with another"""
 from __future__ import annotations
 
-import logging
 from typing import Any
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 
 def _keepers() -> list[Any]:
@@ -23,7 +26,7 @@ def _each(action: str, *args, **kwargs) -> None:
         try:
             getattr(keeper, action)(*args, **kwargs)
         except Exception as e:
-            logging.warning(f"Could not tidy up the voices kept for {getattr(keeper, 'service_name', 'Pocket TTS')}: {e}")
+            log.warning(f"Could not tidy up the voices kept for {getattr(keeper, 'service_name', 'Pocket TTS')}: {e}")
 
 
 def move_saved_voice(save_folder: str, from_key: str, to_key: str, clip_path: str) -> None:

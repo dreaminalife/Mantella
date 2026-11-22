@@ -1,7 +1,7 @@
 """Readable table view of the live conversation JSON.
 
 Each row is one line of the conversation: a player message, one of its in-game
-events, one NPC sentence (speech, narration or thought), or an NPC joining/leaving. Only the Text column
+events or Vanilla Dialogue lines, one NPC sentence (speech, narration or thought), or an NPC joining/leaving. Only the Text column
 is written back; everything else stays as it is in the JSON.
 """
 import json
@@ -186,6 +186,19 @@ _SENTENCE_KINDS = {
 }
 
 
+# The lists a player message carries in front of its text, in the order they are sent: (JSON key, # suffix, Kind)
+_ATTACHED_LISTS = [
+    ("ingame_events", "e", "Event"),
+    ("heard_dialogue", "v", "Vanilla Dialogue"), # Skyrim's own voiced lines said during the conversation
+]
+
+
+def _only_carries_lists(item: dict) -> bool:
+    """A message with no text of its own that only carries events or Vanilla Dialogue: the NPCs went on without the player,
+    or something happened (an event or NPC Event)"""
+    return bool(item.get("is_director")) and not item.get("text")
+
+
 def _user_kind(item: dict) -> str:
     if item.get("is_director"):
         return "Director"
@@ -197,17 +210,20 @@ def _user_kind(item: dict) -> str:
 def _rows_with_targets(messages: list) -> list[tuple[list[str], tuple]]:
     """Pairs each table row with the (container, key) in the JSON holding its text.
 
-    The in-game events of a player message come first, one row each, as they are sent before the player's text.
+    The in-game events and Vanilla Dialogue lines of a player message come first, one row each, as they are sent before the player's text.
     """
     result = []
     for i, item in enumerate(messages, start=1):
         msg_type = item.get("type")
         if msg_type == "user":
-            events = item.get("ingame_events") or []
-            for k, event in enumerate(events):
-                result.append(([f"{i}.e{k + 1}", "", "Event", str(event)], (events, k)))
-            if events and item.get("is_director") and not item.get("text"):
-                continue # Only carries the events: the NPCs went on without the player, or something happened (an event or NPC Event)
+            carried = False
+            for key, suffix, kind in _ATTACHED_LISTS:
+                entries = item.get(key) or []
+                for k, entry in enumerate(entries):
+                    result.append(([f"{i}.{suffix}{k + 1}", "", kind, str(entry)], (entries, k)))
+                carried = carried or bool(entries)
+            if carried and _only_carries_lists(item):
+                continue
             who = item.get("player_character_name") or "Player"
             result.append(([str(i), who, _user_kind(item), item.get("text", "")], (item, "text")))
         elif msg_type == "assistant":
@@ -261,7 +277,8 @@ def delete_selected_rows(json_str: str, rows: list[list], selected_numbers: list
 
     An NPC message whose sentences are all deleted is removed. NPC messages left
     next to each other by a deletion are merged, as the conversation never holds two in a row.
-    Deleting a player row also removes its events. A message that only carried events (no row of its own) is removed with its last event.
+    Deleting a player row also removes its events and Vanilla Dialogue lines. A message that only carried them (no row of its own)
+    is removed with the last of them.
 
     Raises:
         ValueError: if rows were added, removed or reordered
@@ -271,18 +288,20 @@ def delete_selected_rows(json_str: str, rows: list[list], selected_numbers: list
         container[key] = str(row[3])
     selected = [target for row, target in pairs if str(row[0]) in selected_numbers]
     selected_ids = {id(container) for container, _ in selected if isinstance(container, dict)}
-    selected_events = {(id(container), key) for container, key in selected if isinstance(container, list)}
+    selected_entries = {(id(container), key) for container, key in selected if isinstance(container, list)}
     kept: list[dict] = []
     removed_since_last_kept = False
     for item in messages:
         if id(item) in selected_ids:
             removed_since_last_kept = True
             continue
-        if item.get("type") == "user" and item.get("ingame_events"):
-            events = item["ingame_events"]
-            item["ingame_events"] = [event for k, event in enumerate(events) if (id(events), k) not in selected_events]
-            if not item["ingame_events"] and item.get("is_director") and not item.get("text"):
-                removed_since_last_kept = True # It only carried the events deleted
+        if item.get("type") == "user" and any(item.get(key) for key, _, _ in _ATTACHED_LISTS):
+            for key, _, _ in _ATTACHED_LISTS:
+                entries = item.get(key)
+                if entries:
+                    item[key] = [entry for k, entry in enumerate(entries) if (id(entries), k) not in selected_entries]
+            if _only_carries_lists(item) and not any(item.get(key) for key, _, _ in _ATTACHED_LISTS):
+                removed_since_last_kept = True # It only carried what was deleted
                 continue
         if item.get("type") == "assistant":
             sentences = item.get("sentences", [])

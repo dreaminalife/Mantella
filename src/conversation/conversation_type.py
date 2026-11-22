@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import logging
 from src.config.config_loader import ConfigLoader
 from src.config.definitions.game_definitions import GameEnum
 from src.prompt_profile_manager import PromptSectionError
@@ -11,6 +10,10 @@ from src.actions.action_rules import actions_for, tool_actions_for
 from src.config.definitions.action_definitions import DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, RADIANT, SHOUT
 from src.conversation.action import Action
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CONVERSATION)
 
 class conversation_type(ABC):
     """Base class for different forms of conversations.
@@ -131,8 +134,8 @@ class pc_to_npc(conversation_type):
         try:
             text = self._config.prompt_profile_manager.resolve_prompt("skyrim_npc_initiative_opener", self._config.npc_initiative_opener)
         except PromptSectionError as e:
-            logging.error(str(e))
-            logging.error("NPC Initiative opener could not be built. Fix the active Skyrim NPC Initiative Opener prompt profile.")
+            log.error(str(e))
+            log.error("NPC Initiative opener could not be built. Fix the active Skyrim NPC Initiative Opener prompt profile.")
             return None
         text = text.replace("{name}", npcs[0].name).replace("{player_name}", player_character.name)
         message = UserMessage(context_for_conversation.config, text, player_character.name, True)
@@ -334,7 +337,7 @@ class radiant(conversation_type):
         try:
             text = self._config.prompt_profile_manager.resolve_prompt(prompt_type, text)
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             self.mark_prompt_unusable()
             return None
         reply = UserMessage(context_for_conversation.config, text, "", True)

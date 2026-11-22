@@ -1,5 +1,8 @@
-import logging
 import re
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CHARACTERS)
 
 
 def normalize_bio_section_name(section_name: str) -> str:
@@ -75,13 +78,13 @@ def apply_bio_section_filter(bio: str, character_name: str, config, *, enabled: 
 
     configured_sections = set(getattr(config, "bio_sections_to_exclude_list", []))
     if not configured_sections:
-        logging.debug("Bio section filter enabled, but no sections are configured.")
+        log.debug("Bio section filter enabled, but no sections are configured.")
         return bio
 
     filtered_bio, matched_sections = filter_markdown_top_level_sections(bio, configured_sections)
     missing_sections = sorted(configured_sections.difference(matched_sections))
     if missing_sections:
-        logging.debug(
+        log.debug(
             f"Bio section filter: no matching '##' header found in {character_name}'s bio for: {', '.join(missing_sections)}"
         )
     return filtered_bio

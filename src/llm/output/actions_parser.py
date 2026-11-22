@@ -1,7 +1,10 @@
-import logging
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
 from src.llm.sentence_content import SentenceContent, has_action
 from src.conversation.action import Action
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.ACTIONS)
 
 LOOK = "mantella_npc_vision"
 
@@ -41,7 +44,7 @@ class actions_parser(output_parser):
                         continue
                     if cut_content.text.lstrip().startswith(keyword):
                         # The NPC wants to see first: the reply is asked for again with a screenshot, and this line is never said
-                        logging.log(23, f"{cut_content.speaker.name} looks around")
+                        log.info(f"{cut_content.speaker.name} looks around")
                         settings.vision_requested = True
                         settings.stop_generation = True
                         return None, last_content
@@ -51,7 +54,7 @@ class actions_parser(output_parser):
                     _drop_keyword(cut_content, keyword)
                     if not has_action(cut_content.actions, action.identifier): # Named twice, done once
                         cut_content.actions.append({'identifier': action.identifier})
-                    logging.log(28, f"Action: {action.name} ({cut_content.speaker.name})")
+                    log.info(f"Action: {action.name} ({cut_content.speaker.name})")
                     # TODO: Add back this functionality while keeping the first delivered sentence intact
                     # ie "Inventory: Here you go." instead of just "Inventory:" with no further response
                     # if action.is_interrupting:
@@ -61,7 +64,7 @@ class actions_parser(output_parser):
                 if cut_content.text.lstrip().startswith(keyword):
                     cut_content.text = cut_content.text.lstrip()[len(keyword):].strip()
                     _drop_keyword(cut_content, keyword)
-                    logging.log(23, f"{cut_content.speaker.name} used {action.name}, which NPCs can't use in this conversation. Nothing happens")
+                    log.info(f"{cut_content.speaker.name} used {action.name}, which NPCs can't use in this conversation. Nothing happens")
         return cut_content, last_content
     
     def get_cut_indicators(self) -> list[str]:

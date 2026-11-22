@@ -1,6 +1,5 @@
 from src.config.config_loader import ConfigLoader
 from src.tts.ttsable import TTSable
-import logging
 import subprocess
 import os
 import time
@@ -12,6 +11,10 @@ from queue import Queue, Empty
 from src.tts.synthesization_options import SynthesizationOptions
 from src.games.gameable import Gameable
 from pathlib import Path
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 # https://stackoverflow.com/a/4896288/25532567
 ON_POSIX = 'posix' in sys.builtin_module_names
@@ -33,7 +36,7 @@ class Piper(TTSable):
     def __init__(self, config: ConfigLoader, game: Gameable) -> None:
         super().__init__(config)
         if self._language != 'en':
-            logging.warning(f"Selected language is '{self._language}'', but Piper only supports English. Please change the selected text-to-speech model in `Text-to-Speech`->`TTS Service` in the Mantella UI")
+            log.warning(f"Selected language is '{self._language}'', but Piper only supports English. Please change the selected text-to-speech model in `Text-to-Speech`->`TTS Service` in the Mantella UI")
         self.__game: Gameable = game
         self.__piper_path = Path(config.piper_path)
         self.__models_path = self.__piper_path / 'models' / self.__game.game_name_in_filepath / 'low' # TODO: change /low parts of the path to dynamic variables
@@ -42,7 +45,7 @@ class Piper(TTSable):
         self._current_actor_gender = None
         self._current_actor_race = None
 
-        logging.log(self._loglevel, f'Connecting to Piper...')
+        log.info( f'Connecting to Piper...')
         self._check_if_piper_is_running()
 
         self.__available_models = self.get_available_models(self.__models_path)
@@ -73,7 +76,7 @@ class Piper(TTSable):
         if self.__waiting_for_voice_load:
             voice_ready = self._check_voice_changed()
             if voice_ready is False:
-                logging.warning("Voice model did not load successfully before synthesis attempt")
+                log.warning("Voice model did not load successfully before synthesis attempt")
 
         # Piper tends to overexaggerate sentences with exclamation marks, which works well for combat but not for casual conversation
         if not synth_options.aggro:
@@ -105,7 +108,7 @@ class Piper(TTSable):
             while time.time() - start_time < max_wait_time:
                 exit_code = self.process.poll()
                 if exit_code is not None and exit_code != 0:
-                    logging.error(f"Piper process has crashed with exit code: {exit_code}")
+                    log.error(f"Piper process has crashed with exit code: {exit_code}")
                     # Single restart path; ensure model is reloaded and ready
                     self._run_piper()
                     if self.__selected_voice:
@@ -127,7 +130,7 @@ class Piper(TTSable):
                                 frames = wav_file.getnframes()
                                 rate = wav_file.getframerate()
                                 duration = frames / float(rate) if rate else 0.0
-                                logging.debug(f'"{voiceline}" is {duration} seconds long')
+                                log.debug(f'"{voiceline}" is {duration} seconds long')
                                 if duration > 0:
                                     return
                     except:
@@ -138,14 +141,14 @@ class Piper(TTSable):
                 attempts += 1
                 continue
 
-            logging.warning(f'Synthesis timed out for voiceline "{voiceline.strip()}" after {max_wait_time:.1f}s. Restarting Piper...')
+            log.warning(f'Synthesis timed out for voiceline "{voiceline.strip()}" after {max_wait_time:.1f}s. Restarting Piper...')
             self._restart_piper()
             if self.__selected_voice:
                 self.change_voice(self.__selected_voice)
                 self._check_voice_changed()
             attempts += 1
 
-        logging.error(
+        log.error(
             f"Piper failed after {attempts} attempts. Voice: {self.__selected_voice}, "
             f"Process alive: {hasattr(self, 'process') and self.process and self.process.poll() is None}, "
             f"Text: '{voiceline[:50]}...', Length: {len(voiceline)} chars"
@@ -162,7 +165,7 @@ class Piper(TTSable):
             while time.time() - start_time < max_wait_time:
                 exit_code = self.process.poll()
                 if exit_code is not None and exit_code != 0:
-                    logging.error(f"Piper process has crashed with exit code: {exit_code}")
+                    log.error(f"Piper process has crashed with exit code: {exit_code}")
                     self.__waiting_for_voice_load = False
                     self._run_piper()
                     break
@@ -175,7 +178,7 @@ class Piper(TTSable):
                         except Exception:
                             line = str(line)
                     if "Model loaded" in line:
-                        logging.log(self._loglevel, f'Model {self.__selected_voice} loaded')
+                        log.info( f'Model {self.__selected_voice} loaded')
                         self.__waiting_for_voice_load = False
                         self._last_voice = self.__selected_voice
                         return True
@@ -184,7 +187,7 @@ class Piper(TTSable):
                 time.sleep(0.01)
 
             # Timeout waiting for model load; attempt a controlled restart and re-load
-            logging.warning(f'Voice model loading timed out for "{self.__selected_voice}". Restarting Piper...')
+            log.warning(f'Voice model loading timed out for "{self.__selected_voice}". Restarting Piper...')
             self.__waiting_for_voice_load = False
             self._restart_piper()
             if self.__selected_voice:
@@ -193,7 +196,7 @@ class Piper(TTSable):
                 self.__waiting_for_voice_load = True
             retries += 1
 
-        logging.error(f"Voice model failed to load after {max_retries+1} attempts for {self.__selected_voice}")
+        log.error(f"Voice model failed to load after {max_retries+1} attempts for {self.__selected_voice}")
         self.__waiting_for_voice_load = False
         return False
 
@@ -206,14 +209,14 @@ class Piper(TTSable):
                     voice_cleaned = str(voice_type).lower().replace(' ', '')
                     if voice_cleaned in self.__available_models:
                         return voice_cleaned
-            logging.log(self._loglevel, f'Could not find voice model {in_game_voice}.onnx in {self.__models_path} attempting to load a backup model')
+            log.warning( f'Could not find voice model {in_game_voice}.onnx in {self.__models_path} attempting to load a backup model')
             voice_type=self.__game.find_best_voice_model(voice_race, voice_gender, in_game_voice, library_search=False)
             if voice_type:
                 voice_cleaned = str(voice_type).lower().replace(' ', '')
             return voice_cleaned    
         except Exception as e :
             utils.play_error_sound()
-            logging.error(f'Could not find a backup voice model {in_game_voice}.onnx in {self.__models_path}. Error :{e}')
+            log.error(f'Could not find a backup voice model {in_game_voice}.onnx in {self.__models_path}. Error :{e}')
             return None
 
     @utils.time_it
@@ -226,7 +229,7 @@ class Piper(TTSable):
         if self.__waiting_for_voice_load:
             self._check_voice_changed()
         else:
-            logging.log(self._loglevel, 'Loading voice model...')
+            log.debug( 'Loading voice model...')
 
             self.__selected_voice = self._select_voice_type(voice, in_game_voice, csv_in_game_voice, advanced_voice_model, self._current_actor_gender, self._current_actor_race)
             model_path = self.__models_path / f'{self.__selected_voice}.onnx'
@@ -263,7 +266,7 @@ class Piper(TTSable):
         
         except Exception as e:
             utils.play_error_sound()
-            logging.error(f'Could not run Piper. Ensure that the path "{self.__piper_path}" is correct. Error: {e}')
+            log.error(f'Could not run Piper. Ensure that the path "{self.__piper_path}" is correct. Error: {e}')
             raise TTSServiceFailure()
 
     @utils.time_it

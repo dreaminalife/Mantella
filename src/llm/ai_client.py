@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator
 
@@ -9,12 +10,13 @@ from src.llm.llm_model_list import LLMModelList
 class AIClient(ABC):
 
     @abstractmethod
-    def request_call(self, messages: Message | message_thread) -> str | None:
+    def request_call(self, messages: Message | message_thread, topic_log: logging.Logger | None = None) -> str | None:
         """A standard sync request call to the LLM. 
         This method generates a new client, calls 'client.chat.completions.create', returns the result and closes when finished
 
         Args:
             messages (conversation_thread): The message thread of the conversation
+            topic_log (logging.Logger | None): the log topic of the feature asking, which shows the whole request and reply at Full
 
         Returns:
             str | None: The reply of the LLM

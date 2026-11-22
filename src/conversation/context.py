@@ -1,5 +1,4 @@
 import fnmatch
-import logging
 import os
 from typing import Any, Callable, Hashable, List, TYPE_CHECKING
 import re
@@ -21,6 +20,13 @@ from src.lorebook_manager import LorebookManager
 from src.prompt_profile_manager import PromptSectionError
 from src.tts import voice_tags
 from src.bio_section_filter import apply_bio_section_filter, should_filter_conversation_bios
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_prompt_logger, get_topic_logger
+
+log = get_topic_logger(LogTopic.CONVERSATION)
+ai_replies_log = get_topic_logger(LogTopic.AI_REPLIES)
+ai_replies_prompt_log = get_prompt_logger(LogTopic.AI_REPLIES)
+characters_log = get_topic_logger(LogTopic.CHARACTERS)
 
 NOBODY_DESCRIBED = "nobody" # {nearby_bios} when none of the people nearby the Game Master may pick are described
 
@@ -189,11 +195,11 @@ class context:
             if self.__location in ['the Commonwealth', 'Skyrim']:
                 self.__location = default_location
             
-            logging.info("Context hot-swap completed successfully")
+            log.debug("Context hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"Context hot-swap failed: {e}")
+            log.error(f"Context hot-swap failed: {e}")
             return False
 
     @property
@@ -480,7 +486,7 @@ class context:
                 current_stats.get_custom_character_value("mantella_actor_pos_y") != npc.get_custom_character_value("mantella_actor_pos_y")):
                 current_stats.set_custom_character_value("mantella_actor_pos_y", npc.get_custom_character_value("mantella_actor_pos_y"))
         except Exception as e:
-            logging.info(f"Updating custom values failed: {e}")
+            log.warning(f"Updating custom values failed: {e}")
         if not npc.is_player_character and not is_player_hidden:
             player_name = "the player"
             player = self.__npcs_in_conversation.get_player_character()
@@ -744,7 +750,7 @@ class context:
                 if history_text.strip():
                     search_texts.append(history_text)
             except Exception as e:
-                logging.debug(f"Could not gather conversation history for lorebook scan: {e}")
+                characters_log.warning(f"Could not gather conversation history for lorebook scan: {e}")
         
         # Include latest context-level in-game/custom events directly so they
         # can trigger lore entries even before they are persisted into history.
@@ -754,7 +760,7 @@ class context:
                 if events_text:
                     search_texts.append(events_text)
         except Exception as e:
-            logging.debug(f"Could not gather context events for lorebook scan: {e}")
+            characters_log.warning(f"Could not gather context events for lorebook scan: {e}")
 
         return self.__lorebook_manager.render_lorebook_entries(search_texts)
 
@@ -892,7 +898,7 @@ class context:
         ]
         have_bios_been_dropped = False
         have_summaries_been_dropped = False
-        logging.log(23, f'Maximum size of prompt is {self.__client.token_limit} x {self.TOKEN_LIMIT_PERCENT} = {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens.')
+        ai_replies_log.debug(f'Maximum size of prompt is {self.__client.token_limit} x {self.TOKEN_LIMIT_PERCENT} = {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens.')
         for step, content in enumerate(removal_content):
             result = self.__fill_prompt(
                 prompt,
@@ -937,13 +943,13 @@ class context:
         
         should_log_prompt = should_log or self.__config.consume_log_next_system_prompt()
         if should_log_prompt:
-            logging.log(23, f'Prompt sent to LLM ({self.__client.get_count_tokens(result)} tokens): {result.strip()}')
+            ai_replies_prompt_log.info(f'Prompt sent to LLM ({self.__client.get_count_tokens(result)} tokens): {result.strip()}')
         if have_summaries_been_dropped and have_bios_been_dropped:
-            logging.log(logging.WARNING, f'Both the bios and summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations and will have limited knowledge of who they are.')
+            log.warning(f'Both the bios and summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations and will have limited knowledge of who they are.')
         elif have_summaries_been_dropped:
-            logging.log(logging.WARNING, f'The summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations.')
+            log.warning(f'The summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations.')
         if nearby_bios and nearby_bios != NOBODY_DESCRIBED and step >= 2:
-            logging.log(logging.WARNING, f'The bios and memories of the people nearby could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. The Game Master only knows their names.')
+            log.warning(f'The bios and memories of the people nearby could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. The Game Master only knows their names.')
         if prompt_type:
             # So the log can say which prompt each request sent
             return label_prompt(result, self.__config.prompt_profile_manager, prompt_type, conditions, focus_character.name if focus_character else "")

@@ -4,6 +4,14 @@ from fastapi import FastAPI
 import uvicorn
 from src.http.routes.routeable import routeable
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.STARTUP)
+
+# The web server writes to the window itself, not through Mantella's log: like the other programs, only its warnings and errors.
+# Without it, every request (each event on the settings page) is a line. The game's requests show under Game connection
+WEB_SERVER_LOG_LEVEL = "warning"
 
 class http_server:
     """A simple http server using FastAPI. Can be started using different routes.
@@ -39,20 +47,18 @@ class http_server:
             route.add_route_to_server(self.__app)
         return self.__app
 
-    def start(self, port: int, routes: list[routeable], play_startup_sound: bool, show_debug: bool = False):
+    def start(self, port: int, routes: list[routeable], play_startup_sound: bool):
         """Starts the server and sets up the provided routes
 
         Args:
             routes (list[routeable]): The list of routes to start
-            show_debug (bool, optional): should debug output be shown
         """
         self._setup_routes(routes)
 
         if play_startup_sound:
             utils.play_mantella_ready_sound()
         
-        logging.log(24, '\nConversations not starting when you select an NPC? See here:')
-        logging.log(25, 'https://art-from-the-machine.github.io/Mantella/pages/issues_qna')
-        logging.log(24, '\nWaiting for player to select an NPC...')
+        log.info('Conversations not starting when you select an NPC? See here: https://art-from-the-machine.github.io/Mantella/pages/issues_qna')
+        log.info('Waiting for player to select an NPC...')
     
-        uvicorn.run(self.__app, port=port)
+        uvicorn.run(self.__app, port=port, log_level=WEB_SERVER_LOG_LEVEL)

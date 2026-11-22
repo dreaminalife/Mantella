@@ -1,4 +1,5 @@
 """Sorting each line: into the running conversation, or kept as a heard line"""
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -174,3 +175,31 @@ def test_one_npc_that_cant_be_written_loses_no_one_elses_lines(store):
     receive(store, hand_over(scene_line("Hello.", time=START + 1)), talk)
     assert [line.words for line in talk.heard] == ["Hello."]
     assert store.kept == {"Saadia": ["Hello."]}
+
+
+def full_log(caplog):
+    """Vanilla Dialogues at Full: the lines written out for each heard line"""
+    caplog.set_level(logging.DEBUG, logger="mantella.vanilla_dialogues")
+    return lambda: [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
+
+
+def test_at_full_each_heard_line_is_written_out_with_where_it_went(store, caplog):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("Hello.", time=START + 1)), FakeConversation("Mikael"))
+    [text] = written()
+    assert 'Mikael to Carlotta: "Hello." in The Bannered Mare. Heard by 3 (Mikael, Carlotta, Saadia). Kit was there.' in text
+    assert text.endswith("Into the conversation for Mikael; kept as a heard line by the other 2.")
+
+
+def test_at_full_menu_talk_shows_the_question_and_a_left_out_pick_says_why(store, caplog):
+    written = full_log(caplog)
+    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty."), menu_line("Stage1Hello", "Hm?")), config=settings(menu_only=["stage1hello"]))
+    kept, left_out = sorted(written(), key=lambda text: "Left out" in text)
+    assert 'Hulda, answering Kit\'s "Heard any rumors?": "Plenty."' in kept and kept.endswith("Kept by all 1 as a heard line.")
+    assert '"Stage1Hello"' in left_out and "Left out: the pick only opens a menu" in left_out
+
+
+def test_below_full_no_line_is_written_out(store, caplog):
+    caplog.set_level(logging.INFO, logger="mantella.vanilla_dialogues")
+    receive(store, hand_over(scene_line("Hello.")))
+    assert not [r for r in caplog.records if r.levelno == logging.DEBUG]

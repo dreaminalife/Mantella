@@ -6,7 +6,10 @@ from src.prompt_profile_manager import PromptSectionError
 from typing import Callable, TYPE_CHECKING
 from openai.types.chat import ChatCompletionMessageParam
 from src import utils
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CONVERSATION)
 
 if TYPE_CHECKING:
     from src.llm.image_client import VisionCapture
@@ -181,12 +184,12 @@ class message_thread():
         try:
             bypass = decensor_bypass_messages(self.__config)
         except PromptSectionError as e:
-            logging.error(str(e))
-            logging.error("Decensor bypass was not added. Fix the active prompt profile.")
+            log.error(str(e))
+            log.error("Decensor bypass was not added. Fix the active prompt profile.")
             return []
         if not bypass:
             if getattr(self.__config, "enable_decensor_bypass", False) is True and not self.__logged_skipped_decensor:
-                logging.warning("Decensor bypass is enabled, but a decensor prompt its placement needs is empty. Nothing was sent.")
+                log.warning("Decensor bypass is enabled, but a decensor prompt its placement needs is empty. Nothing was sent.")
                 self.__logged_skipped_decensor = True
             return []
         self.__logged_skipped_decensor = False
@@ -472,9 +475,9 @@ class message_thread():
                 if hasattr(message, 'hot_swap_settings'):
                     message.hot_swap_settings(config)
             
-            logging.info("message_thread hot-swap completed successfully")
+            log.debug("message_thread hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"message_thread hot-swap failed: {e}")
+            log.error(f"message_thread hot-swap failed: {e}")
             return False

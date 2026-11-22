@@ -139,6 +139,62 @@ def test_deleting_the_last_event_of_a_message_with_only_events_removes_it():
     assert [item["type"] for item in none_left] == ["assistant"]
 
 
+def _vanilla_dialogue_json() -> str:
+    return json.dumps([
+        {"type": "user", "text": "Hello", "player_character_name": "Dragonborn", "ingame_events": ["It is raining"],
+         "heard_dialogue": ['Nearby, Mikael says to Carlotta: "Hi."', 'Carlotta says to Mikael: "Go away."']},
+        {"type": "assistant", "sentences": [_sentence("Did you hear that?")]},
+        {"type": "user", "text": "", "player_character_name": "", "heard_dialogue": ['Nearby, Mikael says: "Hmph."'], "is_director": True},
+        {"type": "assistant", "sentences": [_sentence("Poor Mikael.")]},
+    ])
+
+
+def test_vanilla_dialogue_rows_come_after_the_events_and_before_the_player_line():
+    assert json_to_rows(_vanilla_dialogue_json()) == [
+        ["1.e1", "", "Event", "It is raining"],
+        ["1.v1", "", "Vanilla Dialogue", 'Nearby, Mikael says to Carlotta: "Hi."'],
+        ["1.v2", "", "Vanilla Dialogue", 'Carlotta says to Mikael: "Go away."'],
+        ["1", "Dragonborn", "Player", "Hello"],
+        ["2.1", "Lydia", "Speech", "Did you hear that?"],
+        ["3.v1", "", "Vanilla Dialogue", 'Nearby, Mikael says: "Hmph."'], # Only carries Vanilla Dialogue: no row of its own
+        ["4.1", "Lydia", "Speech", "Poor Mikael."],
+    ]
+
+
+def test_vanilla_dialogue_text_is_written_back():
+    original = _vanilla_dialogue_json()
+    rows = json_to_rows(original)
+    rows[2][3] = 'Carlotta says to Mikael: "Leave."'
+    result = json.loads(apply_rows_to_json(original, rows))
+    assert result[0]["heard_dialogue"] == ['Nearby, Mikael says to Carlotta: "Hi."', 'Carlotta says to Mikael: "Leave."']
+    assert result[0]["ingame_events"] == ["It is raining"]
+
+
+def test_deleting_a_vanilla_dialogue_line_keeps_the_rest():
+    original = _vanilla_dialogue_json()
+    result = json.loads(delete_selected_rows(original, json_to_rows(original), ["1.v1"]))
+    assert result[0]["heard_dialogue"] == ['Carlotta says to Mikael: "Go away."']
+    assert result[0]["ingame_events"] == ["It is raining"] and result[0]["text"] == "Hello"
+
+
+def test_deleting_a_player_line_removes_its_vanilla_dialogue():
+    original = _vanilla_dialogue_json()
+    result = json.loads(delete_selected_rows(original, json_to_rows(original), ["1"]))
+    assert "Hi." not in json.dumps(result) and "Go away." not in json.dumps(result)
+
+
+def test_deleting_the_last_vanilla_dialogue_line_of_a_message_with_only_that_removes_it():
+    original = _vanilla_dialogue_json()
+    result = json.loads(delete_selected_rows(original, json_to_rows(original), ["3.v1"]))
+    assert _texts(json.dumps(result)) == ["Hello", ["Did you hear that?", "Poor Mikael."]] # The NPC messages around it are merged
+
+
+def test_a_message_with_events_and_vanilla_dialogue_stays_until_both_are_deleted():
+    original = json.dumps([{"type": "user", "text": "", "ingame_events": ["It is raining"], "heard_dialogue": ['Nearby, Mikael says: "Hmph."'], "is_director": True}])
+    assert len(json.loads(delete_selected_rows(original, json_to_rows(original), ["1.e1"]))) == 1
+    assert json.loads(delete_selected_rows(original, json_to_rows(original), ["1.e1", "1.v1"])) == []
+
+
 def test_deleting_a_player_line_removes_its_events():
     original = _conversation_json()
     result = json.loads(delete_selected_rows(original, json_to_rows(original), ["2"]))

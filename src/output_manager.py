@@ -1,6 +1,9 @@
 import asyncio
 from threading import Lock
 import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_prompt_logger, get_topic_logger, in_colour
+from src.logs.log_topic import LINE_GREY
 import os
 import time
 import unicodedata
@@ -54,6 +57,18 @@ from src.tts.clip_service import ClipVoiceService, NoSoundSymbols
 from src.tts.registry import VoiceServiceInfo, normalize_service_name, serving_in_game, voice_services
 from src.tts.voice_picker import VoicePick, VoiceSpeaker
 from src.tts import voice_tags
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
+raw_reply_log = get_prompt_logger(LogTopic.AI_REPLIES) # Shown at Prompt and replies (the default) and Full
+
+
+def log_raw_reply(text: str):
+    """The reply exactly as the LLM wrote it, in grey so it stands apart from the lines spoken"""
+    raw_reply_log.info(text, extra=in_colour(LINE_GREY))
+models_and_profiles_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
+voices_log = get_topic_logger(LogTopic.VOICES)
+actions_log = get_topic_logger(LogTopic.ACTIONS)
+timings_log = get_topic_logger(LogTopic.TIMINGS)
 
 def describe_action(action: dict) -> str:
     """An action the AI model picked, in the log and in the note for the NPC's line: its name and details, e.g. MoveTo (target: Hulda)"""
@@ -117,7 +132,7 @@ class _RecordingQueue:
 
 class ChatManager:
     def __init__(self, config: ConfigLoader, tts: TTSable, client: AIClient, multi_npc_client: AIClient | None = None, api_file: str = "secret_keys.json", game: Gameable | None = None):
-        self.loglevel = 28
+        self.__voice_seconds: float = 0.0 # voice time of the reply being generated, for the Timings line
         self.__config: ConfigLoader = config
         self.__tts: TTSable = tts
         self.__client: AIClient = client
@@ -151,10 +166,10 @@ class ChatManager:
             image = self.__picture_taker.get_image()
         except Exception as e:
             utils.play_error_sound()
-            logging.error(f"Show: could not take a picture of the game: {e}")
+            log.error(f"Show: could not take a picture of the game: {e}")
             return None
         if not image:
-            logging.error("Show: could not take a picture of the game. Is the game window visible on screen?")
+            log.error("Show: could not take a picture of the game. Is the game window visible on screen?")
             return None
         return VisionCapture(image)
 
@@ -166,7 +181,7 @@ class ChatManager:
             try:
                 self.__show_client = ImageClient(self.__config, self.__api_file, 'IMAGE_SECRET_KEY.txt')
             except Exception as e:
-                logging.error(f"Show: could not set up sending the picture, so the NPCs answer without it: {e}")
+                log.error(f"Show: could not set up sending the picture, so the NPCs answer without it: {e}")
                 return None
         return self.__show_client
 
@@ -199,7 +214,7 @@ class ChatManager:
     def clear_per_character_client_cache(self):
         """Clear the per-character client cache to force recreation with new settings"""
         self.__per_character_clients.clear()
-        logging.info("Cleared per-character LLM client cache")
+        log.debug("Cleared per-character LLM client cache")
     
     def _get_or_create_random_client(self, selection) -> AIClient:
         """Get or create a cached client for random LLM selection.
@@ -217,7 +232,7 @@ class ChatManager:
         
         # Return cached client if available
         if cache_key in self.__per_character_clients:
-            logging.info(f"Reusing cached random LLM client: {selection.service}/{selection.model}")    
+            models_and_profiles_log.debug(f"Reusing cached random LLM client: {selection.service}/{selection.model}")    
             return self.__per_character_clients[cache_key]
         
         # Create new client
@@ -235,15 +250,15 @@ class ChatManager:
                 # Respect global config toggle for Sonnet prompt caching when using OpenRouter
                 client._sonnet_cache_connector = SonnetCacheConnector(getattr(self.__config, 'sonnet_prompt_caching_enabled', False))
             except Exception as e:
-                logging.debug(f"Failed to attach Sonnet cache connector to random client: {e}")
+                log.warning(f"Failed to attach Sonnet cache connector to random client: {e}")
             
             # Cache the client
             self.__per_character_clients[cache_key] = client
-            logging.info(f"Created and cached random LLM client: {selection.service}/{selection.model}")
+            models_and_profiles_log.info(f"Created and cached random LLM client: {selection.service}/{selection.model}")
             return client
             
         except Exception as e:
-            logging.error(f"Failed to create random LLM client for {selection.service}/{selection.model}: {e}")
+            models_and_profiles_log.error(f"Failed to create random LLM client for {selection.service}/{selection.model}: {e}")
             raise
 
     @staticmethod
@@ -275,7 +290,7 @@ class ChatManager:
 
         for client in candidates:
             if self._live_client_matches_selection(client, selection):
-                logging.info(
+                models_and_profiles_log.debug(
                     f"Reusing live LLM client for pool selection: {selection.service}/{selection.model}"
                 )
                 return client
@@ -318,13 +333,13 @@ class ChatManager:
             try:
                 profile_status = "with profile" if selection.from_profile else "without profile"
                 client = self._get_client_for_pool_selection(selection, is_multi_npc)
-                logging.info(
+                models_and_profiles_log.info(
                     f"Using per-request sequential LLM for {'multi-NPC' if is_multi_npc else 'one-on-one'}: "
                     f"{selection.service}/{selection.model} ({profile_status})"
                 )
                 return client
             except Exception as e:
-                logging.error(
+                models_and_profiles_log.error(
                     f"Failed to create sequential LLM client for {selection.service}/{selection.model}, skipping to next: {e}"
                 )
         return None
@@ -377,7 +392,7 @@ class ChatManager:
             )
             return self._get_or_create_random_client(selection)
         except Exception as e:
-            logging.error(f"Could not use the Fallback model {config.fallback_llm_api}/{config.fallback_llm}: {e}")
+            models_and_profiles_log.error(f"Could not use the Fallback model {config.fallback_llm_api}/{config.fallback_llm}: {e}")
             return None
 
     def _get_per_character_client(self, character: Character) -> AIClient:
@@ -412,7 +427,7 @@ class ChatManager:
             # Get the appropriate service provider
             service_provider = llm_service_factory.get_provider(character.llm_service)
             if not service_provider:
-                logging.warning(f"Unknown LLM service '{character.llm_service}' for character {character.name}. Using default client.")
+                models_and_profiles_log.warning(f"Unknown LLM service '{character.llm_service}' for character {character.name}. Using default client.")
                 return self.__client
             
             # Create client using the service provider
@@ -420,11 +435,11 @@ class ChatManager:
             
             # Cache the client
             self.__per_character_clients[cache_key] = per_char_client
-            logging.info(f"Created per-character LLM client for {character.name} using {service_provider.get_display_name()} with model: {character.llm_model}")
+            models_and_profiles_log.info(f"Created per-character LLM client for {character.name} using {service_provider.get_display_name()} with model: {character.llm_model}")
             return per_char_client
             
         except Exception as e:
-            logging.error(f"Failed to create per-character LLM client for {character.name}: {e}. Using default client.")
+            models_and_profiles_log.error(f"Failed to create per-character LLM client for {character.name}: {e}. Using default client.")
             return self.__client
     
     @property
@@ -469,11 +484,11 @@ class ChatManager:
             # Reset first sentence flag for new TTS instance
             self.__is_first_sentence = False
             
-            logging.info("ChatManager hot-swap completed successfully")
+            log.info("ChatManager hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"ChatManager hot-swap failed: {e}")
+            log.error(f"ChatManager hot-swap failed: {e}")
             return False
     
     def _parse_tts_service_str(self, value: str | None) -> VoiceServiceInfo | None:
@@ -495,7 +510,7 @@ class ChatManager:
             self.__per_service_tts[service.name] = instance
             return instance
         except Exception as e:
-            logging.warning(f"Failed to initialize TTS service '{service.name}': {e}. Falling back to default TTS.")
+            voices_log.warning(f"Failed to initialize TTS service '{service.name}': {e}. Falling back to default TTS.")
             return self.__tts
 
     def stop_voice_services(self, keep: TTSable | None = None) -> None:
@@ -505,7 +520,7 @@ class ChatManager:
                 try:
                     instance.stop()
                 except Exception as e:
-                    logging.warning(f"Could not stop a voice service: {e}")
+                    voices_log.warning(f"Could not stop a voice service: {e}")
 
     def start_backup_voice_service(self) -> None:
         """When the game starts: the Backup Voice Service starts too when the TTS Service would hand lines to it, so it is ready
@@ -531,7 +546,7 @@ class ChatManager:
                     instance.get_ready_for(VoiceSpeaker.from_character(character), character.advanced_voice_model,
                                            make_ahead=one_on_one or not instance.info.runs_online, in_background=not one_on_one)
             except Exception as e:
-                logging.warning(f"Could not get {character.name}'s voice ready: {e}")
+                voices_log.warning(f"Could not get {character.name}'s voice ready: {e}")
 
     def __voice_chain(self, first: TTSable) -> list[TTSable | VoiceServiceInfo]:
         """Who speaks a line, in order, when the one before fails.
@@ -564,9 +579,17 @@ class ChatManager:
         message = f"TTS for {who}: {self.__service_name(speaker)}{mode} speaks with {speaker.voice_in_use}"
         if speaker is chain[0] and len(chain) > 1:
             message += f". If it fails: {', '.join(self.__service_name(entry) for entry in chain[1:])}"
-        logging.info(message)
+        voices_log.info(message)
 
     def __speak_with_chain(self, chain: list[TTSable | VoiceServiceInfo], speak: Any) -> tuple[str, TTSable]:
+        """Same as __try_voice_services, and adds the time it took to this reply's voice time"""
+        started_at = time.time()
+        try:
+            return self.__try_voice_services(chain, speak)
+        finally:
+            self.__voice_seconds += time.time() - started_at
+
+    def __try_voice_services(self, chain: list[TTSable | VoiceServiceInfo], speak: Any) -> tuple[str, TTSable]:
         """Tries each voice service in turn. *speak* voices the line with one and returns the sound file. Returns the sound file and who spoke it"""
         error: Exception | None = None
         for i, entry in enumerate(chain):
@@ -581,7 +604,7 @@ class ChatManager:
                 if not is_last and not (audio_file and os.path.exists(audio_file) and os.path.getsize(audio_file) > 0):
                     raise FileNotFoundError(f"Audio file not created or empty: {audio_file}")
                 if i > 0:
-                    logging.info(f"{self.__service_name(instance)} spoke the line with {instance.voice_in_use}")
+                    voices_log.info(f"{self.__service_name(instance)} spoke the line with {instance.voice_in_use}")
                 return audio_file, instance
             except Exception as e:
                 if i == len(chain) - 1:
@@ -589,7 +612,7 @@ class ChatManager:
                 error = e
                 name, why = self.__service_name(instance), str(e).rstrip(". ")
                 why = why if why.startswith(name) else f"{name} failed: {why}"
-                logging.warning(f"{why}. {self.__service_name(chain[i + 1])} speaks the line instead.")
+                voices_log.warning(f"{why}. {self.__service_name(chain[i + 1])} speaks the line instead.")
         raise RuntimeError("No voice service to speak the line")
 
     @staticmethod
@@ -652,7 +675,7 @@ class ChatManager:
         
         # Check for short voicelines before sending to TTS
         if len(content.text.strip()) < 3:
-            logging.warning(f"Skipping TTS for voiceline that is too-short: '{content.text.strip()}'")
+            voices_log.debug(f"Skipping TTS for voiceline that is too-short: '{content.text.strip()}'")
             # Return a sentence object without audio - skipping TTS entirely. Its actions still go to the game: a reply can be only "Barter:"
             return Sentence(SentenceContent(character_to_talk, text, content.sentence_type, True, content.actions), "", 0)
 
@@ -674,7 +697,7 @@ class ChatManager:
 
                     # Log error for invalid TTS service specification
                     if selected_tts_service is None and normalize_service_name(requested_tts_service_str):
-                        logging.error(f"Invalid TTS service '{requested_tts_service_str}' specified for character {character_to_talk.name}. Valid options: piper, xtts, xvasynth, or {', '.join(voice_services.names())}. Using default TTS instead.")
+                        voices_log.error(f"Invalid TTS service '{requested_tts_service_str}' specified for character {character_to_talk.name}. Valid options: piper, xtts, xvasynth, or {', '.join(voice_services.names())}. Using default TTS instead.")
 
                     # The NPC's own voice service first, then whoever speaks when it fails
                     first = self._get_or_create_tts(selected_tts_service) if selected_tts_service is not None else self.__tts
@@ -687,13 +710,13 @@ class ChatManager:
             except Exception as e:
                 utils.play_error_sound()
                 error_text = f"Text-to-Speech Error: {e}"
-                logging.log(29, error_text)
+                voices_log.error(error_text)
                 return Sentence(SentenceContent(character_to_talk, text, content.sentence_type, True), "", 0, error_text)
             self.__is_first_sentence = False
             try:
                 duration = utils.get_audio_duration(audio_file)
             except (FileNotFoundError, wave.Error) as e:
-                logging.error(f"Could not get audio duration for {audio_file}: {e}")
+                voices_log.error(f"Could not get audio duration for {audio_file}: {e}")
                 # Return sentence with zero duration so conversation can continue
                 return Sentence(SentenceContent(character_to_talk, text, content.sentence_type, content.is_system_generated_sentence, content.actions), audio_file, 0)
             
@@ -792,7 +815,7 @@ class ChatManager:
         for doer, action in picks:
             if action.get('identifier') == LOOK:
                 # Not sent to the game: the reply is asked for again with a screenshot (see process_response)
-                logging.log(23, f"{doer.name} looks around")
+                actions_log.info(f"{doer.name} looks around")
                 self.__look_requested = True
                 self.__looker = doer
         picks = [(doer, action) for doer, action in picks if action.get('identifier') != LOOK and not self.__repeats_last_reply(doer, action, characters)]
@@ -800,7 +823,7 @@ class ChatManager:
             return [], False
         actions_by_doer: dict[str, tuple[Character, list[dict]]] = {}
         for doer, action in picks:
-            logging.log(23, f"Action: {describe_action(action)} ({doer.name})")
+            actions_log.info(f"Action: {describe_action(action)} ({doer.name})")
             actions_by_doer.setdefault(doer.name, (doer, []))[1].append(action)
         for doer, actions in actions_by_doer.values():
             blocking_queue.put(Sentence(SentenceContent(doer, "", SentenceTypeEnum.SPEECH, True, actions), "", 0))
@@ -814,7 +837,7 @@ class ChatManager:
             return False # Emote, MoveTo
         if action not in characters.get_last_reply_actions(doer.name):
             return False
-        logging.log(23, f"{doer.name} already did {describe_action(action)} in their last reply. Not done again")
+        actions_log.info(f"{doer.name} already did {describe_action(action)} in their last reply. Not done again")
         return True
 
     def __pick_actions_with_own_model(self, messages: message_thread, speaker: Character, characters: Characters, tool_request: ToolRequest,
@@ -829,8 +852,8 @@ class ChatManager:
             name = join_names([c.name for c in characters.get_all_characters() if not c.is_player_character] or [speaker.name], "or")
         prompt = label_prompt(self.__config.advanced_actions_prompt.replace("{game}", self.__config.game.display_name).replace("{name}", name),
                               self.__config.prompt_profile_manager, "advanced_actions_prompt", speaker=name)
-        logging.log(23, f"The Advanced Actions model {client.model_name} picks {name}'s actions...")
-        return client.request_tool_calls(messages.copy_with_system_message(prompt), tools)
+        actions_log.debug(f"The Advanced Actions model {client.model_name} picks {name}'s actions...")
+        return client.request_tool_calls(messages.copy_with_system_message(prompt), tools, topic_log=get_topic_logger(LogTopic.ACTIONS))
 
     def __get_advanced_actions_client(self) -> AIClient | None:
         config = self.__config
@@ -846,7 +869,7 @@ class ChatManager:
             )
             return self._get_or_create_random_client(selection)
         except Exception as e:
-            logging.error(f"Could not use the Advanced Actions model {config.advanced_actions_llm_api}/{config.advanced_actions_llm}: {e}")
+            actions_log.error(f"Could not use the Advanced Actions model {config.advanced_actions_llm_api}/{config.advanced_actions_llm}: {e}")
             return None
 
     async def __unless_stopped(self, call: Callable[[], Any], stopped_result: Any) -> Any:
@@ -891,6 +914,9 @@ class ChatManager:
 
         raw_response: str = ''  # Track the raw response
         first_token = True
+        turn_started_at = time.time()
+        first_reply_seconds: float | None = None
+        self.__voice_seconds = 0.0
         parsed_sentence: SentenceContent | None = None
         pending_sentence: SentenceContent | None = None
         self.__is_first_sentence = True
@@ -1007,7 +1033,7 @@ class ChatManager:
                         else:
                             selected_client_for_request = sequential_client
                 except Exception as e:
-                    logging.error(f"Per-request sequential LLM selection failed, falling back to random/default client: {e}")
+                    models_and_profiles_log.error(f"Per-request sequential LLM selection failed, falling back to random/default client: {e}")
 
             if not use_sequential:
                 # Handle one-on-one per-request randomization
@@ -1023,9 +1049,9 @@ class ChatManager:
                         if selection is not None:
                             profile_status = "with profile" if selection.from_profile else "without profile"
                             selected_client_for_request = self._get_client_for_pool_selection(selection, False)
-                            logging.info(f"Using per-request randomly selected LLM for one-on-one: {selection.service}/{selection.model} ({profile_status})")
+                            models_and_profiles_log.info(f"Using per-request randomly selected LLM for one-on-one: {selection.service}/{selection.model} ({profile_status})")
                     except Exception as e:
-                        logging.error(f"Per-request random LLM selection failed, falling back to configured/default client: {e}")
+                        models_and_profiles_log.error(f"Per-request random LLM selection failed, falling back to configured/default client: {e}")
                         selected_client_for_request = None
 
                 # Handle multi-NPC per-request randomization
@@ -1041,9 +1067,9 @@ class ChatManager:
                         if selection_multi is not None:
                             profile_status = "with profile" if selection_multi.from_profile else "without profile"
                             selected_multi_client_for_request = self._get_client_for_pool_selection(selection_multi, True)
-                            logging.info(f"Using per-request randomly selected LLM for multi-NPC: {selection_multi.service}/{selection_multi.model} ({profile_status})")
+                            models_and_profiles_log.info(f"Using per-request randomly selected LLM for multi-NPC: {selection_multi.service}/{selection_multi.model} ({profile_status})")
                     except Exception as e:
-                        logging.error(f"Per-request random LLM selection for multi-NPC failed, falling back to multi-NPC configured/default client: {e}")
+                        models_and_profiles_log.error(f"Per-request random LLM selection for multi-NPC failed, falling back to multi-NPC configured/default client: {e}")
                         selected_multi_client_for_request = None
 
             while retries < max_retries and not awaits_answer:
@@ -1096,14 +1122,14 @@ class ChatManager:
                             if existing_image_client is not image_client:
                                 current_client._image_client = image_client
                         except Exception as e:
-                            logging.warning(f"Could not attach vision client to selected LLM client: {e}")
+                            log.warning(f"Could not attach vision client to selected LLM client: {e}")
                     elif getattr(current_client, '_image_client', None) is not None:
                         current_client._image_client = None # A picture shown before isn't sent again, nor one the model failed with
                     # Log which LLM model is being used
                     if hasattr(current_client, 'model_name'):
-                        logging.info(f"[LLM: {current_client.model_name}]")
+                        log.info(f"[LLM: {current_client.model_name}]")
                     else:
-                        logging.info(f"[LLM: {type(current_client).__name__}]")
+                        log.info(f"[LLM: {type(current_client).__name__}]")
                     tool_argument = {"tools": stream_tools} if stream_tools else {} # Only when there are some: a client without them takes no tools
                     # The model sends the actions it picked after its text. When the line is cut short (Max Sentences per Response, or the model
                     # speaking for someone else), the rest is still read, without being said, so they aren't lost
@@ -1125,7 +1151,8 @@ class ChatManager:
                             continue
 
                         if first_token:
-                            logging.log(self.loglevel, f"LLM took {round(time.time() - start_time, 5)} seconds to respond")
+                            first_reply_seconds = time.time() - start_time
+                            log.info(f"LLM took {round(first_reply_seconds, 5)} seconds to respond")
                             first_token = False
                         
                         raw_response += content
@@ -1139,7 +1166,7 @@ class ChatManager:
                                 break
                         if settings.stop_generation:
                             if stream_tools and not settings.vision_requested:
-                                logging.log(23, "The line ends here. Reading the rest of the reply for the actions the model picked")
+                                actions_log.debug("The line ends here. Reading the rest of the reply for the actions the model picked")
                                 reading_for_actions = True
                                 continue
                             break
@@ -1165,9 +1192,9 @@ class ChatManager:
                         # Models tend to either write a line or pick actions, so it is asked again for the line, now knowing what the NPC does.
                         # Also when none of them could be done: otherwise the NPC would say nothing, and their turn would be gone
                         if picked:
-                            logging.log(23, f"The model only picked actions. Asking it again for {active_character.name}'s line")
+                            actions_log.debug(f"The model only picked actions. Asking it again for {active_character.name}'s line")
                         else:
-                            logging.log(23, f"The model only picked actions that weren't done. Asking it again for {active_character.name}'s line")
+                            actions_log.debug(f"The model only picked actions that weren't done. Asking it again for {active_character.name}'s line")
                         request_messages = messages.copy_with([action_note(self.__config, picked)] if picked else [])
                         stream_tools = None
                         first_token = True
@@ -1176,7 +1203,7 @@ class ChatManager:
                             
                 except FirstTokenTimeout as e:
                     utils.play_error_sound()
-                    logging.error(f"LLM API Error: {e}")
+                    log.error(f"LLM API Error: {e}")
                     # Too slow is no answer either: the Fallback Model gets one try before the NPC gives up. Not when the reply already said
                     # something, or it would be said twice
                     fallback_client = None if used_fallback or raw_response.strip() or self.__stop_generation.is_set() else self._get_fallback_client()
@@ -1187,7 +1214,7 @@ class ChatManager:
                         else:
                             selected_client_for_request = fallback_client
                         first_token = True
-                        logging.log(self.loglevel, f"Asking the Fallback model {self.__config.fallback_llm_api}/{self.__config.fallback_llm} instead")
+                        log.info(f"Asking the Fallback model {self.__config.fallback_llm_api}/{self.__config.fallback_llm} instead")
                         continue
                     error_response = "I can't find the right words at the moment."
                     new_sentence = self.generate_sentence(SentenceContent(active_character, error_response, SentenceTypeEnum.SPEECH, True))
@@ -1197,7 +1224,7 @@ class ChatManager:
                     if showing and not used_fallback:
                         # Maybe the model can't read pictures, or it failed for another reason: asked again without it before the Fallback Model.
                         # The error sound was played already
-                        logging.warning(f"The request with the picture the player showed (Show) failed, so it is sent again without the picture. "
+                        log.warning(f"The request with the picture the player showed (Show) failed, so it is sent again without the picture. "
                                         f"If the model can't read pictures, pick one that does, or set up a Custom Vision Model in the Vision settings")
                         showing = False
                         picture_dropped = True
@@ -1210,14 +1237,14 @@ class ChatManager:
                         selected_multi_client_for_request = fallback_client
                     else:
                         selected_client_for_request = fallback_client
-                    logging.log(self.loglevel, f"Asking the Fallback model {self.__config.fallback_llm_api}/{self.__config.fallback_llm} instead")
+                    log.info(f"Asking the Fallback model {self.__config.fallback_llm_api}/{self.__config.fallback_llm} instead")
                 except Exception as e:
                     retries += 1
                     utils.play_error_sound()
-                    logging.error(f"LLM API Error: {e}")
+                    log.error(f"LLM API Error: {e}")
 
                     if use_sequential and retries < max_retries:
-                        logging.info("Sequential LLM failed; skipping to the next model in the pool")
+                        models_and_profiles_log.warning("Sequential LLM failed; skipping to the next model in the pool")
                         sequential_client = self._select_next_sequential_client(is_multi_npc)
                         if sequential_client is not None:
                             if is_multi_npc:
@@ -1233,23 +1260,23 @@ class ChatManager:
                         break
                     
                     if retries >= max_retries:
-                        logging.log(self.loglevel, f"Max retries reached ({retries}).")
+                        log.info(f"Max retries reached ({retries}).")
                         break
                     
-                    logging.log(self.loglevel, 'Retrying connection to API...')
+                    log.info('Retrying connection to API...')
                     time.sleep(5)
 
         except Exception as e:
             utils.play_error_sound()
             if isinstance(e, APIConnectionError):
                 if (hasattr(e, 'code')) and (e.code in [401, 'invalid_api_key']): # incorrect API key
-                    logging.error(f"Invalid API key. Please ensure you have selected the right model for your service (OpenAI / OpenRouter) via the 'model' setting in MantellaSoftware/config.ini. If you are instead trying to connect to a local model, please ensure the service is running.")
+                    log.error(f"Invalid API key. Please ensure you have selected the right model for your service (OpenAI / OpenRouter) via the 'model' setting in MantellaSoftware/config.ini. If you are instead trying to connect to a local model, please ensure the service is running.")
                 elif isinstance(e, UnboundLocalError):
-                    logging.error('No voice file generated for voice line. Please check your TTS service for errors. The reason for this error is often because a voice model could not be found.')
+                    log.error('No voice file generated for voice line. Please check your TTS service for errors. The reason for this error is often because a voice model could not be found.')
                 else:
-                    logging.error(f"LLM API Error: {e}")
+                    log.error(f"LLM API Error: {e}")
             else:
-                logging.error(f"LLM API Error: {e}")
+                log.error(f"LLM API Error: {e}")
         finally:
             # Stopped from outside (interrupted, ended, or the player spoke): what is left is thrown away, so it isn't voiced first.
             # Whoever stopped it waits for this, and clears the queue after
@@ -1294,11 +1321,13 @@ class ChatManager:
                 self._queue_parsed_sentence(pending_sentence, drop_buffer, blocking_queue)
             for remaining_sentence in ([] if stopped else drop_buffer.flush()):
                 blocking_queue.put(self.generate_sentence(remaining_sentence))
-            try:
-                token_counter_client = last_used_client if 'last_used_client' in locals() and last_used_client else self.__client
-                logging.log(23, f"Full raw response ({token_counter_client.get_count_tokens(raw_response)} tokens): {raw_response.strip()}")
-            except Exception:
-                logging.log(23, f"Full raw response: {raw_response.strip()}")
+            raw_reply_text = None # Logged after the reply's last line, see Conversation.retrieve_sentence_from_queue
+            if raw_reply_log.isEnabledFor(logging.INFO):
+                try:
+                    token_counter_client = last_used_client if 'last_used_client' in locals() and last_used_client else self.__client
+                    raw_reply_text = f"Full raw response ({token_counter_client.get_count_tokens(raw_response)} tokens): {raw_response.strip()}"
+                except Exception:
+                    raw_reply_text = f"Full raw response: {raw_response.strip()}"
             if tool_request:
                 # What each NPC who spoke or acted did in this reply, so the same isn't done again in their next one. Not for the line after
                 # an answer, which can't pick actions: it is part of the same reply
@@ -1311,12 +1340,20 @@ class ChatManager:
                 characters.set_last_reply_actions(done)
             if awaits_answer and not self.__stop_generation.is_set():
                 # The reply goes on with the game's answer: it has not ended yet
-                logging.log(23, f"{active_character.name}'s reply waits for the game's answer to the action")
+                actions_log.debug(f"{active_character.name}'s reply waits for the game's answer to the action")
+                if raw_reply_text:
+                    log_raw_reply(raw_reply_text)
             else:
                 awaits_answer = False
                 blocking_queue.is_more_to_come = False
                 # This sentence is required to make sure there is one in case the game is already waiting for it
                 # before the ChatManager realises there is not another message coming from the LLM
-                blocking_queue.put(Sentence(SentenceContent(active_character,"",SentenceTypeEnum.SPEECH, True),"",0))
+                end_of_reply = Sentence(SentenceContent(active_character,"",SentenceTypeEnum.SPEECH, True),"",0)
+                end_of_reply.raw_reply_log = raw_reply_text
+                blocking_queue.put(end_of_reply)
+            if not stopped and first_reply_seconds is not None:
+                # The AI and the voice overlap: the voice starts on the first sentence while the rest is still streaming
+                timings_log.info(f"{active_character.name}'s reply took {time.time() - turn_started_at:.2f} s in total: "
+                                 f"AI {first_reply_seconds:.2f} s until its first words, voice {self.__voice_seconds:.2f} s")
             self.__is_generating = False
         return awaits_answer

@@ -1,5 +1,4 @@
 import time
-import logging
 import re
 import string
 import sys
@@ -11,6 +10,11 @@ import winsound
 import platform
 import winreg
 from pathlib import Path
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+timings_log = get_topic_logger(LogTopic.TIMINGS)
+startup_log = get_topic_logger(LogTopic.STARTUP)
 
 
 def time_it(func):
@@ -18,7 +22,7 @@ def time_it(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        logging.debug(f"Function {func.__module__}.{func.__name__} took {round(end - start, 5)} seconds to execute")
+        timings_log.debug(f"{func.__module__}.{func.__name__} took {round(end - start, 5)} seconds")
         return result
     return wrapper
 
@@ -130,7 +134,7 @@ def cleanup_tmp(tmp_folder: str):
                 elif (os.path.isdir(file_path)) and (file_path != mei_bundle):
                     rmtree(file_path)
             except Exception as e:
-                logging.error(f"Failed to delete tmp folder: {e}")
+                startup_log.error(f"Failed to delete tmp folder: {e}")
 
 
 def cleanup_mei(remove_mei_folders: bool):
@@ -155,9 +159,9 @@ def cleanup_mei(remove_mei_folders: bool):
                         file_removed += 1
                     except PermissionError:  # mainly to allow simultaneous pyinstaller instances
                         pass
-                logging.log(24, f'{file_removed} previous runtime folder(s) cleaned up from {dir_mei}')
+                startup_log.info(f'{file_removed} previous runtime folder(s) cleaned up from {dir_mei}')
             else:
-                logging.warning(f"Warning: {len(mei_files)} previous Mantella.exe runtime folder(s) found in {dir_mei}. See Cleanup MEI Folders (Other tab, advanced settings) in the Mantella UI for more information.")
+                startup_log.warning(f"{len(mei_files)} previous Mantella.exe runtime folder(s) found in {dir_mei}. See Cleanup MEI Folders (Other tab, advanced settings) in the Mantella UI for more information.")
         
 
 def get_my_games_directory(custom_user_folder='') -> str:

@@ -14,6 +14,7 @@ Game Master is asked who else a line was spoken to (or who an event or direction
 Every test runs twice: with a Game Master LLM, and with a decision model (Game Master Use Decision Model), which is asked through the
 Decisions API with one yes/no question per person instead of "also". The same scripted picks and answers drive both.
 """
+import logging
 import re
 from unittest.mock import MagicMock, patch
 
@@ -939,7 +940,7 @@ def ingame_check():
 ])
 def test_the_in_game_checks_pass_on_the_turn_state_lines_mantella_logs(game: FakeGame, model: FakeModel, caplog, settings, picks, also):
     check = ingame_check()
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     talk(game.config, "", **settings)
     group(game, 2)
     model.picks, model.also = picks, also
@@ -982,7 +983,7 @@ def test_the_in_game_checks_pass_on_both_runs_of_the_in_game_test(game: FakeGame
     so the checks of what happens at the limit are tried"""
     check = ingame_check()
     apply_settings(game.config, check.settings_for(test_run), tmp_path / "ingame")
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     play_the_in_game_test(game, model, test_run)
 
     entries = [(record.levelname, record.getMessage()) for record in caplog.records]
@@ -1040,7 +1041,7 @@ def test_the_in_game_checks_fail_when_mantella_doesnt_follow_the_settings(game: 
     """Not checks that always pass: when Mantella runs with another setting than the test wrote, the check of it fails"""
     check = ingame_check()
     apply_settings(game.config, {**check.settings_for("normal"), **other}, tmp_path / "ingame")
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     play_the_in_game_test(game, model, "normal")
 
     assert not check.check_entries([(record.levelname, record.getMessage()) for record in caplog.records], "normal").passed

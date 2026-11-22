@@ -45,7 +45,7 @@ def test_ui_endpoint(production_like_client: TestClient):
 @patch('src.utils.play_mantella_ready_sound')
 def test_start(mock_sound, mock_uvicorn, server: http_server, mock_routes):
     """Test the start method without actually starting the server"""
-    server.start(port=4999, routes=mock_routes, play_startup_sound=True, show_debug=False)
+    server.start(port=4999, routes=mock_routes, play_startup_sound=True)
     
     # Verify sound played
     mock_sound.assert_called_once()
@@ -55,3 +55,4 @@ def test_start(mock_sound, mock_uvicorn, server: http_server, mock_routes):
     args, kwargs = mock_uvicorn.call_args
     assert args[0] == server.app
     assert kwargs['port'] == 4999
+    assert kwargs['log_level'] == "warning" # no line for every request in the window

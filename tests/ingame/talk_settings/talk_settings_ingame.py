@@ -25,6 +25,8 @@ from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 from tests.ingame.silent_voice import start_silent_voice, voice_settings  # noqa: E402
+from src.logs.log_detail import LogDetail  # noqa: E402
+from src.logs.log_topic import LogTopic  # noqa: E402
 
 BATCH = "mts"
 BATCH_LINES = [
@@ -35,7 +37,12 @@ BATCH_LINES = [
 START_FILE = "talk_test_start.txt"  # In Mantella's folder: when setup ran. The check reads the log from then on
 BACKUP_FILE = "config.ini.bak-talk-test"  # In Mantella's folder: your config.ini before setup
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-ENTRY = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d{3} ([^:\n]+): ", re.MULTILINE)
+# A line of logging.log: "<date> <time> [<topic>] <WARNING/ERROR/CRITICAL: ><text>"
+ENTRY = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) (?:\[([^\]\n]+)\] )?(?:(WARNING|ERROR|CRITICAL): )?", re.MULTILINE)
+FROM_GAME = "Received from the game: "  # Game connection at Full: this line, then the whole message
+TO_GAME = "Sent to the game: "
+# The checks read Mantella's log, so every topic shows in full. Not the timings: they would fill the log
+LOG_SETTINGS = {topic.setting_id: (LogDetail.OFF if topic == LogTopic.TIMINGS else LogDetail.FULL).value for topic in LogTopic}
 TURN_STATE = "Turn state: "
 STARTED = "Mantella.exe running in:"  # What Mantella logs when it starts (src/setup.py), also when run from the source
 
@@ -152,7 +159,7 @@ def setup(game_folder: str, mantella_folder: str, test_run: str = NORMAL):
         print(f"Can't start the silent voice ({e}). Is another in-game test still running?")
         sys.exit(1)
     shutil.copyfile(config_path, backup_path)
-    missing = write_settings(config_path, {**settings_for(test_run), **voice_settings()})
+    missing = write_settings(config_path, {**settings_for(test_run), **voice_settings(), **LOG_SETTINGS})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
@@ -198,6 +205,18 @@ def game_npc_event_notes(test_name: str, papyrus_log: str = PAPYRUS_LOG) -> list
     return [line for line in lines[starts[-1]:] if line.lower().startswith(wanted)]
 
 
+def log_entry(match: re.Match, text: str) -> tuple[str, str]:
+    """(level, text) of one log entry: WARNING / ERROR / CRITICAL for problems, HTTP-in / HTTP-out with the whole message for the
+    messages between the game and Mantella, otherwise the line's topic"""
+    if match.group(3):
+        return match.group(3), text
+    if text.startswith(FROM_GAME):
+        return "HTTP-in", text.partition("\n")[2]
+    if text.startswith(TO_GAME):
+        return "HTTP-out", text.partition("\n")[2]
+    return match.group(2) or "", text
+
+
 def read_log(mantella_folder: str, since: datetime) -> list[tuple[str, str]]:
     """(level, text) of every log entry since then. The older file first, if the log was rotated during the test"""
     entries: list[tuple[str, str]] = []
@@ -211,7 +230,7 @@ def read_log(mantella_folder: str, since: datetime) -> list[tuple[str, str]]:
         for i, match in enumerate(starts):
             if datetime.strptime(match.group(1), TIME_FORMAT) >= since:
                 end = starts[i + 1].start() if i + 1 < len(starts) else len(text)
-                entries.append((match.group(2), text[match.end():end].strip()))
+                entries.append(log_entry(match, text[match.end():end].strip()))
     return entries
 
 

@@ -1,5 +1,6 @@
 import csv
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 import os
 import re
 import time
@@ -28,6 +29,8 @@ from src.remember.summaries import (
     player_name_from_thread,
     thread_contains_player,
 )
+
+log = get_topic_logger(LogTopic.MEMORIES)
 
 PERSONAL_REFLECTION_HEADER = "## Personal Reflection (Don't speak out loud, these are private thoughts)"
 PERSONAL_REFLECTION_LOAD_NONE = "none"
@@ -165,7 +168,6 @@ class PersonalReflection:
         summary_client: ClientBase | None = None,
         reflections_folder_path: str | None = None,
     ) -> None:
-        self.loglevel = 28
         self.__config = config
         self.__game = game
         self.__client = client
@@ -223,7 +225,7 @@ class PersonalReflection:
                 continue
             summary_text = (summaries_by_npc.get(npc_name) or "").strip()
             if not summary_text:
-                logging.info(f"Personal reflection not saved for {npc_name}. No summaries.")
+                log.info(f"Personal reflection not saved for {npc_name}. No summaries.")
                 continue
             params = npc_threads.get(npc_name)
             involved = params.characters if params else [npc]
@@ -237,7 +239,7 @@ class PersonalReflection:
                 if reflection:
                     self.__append_reflection(reflection, npc, world_id, save_timestamp)
             except Exception as e:
-                logging.error(f"Failed to save personal reflection for {npc_name}: {e}", exc_info=True)
+                log.error(f"Failed to save personal reflection for {npc_name}: {e}", exc_info=True)
 
     def save_for_named_npc(
         self,
@@ -259,7 +261,7 @@ class PersonalReflection:
         """
         summary_text = (summaries or "").strip()
         if not summary_text:
-            logging.info(f"Personal reflection not saved for {npc_name}. No summaries.")
+            log.info(f"Personal reflection not saved for {npc_name}. No summaries.")
             return ""
         # Bio Editor shows the raw summary file; merge in dynamic tag events like in-game memory does.
         summary_text = build_memory_text(
@@ -349,7 +351,7 @@ class PersonalReflection:
             with open(reflection_file, "r", encoding="utf-8") as f:
                 raw_text = f.read()
         except Exception as e:
-            logging.error(f"Failed to read personal reflections for {character.name}: {e}")
+            log.error(f"Failed to read personal reflections for {character.name}: {e}")
             return [], []
         return parse_reflection_blocks(raw_text)
 
@@ -441,7 +443,7 @@ class PersonalReflection:
                 "personal_reflection_prompt", self.__config.personal_reflection_prompt
             )
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             return ""
         return label_prompt(reflection_template.format(
             name=name,
@@ -464,7 +466,7 @@ class PersonalReflection:
         try:
             return loader.get_thought_history_text(npc, world_id) or ""
         except Exception as e:
-            logging.error(f"Failed to read private thoughts for {npc.name}: {e}")
+            log.error(f"Failed to read private thoughts for {npc.name}: {e}")
             return ""
 
     @staticmethod
@@ -498,33 +500,32 @@ class PersonalReflection:
 
         with open(reflection_file, "w", encoding="utf-8") as f:
             f.write(previous + separator + block)
-        logging.info(f"Personal reflection saved for {npc.name}")
+        log.info(f"Personal reflection saved for {npc.name}")
 
     def __request_reflection(self, prompt: str) -> str:
         reflection = ""
         messages = message_thread(self.__config, prompt)
         messages.add_message(UserMessage(self.__config, _USER_INSTRUCTION))
-        logging.log(23, f"Personal reflection prompt sent to LLM: {prompt.strip()}")
 
         max_retries = 3
         for attempt in range(1, max_retries + 1):
             try:
-                reflection = self.__summary_client.request_call(messages)
+                reflection = self.__summary_client.request_call(messages, topic_log=get_topic_logger(LogTopic.MEMORIES))
                 if reflection:
                     break
-                logging.info(f"Generating personal reflection failed (attempt {attempt}/{max_retries}).")
+                log.info(f"Generating personal reflection failed (attempt {attempt}/{max_retries}).")
             except Exception as e:
-                logging.error(f"Generating personal reflection error (attempt {attempt}/{max_retries}): {e}")
+                log.error(f"Generating personal reflection error (attempt {attempt}/{max_retries}): {e}")
                 reflection = ""
             if attempt < max_retries:
                 time.sleep(5)
 
         if not reflection:
-            logging.info(f"Generating personal reflection failed after {max_retries} attempts.")
+            log.error(f"Generating personal reflection failed after {max_retries} attempts.")
             return ""
 
         reflection = strip_reflection_heading(reflection)
-        logging.log(self.loglevel, f"Personal reflection: {reflection}")
+        log.debug(f"Personal reflection: {reflection}")
         return reflection
 
 

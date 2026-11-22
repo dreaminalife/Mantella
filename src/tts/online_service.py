@@ -8,7 +8,6 @@ A service file only answers what differs: how to clone, delete, speak and check 
 from __future__ import annotations
 
 import io
-import logging
 import re
 import threading
 import time
@@ -30,6 +29,10 @@ from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import key_saves, read_key_file
 from src.tts.model_catalog import ServiceModel, ServiceModels, with_model_limits
 from src.tts.voice_style import EXTRA_REQUEST_LABEL, StyleSetting
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 RETRY_MINUTES = 5 # after a refusal, cloning is tried again: the player may have made room on their account meanwhile
 
@@ -197,7 +200,7 @@ def clone_in_background(service_name: str, api_key: str, name: str, clip_paths: 
         try:
             delete(voice_id)
         except Exception as e:
-            logging.warning(f"{service_name}: could not delete a voice it failed to clone ({voice_id}). You can delete it on its website: {e}")
+            log.warning(f"{service_name}: could not delete a voice it failed to clone ({voice_id}). You can delete it on its website: {e}")
         raise
     with _cloning_lock:
         _cloning.pop(key, None)
@@ -255,7 +258,7 @@ class OnlineCloneService(ClipVoiceService):
                 if saves != self.__key_saves:
                     self.__key = read_key_file(self.KEY_FILE)
                     self.__key_saves = saves
-                    logging.info(f"{self.NAME}: a new key was saved, so it is used from now on")
+                    log.info(f"{self.NAME}: a new key was saved, so it is used from now on")
                     # What went wrong was about the old key: cloning and speaking are tried again with the new one
                     self.__refused = self.__paused = None
                     self.__late = 0
@@ -270,7 +273,7 @@ class OnlineCloneService(ClipVoiceService):
             return
         forgotten = self._voices.use_account(key_fingerprint(self.__key))
         if forgotten:
-            logging.info(f"{self.NAME}: a new key, so the {forgotten} voice(s) cloned with the old one are cloned again on this account")
+            log.info(f"{self.NAME}: a new key, so the {forgotten} voice(s) cloned with the old one are cloned again on this account")
         if self.NAME not in OnlineCloneService._tidied:
             OnlineCloneService._tidied.add(self.NAME)
             self.keeper().remove_old_tries(self._config.save_folder, self.__key)
@@ -393,7 +396,7 @@ class OnlineCloneService(ClipVoiceService):
     def serve_in_game(self) -> None:
         super().serve_in_game()
         if not self._api_key:
-            logging.warning(self.why_not)
+            log.warning(self.why_not)
             add_notice(f"{self.NAME} has no key, so the backup voice service speaks. See Mantella's Text-to-Speech page.")
 
     def prepare_voice(self, pick: VoicePick) -> Any:
@@ -422,7 +425,7 @@ class OnlineCloneService(ClipVoiceService):
                 if kept is None or self.plan_is_full(self._api_key) is not True:
                     raise
                 # The plan is full: this voice's old copy makes room for the new one
-                logging.info(f"{self.NAME}: your plan holds no more voices, so the old voice for {pick.key} is deleted first")
+                log.info(f"{self.NAME}: your plan holds no more voices, so the old voice for {pick.key} is deleted first")
                 self.delete_voice(self._api_key, kept.get("voice_id", ""))
                 self._voices.pop(pick.key)
                 kept = None
@@ -548,14 +551,14 @@ class OnlineCloneService(ClipVoiceService):
         except requests.ConnectionError as e:
             if isinstance(e, requests.Timeout):
                 raise
-            logging.debug(f"{self.NAME} cut the connection, so the line is sent once more: {e}")
+            log.debug(f"{self.NAME} cut the connection, so the line is sent once more: {e}")
             self.speak_with(text, voice_id, out_path, pick)
 
     def __unreachable(self, error: Exception) -> str:
         """No connection, or LATE_LIMIT lines in a row not answered in time: every line goes to the Backup Voice Service for a
         while, so NPCs don't wait on each line, and a new voice isn't cloned again on each line. One line not answered in time
         only goes to the Backup Voice Service itself: one slow line can happen. Returns the message"""
-        logging.debug(f"{self.NAME}: {error}")
+        log.debug(f"{self.NAME}: {error}")
         if isinstance(error, requests.Timeout):
             self.__late += 1
             if self.__late < self.LATE_LIMIT:
@@ -577,9 +580,9 @@ class OnlineCloneService(ClipVoiceService):
     def __tell(self, kind: str, message: str, notice: str) -> None:
         """The first time: the error sound, the log and a notice in game. After that only the log"""
         if kind in self.__told:
-            logging.warning(message)
+            log.warning(message)
             return
         self.__told.add(kind)
         utils.play_error_sound()
-        logging.error(message)
+        log.error(message)
         add_notice(notice)

@@ -10,7 +10,6 @@ Only what is spoken changes: never the subtitles, the transcript or what NPCs re
 from __future__ import annotations
 
 import csv
-import logging
 import os
 import re
 import shutil
@@ -20,6 +19,10 @@ from typing import Callable
 
 from src import utils
 from src.tts.registry import normalize_service_name
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 MANTELLA_LIST = "mantella_words.csv"
 MY_LIST = "my_words.csv"
@@ -55,7 +58,7 @@ def ensure_files(folder: str, shipped_list: str | None = None) -> None:
         try:
             shutil.copyfile(shipped_list, os.path.join(folder, MANTELLA_LIST))
         except OSError as e:
-            logging.warning(f"Could not copy Mantella's word list into {folder}: {e}")
+            log.warning(f"Could not copy Mantella's word list into {folder}: {e}")
     own_list = os.path.join(folder, MY_LIST)
     if not os.path.exists(own_list):
         with open(own_list, "w", encoding="utf-8", newline="") as f:
@@ -117,11 +120,11 @@ class WordLists:
                         if not word or not say_as or kind not in (SPELLING, IPA):
                             if (name, row_number) not in self.__warned:
                                 self.__warned.add((name, row_number))
-                                logging.warning(f"Word list {name}, row {row_number}: skipped, it needs a word, what to say instead, and a kind of 'spelling' or 'ipa'.")
+                                log.warning(f"Word list {name}, row {row_number}: skipped, it needs a word, what to say instead, and a kind of 'spelling' or 'ipa'.")
                             continue
                         entries.append(WordEntry(word, say_as, kind, row.get("service", ""), row.get("language", "").lower(), name, len(entries)))
             except OSError as e:
-                logging.warning(f"Could not read the word list {path}: {e}")
+                log.warning(f"Could not read the word list {path}: {e}")
         return entries
 
     def replacements(self, service_matches: Callable[[str], bool], language: str, accepts_ipa: bool,

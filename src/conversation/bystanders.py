@@ -1,7 +1,10 @@
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 from src.config.config_loader import ConfigLoader
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.GAME_MASTER)
 
 if TYPE_CHECKING:
     from src.character_manager import Character
@@ -141,7 +144,7 @@ class Bystanders:
         names = [p.name for p in self.nearby_people(config, participant_names) + (extra or [])]
         if sorted(names) != self.logged_nearby: # Logged when someone comes or goes, not each time people move and the order changes
             self.logged_nearby = sorted(names)
-            logging.log(26, f"{self.LOG_PREFIX}: nearby now: {', '.join(names) or NOBODY_NEARBY}")
+            log.info(f"{self.LOG_PREFIX}: nearby now: {', '.join(names) or NOBODY_NEARBY}")
         return ", ".join(names) or NOBODY_NEARBY
 
     def nearby_criteria(self, config: ConfigLoader, is_said_to_room: bool = False) -> tuple[str, str, set[str]]:
@@ -165,7 +168,7 @@ class Bystanders:
         if not person:
             return False
         because = f": {reason}" if reason else ""
-        logging.log(26, f"{self.LOG_PREFIX}: {person.name} could not be added to the conversation{because}")
+        log.info(f"{self.LOG_PREFIX}: {person.name} could not be added to the conversation{because}")
         self.nearby = [p for p in self.nearby if p.refid != refid]
         self._drop_pending(person)
         return True
@@ -314,4 +317,4 @@ class ShoutState(Bystanders, TurnAnswers):
             by_name = " The 1 other person nearby is known by name only."
         elif others > 1:
             by_name = f" The {others} other people nearby are known by name only."
-        logging.log(26, f"{self.LOG_PREFIX}: the Game Master is using the bios and memories of {nearest}: {', '.join(names)}.{by_name}")
+        log.info(f"{self.LOG_PREFIX}: the Game Master is using the bios and memories of {nearest}: {', '.join(names)}.{by_name}")

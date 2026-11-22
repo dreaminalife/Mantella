@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import re
 import sys
@@ -9,8 +8,10 @@ from typing import Optional
 from src.config.config_value_constraint import ConfigValueConstraintResult
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.prompt_request_examples import get_request_examples_markdown
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 
-logger = logging.getLogger(__name__)
+log = get_topic_logger(LogTopic.SETTINGS_PAGE)
 
 _VARIABLE_RE = re.compile(r"\{(?P<variable>[^{}]+)\}")
 _SECTION_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -129,7 +130,7 @@ class PromptProfileManager:
         self._sections = {}
         try:
             if not self.storage_path.exists():
-                logger.debug("No prompt profiles found at %s, starting empty", self.storage_path)
+                log.debug("No prompt profiles found at %s, starting empty", self.storage_path)
                 return
             with open(self.storage_path, 'r', encoding='utf-8') as handle:
                 data = json.load(handle)
@@ -159,9 +160,9 @@ class PromptProfileManager:
                     for name, text in sections_data.items()
                     if str(name).strip()
                 }
-            logger.debug("Loaded prompt profiles from %s", self.storage_path)
+            log.debug("Loaded prompt profiles from %s", self.storage_path)
         except Exception as e:
-            logger.error("Error loading prompt profiles from %s: %s", self.storage_path, e)
+            log.error("Error loading prompt profiles from %s: %s", self.storage_path, e)
             self._profiles = {identifier: {} for identifier, _name, _allowed in self.prompt_types()}
             self._active = {identifier: None for identifier, _name, _allowed in self.prompt_types()}
             self._sections = {}
@@ -179,7 +180,7 @@ class PromptProfileManager:
                 json.dump(data, handle, indent=2, ensure_ascii=False)
             return True
         except Exception as e:
-            logger.error("Error saving prompt profiles: %s", e)
+            log.error("Error saving prompt profiles: %s", e)
             return False
 
     def validate_text(self, prompt_type: str, text: str) -> ConfigValueConstraintResult:
@@ -242,7 +243,7 @@ class PromptProfileManager:
         if not self._save():
             return False, "Could not save prompt profiles. Check the log."
         action = "Updated" if existed else "Created"
-        logger.info("%s prompt profile '%s' for %s", action, stripped_name, prompt_type)
+        log.info("%s prompt profile '%s' for %s", action, stripped_name, prompt_type)
         return True, f"{action} '{stripped_name}'."
 
     def save_from_editor(self, prompt_type: str, selected: Optional[str], name: str, text: str) -> tuple[bool, str, bool]:
@@ -288,7 +289,7 @@ class PromptProfileManager:
             self._active[prompt_type] = stripped_new
         if not self._save():
             return False, "Could not save prompt profiles. Check the log."
-        logger.info("Renamed prompt profile '%s' -> '%s' for %s", old_name, stripped_new, prompt_type)
+        log.info("Renamed prompt profile '%s' -> '%s' for %s", old_name, stripped_new, prompt_type)
         return True, f"Renamed '{old_name}' to '{stripped_new}'."
 
     def delete_profile(self, prompt_type: str, name: str) -> tuple[bool, str]:
@@ -302,7 +303,7 @@ class PromptProfileManager:
             self._active[prompt_type] = None
         if not self._save():
             return False, "Could not save prompt profiles. Check the log."
-        logger.info("Deleted prompt profile '%s' for %s", name, prompt_type)
+        log.info("Deleted prompt profile '%s' for %s", name, prompt_type)
         if was_active:
             return True, f"Deleted '{name}'. This type now uses the Prompts tab."
         return True, f"Deleted '{name}'."
@@ -329,9 +330,9 @@ class PromptProfileManager:
         if not self._save():
             return False, "Could not save prompt profiles. Check the log.", False
         if name:
-            logger.info("Activated prompt profile '%s' for %s", name, prompt_type)
+            log.info("Activated prompt profile '%s' for %s", name, prompt_type)
             return True, f"Activated '{name}'.", True
-        logger.info("Cleared active prompt profile for %s", prompt_type)
+        log.info("Cleared active prompt profile for %s", prompt_type)
         return True, "Using the Prompts tab for this type.", True
 
     def get_section_names(self) -> list[str]:
@@ -427,7 +428,7 @@ class PromptProfileManager:
         if not self._save():
             return False, "Could not save prompt profiles. Check the log.", False
         action = "Updated" if existed else "Created"
-        logger.info("%s shared prompt section '%s'", action, stripped_name)
+        log.info("%s shared prompt section '%s'", action, stripped_name)
         return True, f"{action} shared section '{stripped_name}'.", not existed
 
     def save_section_from_editor(self, selected: Optional[str], name: str, text: str) -> tuple[bool, str, bool]:
@@ -465,7 +466,7 @@ class PromptProfileManager:
         self._sections[stripped_new] = self._sections.pop(old_name)
         if not self._save():
             return False, "Could not save prompt profiles. Check the log."
-        logger.info("Renamed shared prompt section '%s' -> '%s'", old_name, stripped_new)
+        log.info("Renamed shared prompt section '%s' -> '%s'", old_name, stripped_new)
         return True, f"Renamed '{old_name}' to '{stripped_new}'. Profiles that still use '{{{old_name}}}' are now invalid."
 
     def delete_section(self, name: str) -> tuple[bool, str]:
@@ -474,5 +475,5 @@ class PromptProfileManager:
         del self._sections[name]
         if not self._save():
             return False, "Could not save prompt profiles. Check the log."
-        logger.info("Deleted shared prompt section '%s'", name)
+        log.info("Deleted shared prompt section '%s'", name)
         return True, f"Deleted '{name}'. Profiles that still use '{{{name}}}' are now invalid."

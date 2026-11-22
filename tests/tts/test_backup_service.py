@@ -1,4 +1,5 @@
 """Who speaks a line when a voice service fails"""
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -192,13 +193,13 @@ def test_the_log_names_the_failing_service_once(voice_config, registry, caplog):
 
 
 def test_the_log_names_who_speaks_with_which_voice(voice_config, registry, caplog):
-    caplog.set_level("INFO")
+    caplog.set_level(logging.DEBUG)
     say(manager(voice_config, registry, "Online"), lydia())
     assert "TTS for Lydia: Online speaks with built-in voice 'alba'. If it fails: Backup" in caplog.text
 
 
 def test_the_log_says_the_backup_spoke_and_with_which_voice(voice_config, registry, caplog):
-    caplog.set_level("INFO")
+    caplog.set_level(logging.DEBUG)
     FakeNewService.failing = {"Online"}
     say(manager(voice_config, registry, "Online"), lydia())
     assert "Backup spoke the line with built-in voice 'alba'" in caplog.text and "TTS for Lydia: Backup speaks with built-in voice 'alba'" in caplog.text

@@ -1,5 +1,8 @@
 import sys
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 
 class PTTController:
@@ -64,9 +67,9 @@ class PTTController:
         try:
             self._vk = self._normalize_key_to_vk(key)
             if self._vk is None and key:
-                logging.warning(f"PTT hotkey '{key}' not recognized. PTT will be disabled until a valid key is set.")
+                log.warning(f"PTT hotkey '{key}' not recognized. PTT will be disabled until a valid key is set.")
         except Exception as e:
-            logging.warning(f"Failed to set PTT key '{key}': {e}")
+            log.warning(f"Failed to set PTT key '{key}': {e}")
             self._vk = None
 
     def is_pressed(self) -> bool:

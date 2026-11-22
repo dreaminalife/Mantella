@@ -20,7 +20,7 @@ def test_answers_to_an_older_list_change_nothing_and_are_logged_once(tmp_path, c
     game = _FakeGame(str(tmp_path))
     tracker = QuestTagTracker()
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         for _ in range(3):
             changes, announced = tracker.apply_report(game, "Player1", _old_report(), QuestTagTracker.MOMENT_PLAYER_INPUT)
             assert (changes, announced) == ([], [])

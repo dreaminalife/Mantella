@@ -15,7 +15,6 @@ Each voice has a list of chosen clips, in order: the clip itself on top, then th
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
 import threading
@@ -23,6 +22,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import soundfile as sf
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICE_CLIPS)
 
 VOICE_TYPES = "voice_types"
 NPCS = "npcs"
@@ -550,7 +553,7 @@ class ClipStore:
                 try:
                     os.remove(os.path.join(folder, file_name))
                 except OSError as e:
-                    logging.warning(f"Could not remove the old voice clip {file_name}: {e}")
+                    log.warning(f"Could not remove the old voice clip {file_name}: {e}")
 
     def __write_info(self, clip_path: str, info: ClipInfo) -> None:
         self.__write_json(os.path.splitext(clip_path)[0] + ".json", info.to_json())

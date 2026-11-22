@@ -1,5 +1,6 @@
 import json
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 import re
 import time
 from dataclasses import dataclass
@@ -13,6 +14,9 @@ from src.llm.messages import UserMessage
 from src.prompt_profile_manager import PromptSectionError
 from src.prompt_label import label_prompt
 from src.utils import get_time_group
+
+log = get_topic_logger(LogTopic.GAME_MASTER)
+timings_log = get_topic_logger(LogTopic.TIMINGS)
 
 GENERATOR_PROMPT = "skyrim_npc_event_generator_prompt"
 WIND_DOWN_PROMPT = "skyrim_npc_event_wind_down_prompt"
@@ -82,8 +86,8 @@ def wind_down_text(event: NpcEvent | None, config: ConfigLoader, names: str) -> 
     try:
         text = config.prompt_profile_manager.resolve_prompt(WIND_DOWN_PROMPT, config.npc_event_wind_down_prompt)
     except PromptSectionError as e:
-        logging.error(str(e))
-        logging.error("NPC Event wind-down was skipped. Fix the active Skyrim NPC Event Wind-Down Prompt profile.")
+        log.error(str(e))
+        log.error("NPC Event wind-down was skipped. Fix the active Skyrim NPC Event Wind-Down Prompt profile.")
         return ""
     return text.replace("{names}", names).strip()
 
@@ -150,7 +154,7 @@ def generate_conversation_event(config: ConfigLoader, client: AIClient | None, k
         return None
     data = read_event_json(reply, log_name)
     event_text = str(data.get("event", "")).strip() if data else ""
-    logging.log(26, f"{log_name}: {event_text}" if event_text else f"{log_name}: no event this time")
+    log.info(f"{log_name}: {event_text}" if event_text else f"{log_name}: no event this time")
     return event_text or None
 
 
@@ -196,17 +200,16 @@ def request_event(config: ConfigLoader, client: AIClient, prompt_type: str, prom
         request.add_message(UserMessage(config, request_text, "", True))
         if is_cancelled():
             return None
-        logging.log(15, f"{log_name} generator prompt:\n{prompt}\n\n{request_text}")
         started_at = time.time()
         try:
-            reply = client.request_call(request)
+            reply = client.request_call(request, topic_log=get_topic_logger(LogTopic.GAME_MASTER))
         finally:
-            logging.log(26, f"{log_name} generator request took {time.time() - started_at:.2f} seconds")
+            timings_log.debug(f"{log_name} generator request took {time.time() - started_at:.2f} seconds")
         if is_cancelled():
             return None
         return reply or ""
     except Exception as e:
-        logging.error(f"{log_name} generation failed: {e}")
+        log.error(f"{log_name} generation failed: {e}")
         return None
 
 
@@ -214,12 +217,12 @@ def read_event_json(text: str | None, log_name: str) -> dict | None:
     """The JSON object in the generator's reply. None if there is none"""
     match = re.search(r"\{.*\}", text or "", re.DOTALL)
     if not match:
-        logging.warning(f"{log_name} generator gave no valid JSON: {text}")
+        log.warning(f"{log_name} generator gave no valid JSON: {text}")
         return None
     try:
         data = json.loads(match.group(0))
     except json.JSONDecodeError:
-        logging.warning(f"{log_name} generator gave no valid JSON: {text}")
+        log.warning(f"{log_name} generator gave no valid JSON: {text}")
         return None
     return data if isinstance(data, dict) else None
 
@@ -231,20 +234,20 @@ def parse_event(text: str | None, candidates: list[EventPerson], max_participant
     if data is None:
         return None
     if not isinstance(data.get("participants"), list):
-        logging.warning(f"NPC Event generator gave no valid participants: {text}")
+        log.warning(f"NPC Event generator gave no valid participants: {text}")
         return None
     by_label = {c.name.lower(): c for c in candidates}
     participants: list[EventPerson] = []
     for name in data["participants"]:
         person = by_label.get(str(name).strip().lower())
         if not person:
-            logging.log(26, f"NPC Event: '{name}' is not one of the candidates and was dropped")
+            log.info(f"NPC Event: '{name}' is not one of the candidates and was dropped")
         elif person not in participants:
             participants.append(person)
     participants = participants[:max_participants]
     event_text = str(data.get("event", "")).strip()
     if len(participants) < MIN_PARTICIPANTS or not event_text:
-        logging.log(26, "NPC Event: no event this time")
+        log.info("NPC Event: no event this time")
         return None
-    logging.log(26, f"NPC Event: {', '.join(p.name for p in participants)}: {event_text}")
+    log.info(f"NPC Event: {', '.join(p.name for p in participants)}: {event_text}")
     return participants, event_text

@@ -44,7 +44,7 @@ from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from tests.ingame.silent_voice import start_silent_voice, voice_settings # noqa: E402
-from tests.ingame.talk_settings.talk_settings_ingame import STARTED, TIME_FORMAT, default_mantella_folder, read_log, write_settings # noqa: E402
+from tests.ingame.talk_settings.talk_settings_ingame import LOG_SETTINGS, STARTED, TIME_FORMAT, default_mantella_folder, read_log, write_settings # noqa: E402
 
 BATCH = "mta"
 BATCH_LINES = [
@@ -434,7 +434,7 @@ def setup(game_folder: str, mantella_folder: str, port: int, advanced: bool = Fa
         print(f"{backup_path} already exists: run cleanup first, so your own config.ini is put back")
         sys.exit(1)
     shutil.copyfile(config_path, backup_path)
-    missing = write_settings(config_path, settings_for_test(port, advanced))
+    missing = write_settings(config_path, {**settings_for_test(port, advanced), **LOG_SETTINGS})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)

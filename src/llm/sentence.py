@@ -8,6 +8,7 @@ class Sentence:
         self.__voice_file: str = voice_file
         self.__voice_line_duration: float = voice_line_duration
         self.__error_message: str | None = error_message
+        self.raw_reply_log: str | None = None # On the end-of-reply sentence: the raw reply's log line, logged once the reply has been played
 
     @property
     def content(self) -> SentenceContent:

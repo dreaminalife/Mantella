@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from typing import Any, Callable
 
@@ -21,6 +20,10 @@ from src.tts.voice_setups import CLIP_BASE64, CLIP_MODES, CLIP_NAME, STYLES, XTT
 from src.tts.word_lists import IPA, SPELLING, shared_word_lists
 from src.ui.voice_clips_ui import clip_voice
 from src.voice_clips.clip_store import VOICE_TYPES, ClipStore, shared_clip_store, voice_key
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 NEW_SETUP = "(new setup)"
 ALL = "(all)"
@@ -83,7 +86,7 @@ def render_voice_test(config: ConfigLoader, chat_manager_getter: Callable[[], An
                 path = speak_with_service(config, chat_manager_getter, service, voice_type or "MaleNord", line or TEST_LINE)
             return gr.update(value=path, visible=True), ""
         except Exception as e:
-            logging.warning(f"Voice test failed: {e}")
+            log.warning(f"Voice test failed: {e}")
             return gr.update(value=None, visible=False), f"Could not play the line: {e}"
 
     def on_service(service: str, voice_type: str | None):
@@ -281,7 +284,7 @@ def render_voice_setups_editor(config: ConfigLoader, service_dropdowns: list[tup
         try:
             return speak_with_setup(config, to_service_info(normalized(setup)), voice_type or "MaleNord"), ""
         except Exception as e:
-            logging.warning(f"Voice setup test failed: {e}")
+            log.warning(f"Voice setup test failed: {e}")
             return None, f"Could not play the line: {e}"
 
     edit_ui.input(on_edit, inputs=[edit_ui], outputs=[*boxes, error_ui, status_ui], show_progress="hidden")
@@ -359,7 +362,7 @@ def render_word_lists_editor(config: ConfigLoader, chat_manager_getter: Callable
         except NoSoundSymbols as e:
             return None, f"{e} Add a spelling for this word too."
         except Exception as e:
-            logging.warning(f"Word test failed: {e}")
+            log.warning(f"Word test failed: {e}")
             return None, f"Could not play the line: {e}"
 
     def on_play(service: str, voice_type: str, word: str, say_as: str, kind: str):

@@ -28,6 +28,11 @@ from src.tts.word_lists import replace_words, shared_word_lists
 from src.voice_clips.clip_store import MOST_CHOSEN, NPCS, VOICE_TYPES, ClipStore, clip_seconds, lines_within, shared_clip_store, voice_key
 from src.voice_clips.preparing import preparation_for
 from src.voice_clips.requests import clip_requests_for
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
+voice_clips_log = get_topic_logger(LogTopic.VOICE_CLIPS)
 
 TRIES = 2 # one retry, then the line goes to the backup service
 FIRST_LINE_WAIT_SECONDS = 10.0 # a new voice's first line waits at most this long for its clips from the game, then a stand-in speaks it
@@ -120,7 +125,7 @@ class ClipVoiceService(TTSable):
         if not info.speaks(config.language) and (info.name, config.language) not in _warned_languages:
             _warned_languages.add((info.name, config.language)) # once, not on every settings change
             utils.play_error_sound()
-            logging.warning(f"{info.name} is set up for {', '.join(info.languages or [])}, not for your Language setting ({config.language}). "
+            log.warning(f"{info.name} is set up for {', '.join(info.languages or [])}, not for your Language setting ({config.language}). "
                             f"Its lines may sound wrong. Change the setup's Languages on the Text-to-Speech page if it does speak {config.language}.")
 
     @property
@@ -254,10 +259,22 @@ class ClipVoiceService(TTSable):
             found, voice = self.__kept_voice(pick, version) # made meanwhile, by the line or Prepare all voices
             if found and self.voice_ready(pick):
                 return voice
+            voice_clips_log.info(f"{self._info.name}: preparing the clips for '{pick.label}'")
             voice = self.prepare_voice(pick)
+            if voice_clips_log.isEnabledFor(logging.INFO):
+                voice_clips_log.info(f"{self._info.name}: the voice '{pick.label}' is ready{self.__clips_used_text(pick)}")
             with self._prepare_lock:
                 self._prepared[pick] = (version, voice)
             return voice
+
+    def __clips_used_text(self, pick: VoicePick) -> str:
+        """", made from N clips" for the log. Empty without clips, or when they can't be counted: the voice is made already"""
+        if not pick.clip_path:
+            return ""
+        try:
+            return f", made from {len(lines_used(self._clips, self._limits(), *clip_owner(pick)))} clips"
+        except Exception:
+            return ""
 
     def forget_prepared_voices(self) -> None:
         """After a clip is swapped, the old voice is thrown away and the next line uses the new clip"""
@@ -277,7 +294,7 @@ class ClipVoiceService(TTSable):
         self._last_voice = self._pick.label # the voice is chosen here, so TTSable doesn't change it again
         self._effect = self._effects.choose(speaker)
         self._pitch = self.pitch_for(self._pick)
-        logging.debug(f"{self._info.name}: {speaker.name or 'narrator'} speaks with {self._pick.kind} '{self._pick.label}'"
+        log.debug(f"{self._info.name}: {speaker.name or 'narrator'} speaks with {self._pick.kind} '{self._pick.label}'"
                       + (f", voice effect {self._effect.name}" if self._effect else ""))
         return super().synthesize(self._pick.label, voiceline, in_game_voice, csv_in_game_voice, voice_accent, synth_options, advanced_voice_model)
 
@@ -329,7 +346,7 @@ class ClipVoiceService(TTSable):
         if waited:
             outcome = (f"it uses {pick.kind} '{pick.label}'" if pick.kind not in STAND_INS
                        else "the reply was stopped" if stopped() else "a stand-in speaks it, as they didn't come in time")
-            logging.info(f"{self._info.name}: {speaker.name or 'the narrator'}'s line waited {time.monotonic() - started:.1f} s for their clips "
+            log.info(f"{self._info.name}: {speaker.name or 'the narrator'}'s line waited {time.monotonic() - started:.1f} s for their clips "
                          f"from the game, and {outcome}")
         return pick
 
@@ -379,7 +396,7 @@ class ClipVoiceService(TTSable):
         try:
             voice_effects.finish_line(wav_file, effect, self.volume() if volume is None else volume, pitch)
         except Exception as e:
-            logging.warning(f"Could not change the line's pitch, voice effect or volume: {e}. It plays as it is.")
+            log.warning(f"Could not change the line's pitch, voice effect or volume: {e}. It plays as it is.")
 
     def change_voice(self, voice: str, in_game_voice: str | None = None, csv_in_game_voice: str | None = None, advanced_voice_model: str | None = None,
                      voice_accent: str | None = None, voice_gender: int | None = None, voice_race: str | None = None):
@@ -390,7 +407,7 @@ class ClipVoiceService(TTSable):
         try:
             self.prepared_voice(pick)
         except Exception as e:
-            logging.warning(f"{self._info.name}: could not get the voice '{pick.label}' ready: {e}")
+            log.warning(f"{self._info.name}: could not get the voice '{pick.label}' ready: {e}")
 
     def spoken_text(self, text: str, ipa: bool = True) -> str:
         """The line as the service should say it, after the lists of words to say differently. *ipa*: the voice reads sound symbols"""
@@ -431,7 +448,7 @@ class ClipVoiceService(TTSable):
                 break
             except Exception as e:
                 last_error = e
-                logging.warning(f"{self._info.name} could not voice the line (try {attempt + 1} of {TRIES}): {e}")
+                log.warning(f"{self._info.name} could not voice the line (try {attempt + 1} of {TRIES}): {e}")
             finally:
                 if os.path.exists(raw_file):
                     try:

@@ -80,7 +80,7 @@ def test_an_effect_that_isnt_ticked_is_off_everywhere(effects):
 
 def test_an_unknown_effect_in_the_column_is_logged_and_the_usual_one_used(effects, caplog):
     effects.set_on(["draugr"])
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         assert effects.choose(VoiceSpeaker(name="Ulfric", race="DraugrRace", voice_effect="banshee")).name == "draugr"
     assert "banshee" in caplog.text
 
@@ -290,7 +290,7 @@ def test_an_effect_that_fails_on_a_line_still_leaves_voice_volume_and_warns_once
     draugr_effect = effects.find("draugr").with_values(100, {"echo": 30, "growl": 20}) # no pitch, so the line itself still plays
     monkeypatch.setattr(voice_effects, "run_filters", lambda *a: (_ for _ in ()).throw(RuntimeError("filter broke")))
     voice_effects._warned.clear()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         for i in range(2):
             path = write(tmp_path / f"line{i}.wav", speech(level=0.06))
             finish_line(path, draugr_effect, 100)
@@ -303,7 +303,7 @@ def test_a_line_that_cant_be_changed_plays_as_it_is(voice_config, tmp_path, capl
     service = DraugrService(voice_config, VoiceServiceInfo("Fake", factory=None))
     path = str(tmp_path / "line.wav")
     open(path, "wb").write(b"not a sound file")
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         service.finish_line(path, None)
     assert open(path, "rb").read() == b"not a sound file" and "plays as it is" in caplog.text
 

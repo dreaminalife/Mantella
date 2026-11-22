@@ -16,6 +16,11 @@ from src.llm.messages import Message, ImageMessage, UserMessage
 from src.llm.llm_model_list import LLMModelList
 import src.utils as utils
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
+from src.logs.log_topic import LINE_WHITE, LogTopic
+from src.logs.topic_logger import get_topic_logger, in_colour
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
+settings_log = get_topic_logger(LogTopic.SETTINGS_PAGE)
 
 BRAILLE_BLANK = "⠀"
 
@@ -227,7 +232,11 @@ class ClientBase(AIClient):
 
 
     @utils.time_it
-    def request_call(self, messages: Message | message_thread) -> str | None:
+    def request_call(self, messages: Message | message_thread, topic_log: logging.Logger | None = None) -> str | None:
+        """Args:
+            topic_log: the log topic of the feature asking (e.g. Game Master), which shows the whole request and reply at Full.
+                LLM requests and replies when not given"""
+        topic_log = topic_log or log
         with self._generation_lock:
             read_limit = None
             if self._response_deadline is not None:
@@ -237,7 +246,6 @@ class ClientBase(AIClient):
             if read_limit is not None:
                 sync_client = sync_client.with_options(max_retries=0, timeout=self._http_timeout(read_limit))
             chat_completion = None
-            logging.log(28, 'Getting LLM response...')
 
             if isinstance(messages, Message) or isinstance(messages, ImageMessage):
                 openai_messages = [messages.get_openai_message()]
@@ -251,13 +259,11 @@ class ClientBase(AIClient):
                 try:
                     openai_messages = self._sonnet_cache_connector.transform_messages(openai_messages, model_name=self._model_name)
                 except Exception as e:
-                    logging.debug(f"Sonnet caching transform (sync) failed: {e}")
+                    topic_log.warning(f"Sonnet caching transform (sync) failed: {e}")
             if isinstance(messages, message_thread):
                 openai_messages = messages.append_decensor_commitment(openai_messages)
 
-            # Log LLM parameters being sent to API
-            logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
-            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
+            self.__log_request(topic_log, messages, openai_messages, request_params)
 
             try:
                 chat_completion = sync_client.chat.completions.create(
@@ -271,7 +277,7 @@ class ClientBase(AIClient):
                     raise FirstTokenTimeout(f"LLM did not respond within {self._response_timeout} seconds")
                 raise
             except RateLimitError:
-                logging.warning('Could not connect to LLM API, retrying in 5 seconds...')
+                topic_log.warning('Could not connect to LLM API, retrying in 5 seconds...')
                 time.sleep(5)
             finally:
                 sync_client.close()
@@ -282,11 +288,11 @@ class ClientBase(AIClient):
                 chat_completion.choices.__len__() < 1 or 
                 not chat_completion.choices[0].message.content
             ):
-                logging.info(f"LLM Response failed")
+                topic_log.info(f"{self.model_name} sent back no reply")
                 return None
             
             reply = self.clean_response_text(chat_completion.choices[0].message.content)
-            logging.log(15, f"LLM response from {self.model_name}:\n{reply}")
+            topic_log.debug(f"Reply from {self.model_name}:\n{reply}")
             return reply
         
 
@@ -298,7 +304,7 @@ class ClientBase(AIClient):
             started_at = time.time() if response_started_at is None else response_started_at
             deadline = started_at + float(self._response_timeout)
             self._response_deadline = deadline
-            logging.log(28, 'Getting LLM response...')
+            log.info(f"Asking {self.model_name} for a reply")
 
             if self._startup_async_client:
                 async_client = self._startup_async_client
@@ -314,7 +320,7 @@ class ClientBase(AIClient):
                 original_max_tokens = request_params.get("max_tokens", self.max_tokens_param)
                 request_params["max_tokens"] = max(self.max_tokens_param, 250)
                 if original_max_tokens != request_params["max_tokens"]:
-                    logging.info(f"Multi-NPC conversation: max_tokens overridden from {original_max_tokens} to {request_params['max_tokens']}")
+                    log.debug(f"Multi-NPC conversation: max_tokens overridden from {original_max_tokens} to {request_params['max_tokens']}")
             received_content = False
             try:
                 # Prepare the messages including the image if provided
@@ -344,13 +350,11 @@ class ClientBase(AIClient):
                     try:
                         openai_messages = self._sonnet_cache_connector.transform_messages(openai_messages, model_name=self._model_name)
                     except Exception as e:
-                        logging.debug(f"Sonnet caching transform (stream) failed: {e}")
+                        log.warning(f"Sonnet caching transform (stream) failed: {e}")
                 if isinstance(messages, message_thread):
                     openai_messages = messages.append_decensor_commitment(openai_messages)
 
-                # Log LLM parameters being sent to API
-                logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
-                logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
+                self.__log_request(log, messages, openai_messages, request_params)
 
                 stream_client = async_client.with_options(max_retries=0)
                 while True:
@@ -374,7 +378,7 @@ class ClientBase(AIClient):
                         # The connection (e.g. the TLS handshake) took over 5 seconds, so the request was never sent and can be tried again
                         if not isinstance(e.__cause__, httpx.ConnectTimeout):
                             raise
-                        logging.warning(f"Could not connect to the LLM within {self.CONNECT_TIMEOUT_SECONDS} seconds, retrying...")
+                        log.warning(f"Could not connect to the LLM within {self.CONNECT_TIMEOUT_SECONDS} seconds, retrying...")
 
                 iterator = stream.__aiter__()
                 while True:
@@ -405,20 +409,20 @@ class ClientBase(AIClient):
                                 if piece.function and piece.function.arguments:
                                     call["function"]["arguments"] += piece.function.arguments
                     except Exception as e:
-                        logging.error(f"LLM API Connection Error: {e}")
+                        log.error(f"LLM API Connection Error: {e}")
                         break
                 if tool_calls:
                     picked = ToolCalls(tool_calls[i] for i in sorted(tool_calls))
-                    logging.log(15, f"LLM tool calls from {self.model_name}: {list(picked)}")
+                    log.debug(f"Actions picked by {self.model_name}: {list(picked)}")
                     yield picked
             except FirstTokenTimeout:
-                logging.error(f"LLM did not respond within {self._response_timeout} seconds")
+                log.error(f"LLM did not respond within {self._response_timeout} seconds")
                 raise
             except APITimeoutError:
                 if not received_content:
-                    logging.error(f"LLM did not respond within {self._response_timeout} seconds")
+                    log.error(f"LLM did not respond within {self._response_timeout} seconds")
                     raise FirstTokenTimeout(f"LLM did not respond within {self._response_timeout} seconds")
-                logging.error(f"LLM API Error: timed out after the first token")
+                log.error(f"LLM API Error: timed out after the first token")
             except Exception as e:
                 utils.play_error_sound()
                 if isinstance(e, APIConnectionError):
@@ -427,18 +431,18 @@ class ClientBase(AIClient):
                             service_connection_attempt = 'OpenRouter' # check if player means to connect to OpenRouter
                         else:
                             service_connection_attempt = 'OpenAI' # check if player means to connect to OpenAI
-                        logging.error(f"Invalid API key. If you are trying to connect to {service_connection_attempt}, please choose an {service_connection_attempt} model via the 'model' setting in MantellaSoftware/config.ini. If you are instead trying to connect to a local model, please ensure the service is running.")
+                        log.error(f"Invalid API key. If you are trying to connect to {service_connection_attempt}, please choose an {service_connection_attempt} model via the 'model' setting in MantellaSoftware/config.ini. If you are instead trying to connect to a local model, please ensure the service is running.")
                     else:
-                        logging.error(f"LLM API Error: {e}")
+                        log.error(f"LLM API Error: {e}")
                 elif isinstance(e, BadRequestError):
                     if (e.type == 'invalid_request_error') and (self._image_client): # invalid request
-                        logging.error(f"Invalid request. Try disabling Vision in Mantella's settings and try again.")
+                        log.error(f"Invalid request. Try disabling Vision in Mantella's settings and try again.")
                     else:
-                        logging.error(f"LLM API Error: {e}")
+                        log.error(f"LLM API Error: {e}")
                 else:
                     # Errors sent inside the stream (e.g. a provider's content block) only carry the reason in the body
                     body = getattr(e, 'body', None)
-                    logging.error(f"LLM API Error: {e}" + (f": {body}" if body else ""))
+                    log.error(f"LLM API Error: {e}" + (f": {body}" if body else ""))
                 if isinstance(e, APIError) and not received_content:
                     raise ProviderError(str(e)) from e
             finally:
@@ -446,21 +450,32 @@ class ClientBase(AIClient):
                 await async_client.close()
 
 
+    def __log_request(self, topic_log: logging.Logger, messages: Message | message_thread, openai_messages: list[dict[str, Any]],
+                      request_params: dict[str, Any]) -> None:
+        """At Short: what is asked of which model, with its settings. At Full: also the whole request"""
+        topic_log.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}",
+                       extra=in_colour(LINE_WHITE))
+        if not topic_log.isEnabledFor(logging.DEBUG):
+            return
+        topic_log.debug(f"Request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
+
     @utils.time_it
-    def request_tool_calls(self, messages: message_thread, tools: list[dict]) -> ToolCalls:
-        """Advanced Actions with a separate model: asks it which actions to take, without a reply text. Empty if none, or if it failed"""
+    def request_tool_calls(self, messages: message_thread, tools: list[dict], topic_log: logging.Logger | None = None) -> ToolCalls:
+        """Advanced Actions with a separate model: asks it which actions to take, without a reply text. Empty if none, or if it failed
+        Args:
+            topic_log: the log topic that shows the whole request and the actions picked at Full. LLM requests and replies when not given"""
+        topic_log = topic_log or log
         with self._generation_lock:
             sync_client = self.generate_sync_client()
             openai_messages = messages.get_openai_messages()
             request_params = self._completion_request_params(self._request_params)
             request_params["tools"] = tools
-            logging.info(f"{describe_request(messages, openai_messages)}: model='{self.model_name}', base_url='{self._base_url}', {describe_params(request_params)}")
-            logging.log(15, f"LLM request to {self.model_name}:\n{format_openai_messages(openai_messages)}{format_tools(request_params)}")
+            self.__log_request(topic_log, messages, openai_messages, request_params)
             try:
                 chat_completion = sync_client.chat.completions.create(model=self.model_name, messages=openai_messages, timeout=self._http_timeout(),
                                                                       **request_params)
             except Exception as e:
-                logging.error(f"The Advanced Actions model could not pick actions: {e}")
+                topic_log.error(f"The Advanced Actions model could not pick actions: {e}")
                 return ToolCalls()
             finally:
                 sync_client.close()
@@ -468,7 +483,7 @@ class ClientBase(AIClient):
                 return ToolCalls()
             picked = ToolCalls({"id": call.id, "type": "function", "function": {"name": call.function.name, "arguments": call.function.arguments or ""}}
                                for call in (getattr(chat_completion.choices[0].message, 'tool_calls', None) or []))
-            logging.log(15, f"LLM tool calls from {self.model_name}: {list(picked)}")
+            topic_log.debug(f"Actions picked by {self.model_name}: {list(picked)}")
             return picked
 
 
@@ -525,11 +540,11 @@ class ClientBase(AIClient):
                 # TODO: Consider making hot_swap_settings async to properly close existing clients
                 self._startup_async_client = None
                 
-                logging.info(f"ClientBase hot-swap completed successfully for model '{llm}'")
+                settings_log.info(f"ClientBase hot-swap completed successfully for model '{llm}'")
                 return True
                 
             except Exception as e:
-                logging.error(f"ClientBase hot-swap failed: {e}")
+                settings_log.error(f"ClientBase hot-swap failed: {e}")
                 return False
 
 
@@ -624,7 +639,7 @@ class ClientBase(AIClient):
         if not api_key or api_key == '':
                 if show_error:
                     utils.play_error_sound()
-                    logging.critical(f'''No secret key found in GPT_SECRET_KEY.txt.
+                    log.critical(f'''No secret key found in GPT_SECRET_KEY.txt.
 Please create a secret key and paste it in your Mantella mod folder's GPT_SECRET_KEY.txt file.
 If you are using OpenRouter (default), you can create a secret key in Account -> Keys once you have created an account: https://openrouter.ai/
 If using OpenAI, see here on how to create a secret key: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
@@ -656,16 +671,16 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
         if llm in token_limit_dict:
             token_limit = token_limit_dict[llm]
         else:
-            logging.log(23, f"Could not find number of available tokens for {llm}. Defaulting to token count of {custom_token_count}. This number can be changed via the `Large Language Model`->`Custom Token Count` / `Vision`->`Custom Vision Model Token Count` settings in the Mantella UI")
+            log.info(f"Could not find number of available tokens for {llm}. Defaulting to token count of {custom_token_count}. This number can be changed via the `Large Language Model`->`Custom Token Count` / `Vision`->`Custom Vision Model Token Count` settings in the Mantella UI")
             try:
                 token_limit = custom_token_count
             except ValueError:
-                logging.error(f"Invalid custom_token_count value: {custom_token_count}. It should be a valid integer. Please update your configuration.")
+                log.error(f"Invalid custom_token_count value: {custom_token_count}. It should be a valid integer. Please update your configuration.")
                 token_limit = 4096  # Default to 4096 in case of an error.
         if token_limit <= 4096:
             if is_local:
                 llm = 'Local language model'
-            logging.warning(f"{llm} has a low token count of {token_limit}. For better NPC memories, try changing to a model with a higher token count")
+            log.warning(f"{llm} has a low token count of {token_limit}. For better NPC memories, try changing to a model with a higher token count")
         
         return token_limit
     
@@ -694,7 +709,7 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
             try:
                 encoding = tiktoken.get_encoding('cl100k_base') # try loading a generic encoding
             except:
-                logging.error('Error loading model. If you are using an alternative to OpenAI, please find the setting `Large Language Model`->`LLM Service` in the Mantella UI and follow the instructions to change this setting')
+                log.error('Error loading model. If you are using an alternative to OpenAI, please find the setting `Large Language Model`->`LLM Service` in the Mantella UI and follow the instructions to change this setting')
                 raise
         
         return encoding
@@ -775,9 +790,14 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
         return "image" in inputs
 
     @staticmethod
+    def custom_model_list() -> LLMModelList:
+        """The model list of a service without one, like a local server: the player types the model name"""
+        return LLMModelList([("Custom model","Custom model")], "Custom model", allows_manual_model_input=True)
+
+    @staticmethod
     def get_model_list(service: str, secret_key_file: str, default_model: str = "google/gemma-2-9b-it:free", is_vision: bool = False) -> LLMModelList:
         if service not in ['OpenAI', 'OpenRouter', 'NanoGPT']:
-            return LLMModelList([("Custom model","Custom model")], "Custom model", allows_manual_model_input=True)
+            return ClientBase.custom_model_list()
         try:
             if service == "OpenAI":
                 default_model = "gpt-4o-mini"
@@ -796,8 +816,8 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
                 logging.getLogger('openai').setLevel(logging.ERROR)
                 logging.getLogger("httpx").setLevel(logging.ERROR)
                 models = client.models.list()
-                logging.getLogger('openai').setLevel(logging.INFO)
-                logging.getLogger("httpx").setLevel(logging.INFO)
+                logging.getLogger('openai').setLevel(logging.NOTSET)
+                logging.getLogger("httpx").setLevel(logging.NOTSET)
                 client.close()
                 allow_manual_model_input = False
             elif service == "NanoGPT":
@@ -820,9 +840,9 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
                 
                 response = requests.get(url, headers=headers)
                 
-                logging.getLogger('openai').setLevel(logging.INFO)
-                logging.getLogger("httpx").setLevel(logging.INFO)
-                logging.getLogger('urllib3').setLevel(logging.INFO)
+                logging.getLogger('openai').setLevel(logging.NOTSET)
+                logging.getLogger("httpx").setLevel(logging.NOTSET)
+                logging.getLogger('urllib3').setLevel(logging.NOTSET)
                 
                 if response.status_code != 200:
                     raise Exception(f"NanoGPT API returned status {response.status_code}: {response.text}")
@@ -920,14 +940,17 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
     @staticmethod
     def get_decision_model_list(service: str, secret_key_file: str, default_model: str = DEFAULT_DECISION_MODEL, is_vision: bool = False) -> LLMModelList:
         """Lists the decision models on OpenRouter or NanoGPT (e.g. typesafe/jev-1.13). These do not appear in the OpenRouter chat model list.
+        For a typed address (a decision server on the player's own computer), the model name is typed, as for a local LLM.
         The arguments match the other model list getters. The lists need no key, so the key file is not used.
         """
+        if service not in ClientBase.DECISION_MODELS_URLS:
+            return ClientBase.custom_model_list()
         default_model = ClientBase.DEFAULT_DECISION_MODEL
         try:
             url, price_multiplier = ClientBase.DECISION_MODELS_URLS[service]
             logging.getLogger('urllib3').setLevel(logging.ERROR)
             response = requests.get(url, timeout=30)
-            logging.getLogger('urllib3').setLevel(logging.INFO)
+            logging.getLogger('urllib3').setLevel(logging.NOTSET)
             response.raise_for_status()
             options = []
             for model in response.json().get("data", []):
@@ -947,6 +970,6 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
                 options.append((model_display_name, model_id))
             return LLMModelList(options, default_model, allows_manual_model_input=False)
         except Exception as e:
-            logging.error(f"Failed to retrieve the list of decision models from {service}: {e}")
+            log.error(f"Failed to retrieve the list of decision models from {service}: {e}")
             # Manual input keeps the saved decision model selected while the list can't be loaded
             return LLMModelList([(default_model, default_model)], default_model, allows_manual_model_input=True)

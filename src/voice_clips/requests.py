@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import itertools
 import json
-import logging
 import os
 import shutil
 import threading
@@ -20,6 +19,10 @@ from typing import Any
 from src.voice_clips import fuz
 from src.voice_clips.clip_store import (AUTOMATIC, MOST_CHOSEN, NPCS, OWN_LINES, VOICE_TYPES, ClipInfo, ClipStore, line_id,
                                         npc_key, voice_key)
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICE_CLIPS)
 
 INCOMING = "incoming"
 REQUEST_FILE = "request.json"
@@ -181,7 +184,7 @@ class ClipRequests:
                 return False
             self.__topped_up.add(name)
         self.__queue(self.__lines_request(kind, key, TOP_UP, count))
-        logging.info(f"Voice clips: asking the game for {count} more lines for {self.__store.info(kind, key).name or key}, so the voice is long enough")
+        log.info(f"Voice clips: asking the game for {count} more lines for {self.__store.info(kind, key).name or key}, so the voice is long enough")
         return True
 
     def __lines_request(self, kind: str, key: str, why: str, count: int) -> ClipRequest:
@@ -251,14 +254,14 @@ class ClipRequests:
                 with open(os.path.join(dest, REQUEST_FILE), "w", encoding="utf-8") as file:
                     json.dump(request.__dict__, file, indent=2)
             except Exception as e:
-                logging.warning(f"Voice clips: left out the request {request.id} for {request.npc_name or request.voice_type}: {e}")
+                log.warning(f"Voice clips: left out the request {request.id} for {request.npc_name or request.voice_type}: {e}")
                 continue
             sent.append(for_game)
             if request.why == FIRST:
                 with self.__lock:
                     for key in request.keys:
                         self.__on_the_way[key] = request.id
-            logging.debug(f"Voice clips: asking the game for {request.why} lines ({request.id}: {', '.join(request.keys) or len(request.lines)})")
+            log.debug(f"Voice clips: asking the game for {request.why} lines ({request.id}: {', '.join(request.keys) or len(request.lines)})")
         return sent
 
     # ---- taking in ----
@@ -281,7 +284,7 @@ class ClipRequests:
                 try:
                     changed += self.__take_in(request_folder)
                 except Exception as e:
-                    logging.warning(f"Voice clips: could not take in {request_id}: {e}")
+                    log.warning(f"Voice clips: could not take in {request_id}: {e}")
                 shutil.rmtree(request_folder, ignore_errors=True)
                 self.__in_turn_sent.pop(request_id, None)
                 for key in [k for k, v in self.__on_the_way.items() if v == request_id]:
@@ -309,11 +312,11 @@ class ClipRequests:
             with open(os.path.join(request_folder, REQUEST_FILE), encoding="utf-8") as file:
                 request = ClipRequest(**json.load(file))
         except (OSError, ValueError, TypeError):
-            logging.warning(f"Voice clips: {os.path.basename(request_folder)} came back, but Mantella has no record of asking for it")
+            log.warning(f"Voice clips: {os.path.basename(request_folder)} came back, but Mantella has no record of asking for it")
             return 0
         if request.why == LIST:
             voice_types = [str(v.get("name", "")) for v in result.get("voice_types", []) if v.get("name")]
-            logging.info(f"Voice clips: the game's NPCs use {len(voice_types)} voice types with lines")
+            log.info(f"Voice clips: the game's NPCs use {len(voice_types)} voice types with lines")
             if self.on_voice_types is not None:
                 self.on_voice_types(voice_types)
             return 0
@@ -325,7 +328,7 @@ class ClipRequests:
         if result.get("status") != "error" and request.npc_lines == "if_different":
             self.__store.mark_npc_checked(npc_key(request.npc_plugin, request.npc_local_id))
         if result.get("status") == "error":
-            logging.warning(f"Voice clips: the game could not copy lines for {request.voice_type or request.npc_name}: {result.get('message', '')}")
+            log.warning(f"Voice clips: the game could not copy lines for {request.voice_type or request.npc_name}: {result.get('message', '')}")
         if request.why == MORE:
             for key in request.keys:
                 kind, _, clip_key = key.partition("/")
@@ -358,7 +361,7 @@ class ClipRequests:
         if (request.why == FIRST and type_key in request.keys and result.get("status") != "error"
                 and not any(c.get("for") == "voice_type" for c in delivered)):
             self.__nothing_found.add(type_key)
-            logging.info(f"Voice clips: the game has no lines for {request.voice_type}" + (f", so {request.stand_ins[0]} stands in" if request.stand_ins else ""))
+            log.info(f"Voice clips: the game has no lines for {request.voice_type}" + (f", so {request.stand_ins[0]} stands in" if request.stand_ins else ""))
             if request.stand_ins:
                 # Goes with the reply to this delivery, so the stand-in arrives before the NPC's next line
                 self.ask_for(request.stand_ins[0], stand_ins=request.stand_ins[1:], count=request.count)
@@ -374,7 +377,7 @@ class ClipRequests:
                 fuz.to_wav(source, wav)
                 converted.append((wav, clip))
             except Exception as e:
-                logging.warning(f"Voice clips: could not read the game line {clip.get('path')}: {e}")
+                log.warning(f"Voice clips: could not read the game line {clip.get('path')}: {e}")
         return converted
 
     def __file(self, kind: str, key: str, request: ClipRequest, converted: list[tuple[str, dict[str, Any]]]) -> int:
@@ -415,7 +418,7 @@ class ClipRequests:
                         self.__store.set_candidate_info(path, info)
             self.__store.set_clip(kind, key, first[0], new)
             self.__refreshed.add(f"{kind}/{key}")
-            logging.info(f"Voice clips: {request.npc_name if kind == NPCS else request.voice_type} now speaks with the game line {first[1].get('path')}")
+            log.info(f"Voice clips: {request.npc_name if kind == NPCS else request.voice_type} now speaks with the game line {first[1].get('path')}")
             changed = 1
         elif self.__store.candidates(kind, key):
             return 0 # a check for another NPC of this voice type: the voice already has its lines
@@ -475,7 +478,7 @@ class ClipRequests:
                 changed = 1 if old.order else changed
             else:
                 continue
-            logging.info(f"Voice clips: the game line {clip.get('path')} for {current.name or key} changed (a voice mod?), so it was copied again")
+            log.info(f"Voice clips: the game line {clip.get('path')} for {current.name or key} changed (a voice mod?), so it was copied again")
         return changed
 
     @staticmethod
@@ -493,9 +496,9 @@ class ClipRequests:
             gone = [p for p, info in self.__store.candidates(kind, key) if info.line == line_id(path)]
             if gone:
                 self.__store.drop_line(kind, key, gone[0])
-                logging.info(f"Voice clips: the game line {path} is gone, so the voice no longer uses it")
+                log.info(f"Voice clips: the game line {path} is gone, so the voice no longer uses it")
             return
-        logging.info(f"Voice clips: the game line {path} is gone, so another one is picked")
+        log.info(f"Voice clips: the game line {path} is gone, so another one is picked")
         exclude = list(dict.fromkeys(self.__store.turn_down_all(kind, key) + [line_id(path)]))
         self.__queue(ClipRequest(self.__new_id(), REPLACE, request.voice_type, request.npc_plugin, request.npc_local_id, request.npc_name,
                                  voice_type_lines=True, npc_lines="always" if for_npc else "none", exclude=exclude, keys=[]))

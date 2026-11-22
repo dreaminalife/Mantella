@@ -3,13 +3,16 @@ Lossless JSON serialization and deserialization for conversation message threads
 Used by the live conversation editor in the Bio Editor tab.
 """
 import json
-import logging
 from src.config.config_loader import ConfigLoader
 from src.llm.messages import UserMessage, AssistantMessage, join_message, leave_message, Message
 from src.llm.sentence_content import SentenceContent, SentenceTypeEnum
 from src.llm.sentence import Sentence
 from src.character_manager import Character
 from src.games.equipment import Equipment
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MEMORIES)
 
 
 def _character_to_dict(c: Character) -> dict:
@@ -121,7 +124,7 @@ def serialize_persistent_messages(messages: list[Message], config: ConfigLoader)
                 "content": m.text,
             })
         else:
-            logging.warning(f"conversation_serializer: skipping unknown message type {type(m)}")
+            log.warning(f"conversation_serializer: skipping unknown message type {type(m)}")
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
@@ -144,7 +147,7 @@ def deserialize_persistent_messages(
     result = []
     for item in data:
         if not isinstance(item, dict) or "type" not in item:
-            logging.warning(f"conversation_serializer: skipping invalid message item: {item}")
+            log.warning(f"conversation_serializer: skipping invalid message item: {item}")
             continue
         msg_type = item.get("type", "")
         if msg_type == "user":
@@ -208,5 +211,5 @@ def deserialize_persistent_messages(
                 msg.text = str(item["content"])
             result.append(msg)
         else:
-            logging.warning(f"conversation_serializer: skipping unknown type '{msg_type}'")
+            log.warning(f"conversation_serializer: skipping unknown type '{msg_type}'")
     return result

@@ -3,12 +3,15 @@ One editable prompt (Speech-to-Text Names) makes a plain list with commas betwee
 after "Names:"; options that take words to listen for get each name on its own"""
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass, field
 
 from src import utils
 from src.stt_backends.cleanup import names_within
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 HINT_START = "Names: "
 MAX_HINT_TOKENS = 200 # Whisper (on the PC, and online at OpenAI and Groq) only reads the last ~224 tokens of a hint and silently drops the start
@@ -83,7 +86,7 @@ def _load_tokenizer():
             _tokenizer = Tokenizer.from_file(os.path.join(utils.resolve_path(), TOKENIZER_FILE))
         except Exception as e:
             _tokenizer_failed = True
-            logging.warning(f"Could not load Whisper's tokenizer ({e}). The speech-to-text names are counted by their size instead.")
+            log.warning(f"Could not load Whisper's tokenizer ({e}). The speech-to-text names are counted by their size instead.")
     return _tokenizer
 
 

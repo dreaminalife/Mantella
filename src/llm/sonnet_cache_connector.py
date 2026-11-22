@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 import json
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
 
 
 class SonnetCacheConnector:
@@ -57,7 +60,7 @@ class SonnetCacheConnector:
         for cache_index in cache_indices:
             target_message = transformed[cache_index]
             self._apply_cache_control(target_message)
-            logging.debug(
+            log.debug(
                 f"Claude cache: breakpoint at message {cache_index+1}/{len(transformed)} (role={target_message.get('role')}), "
                 "caching all messages up to this point"
             )
@@ -95,7 +98,7 @@ class SonnetCacheConnector:
         last_idx = len(messages) - 1
 
         if messages[last_idx].get("role") != "user":
-            logging.debug("Claude cache: no suitable message found to cache (latest message is not user)")
+            log.debug("Claude cache: no suitable message found to cache (latest message is not user)")
             return []
 
         normalized_model_name = (model_name or "").strip().lower()
@@ -127,7 +130,7 @@ class SonnetCacheConnector:
         if cache_indices:
             return cache_indices
 
-        logging.debug("Claude cache: no suitable message found to cache (need at least system or previous user)")
+        log.debug("Claude cache: no suitable message found to cache (need at least system or previous user)")
         return []
 
     def _apply_cache_control(self, message: Dict[str, Any]) -> None:
@@ -139,11 +142,11 @@ class SonnetCacheConnector:
                 updated_part["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
                 contents[idx] = updated_part
                 message["content"] = contents
-                logging.debug(f"Claude cache: added cache_control to existing text block at index {idx}")
+                log.debug(f"Claude cache: added cache_control to existing text block at index {idx}")
                 return
 
         contents.append({"type": "text", "text": "", "cache_control": {"type": "ephemeral", "ttl": "1h"}})
         message["content"] = contents
-        logging.debug("Claude cache: appended empty text block with cache_control")
+        log.debug("Claude cache: appended empty text block with cache_control")
 
 

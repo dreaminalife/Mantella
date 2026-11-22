@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from src.heard_lines.heard_line import GameTime, HandOver, HeardPerson
+from src.heard_lines.heard_line import PLAYER_REF_ID, GameTime, HandOver, HeardPerson
 from src.heard_lines.heard_lines_text import PlainHeardLinesText
 from tests.heard_lines.lines import CARLOTTA, HULDA, MIKAEL, REF, SAADIA, SCENE, at, hand_over, menu_line, scene_line
 
@@ -134,3 +134,20 @@ def test_in_a_conversation_each_line_is_one_narration_sentence():
     assert TEXT.nearby_now(no_pick, False) == 'Nearby, Hulda says to Kit: "Need something?"'
     assert TEXT.nearby_now(menu, True) == "" # Director Mode: menu talk with the player is left out
     assert TEXT.nearby_now(scene, True) == 'Nearby, Mikael says to Carlotta: "Your beauty outshines the sun."'
+
+
+def test_a_line_someone_in_the_conversation_said_or_was_told_is_not_nearby():
+    [scene, alone, to_player] = lines(scene_line("Your beauty outshines the sun."), scene_line("Hmph.", to=None),
+                                      scene_line("You there!", to={"id": 0x14, "name": "Kit"}))
+    assert TEXT.nearby_now(scene, False, {REF["Mikael"]}) == 'Mikael says to Carlotta: "Your beauty outshines the sun."' # The speaker
+    assert TEXT.nearby_now(scene, False, {REF["Carlotta"]}) == 'Mikael says to Carlotta: "Your beauty outshines the sun."' # Spoken to
+    assert TEXT.nearby_now(alone, False, {REF["Mikael"]}) == 'Mikael says: "Hmph."'
+    assert TEXT.nearby_now(scene, False, {REF["Hulda"], PLAYER_REF_ID}) == 'Nearby, Mikael says to Carlotta: "Your beauty outshines the sun."'
+    assert TEXT.nearby_now(to_player, False, {REF["Hulda"], PLAYER_REF_ID}) == 'Mikael says to Kit: "You there!"'
+    assert TEXT.nearby_now(to_player, True, {REF["Hulda"]}) == 'Nearby, Mikael says: "You there!"' # Director Mode: not the player
+
+
+def test_menu_talk_with_the_player_in_the_conversation_is_not_nearby():
+    [menu, no_pick] = lines(menu_line("Any rumors?", "Not today."), menu_line("", "Need something?"))
+    assert TEXT.nearby_now(menu, False, {REF["Saadia"], PLAYER_REF_ID}) == 'Kit asks Hulda: "Any rumors?" Hulda answers: "Not today."'
+    assert TEXT.nearby_now(no_pick, False, {REF["Hulda"]}) == 'Hulda says to Kit: "Need something?"' # Hulda is in it

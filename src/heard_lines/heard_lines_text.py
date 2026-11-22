@@ -1,7 +1,8 @@
 """Vanilla Dialogues: how heard lines read for the AI. Always in third person with the NPCs' names, like the summaries,
 so they stay clear in a group prompt that holds several NPCs' memories"""
 from abc import ABC, abstractmethod
-from src.heard_lines.heard_line import GameTime, HeardLine, HeardPerson
+from collections.abc import Collection
+from src.heard_lines.heard_line import PLAYER_REF_ID, GameTime, HeardLine, HeardPerson
 
 
 class HeardLinesText(ABC):
@@ -16,9 +17,14 @@ class HeardLinesText(ABC):
         pass
 
     @abstractmethod
-    def nearby_now(self, line: HeardLine, hide_player: bool) -> str:
-        """One narration sentence for a line heard during a conversation, such as Nearby, Mikael says to Carlotta: "...".
-        Empty when it is left out (menu talk while hide_player)"""
+    def nearby_now(self, line: HeardLine, hide_player: bool, in_conversation: Collection[str] = ()) -> str:
+        """One narration sentence for a line said during a conversation, such as Nearby, Mikael says to Carlotta: "...".
+        Empty when it is left out (menu talk while hide_player)
+
+        Args:
+            in_conversation (Collection[str]): the ref ids of everyone in the conversation, the player too unless hide_player.
+                A line one of them said, or that was said to one of them, didn't happen "nearby": it reads Mikael says to Carlotta: "..."
+        """
         pass
 
 
@@ -32,15 +38,22 @@ class PlainHeardLinesText(HeardLinesText):
             entries.append((group[0].time, f"{self.__when_and_where(group[0], now)}{text}"))
         return entries
 
-    def nearby_now(self, line: HeardLine, hide_player: bool) -> str:
+    def nearby_now(self, line: HeardLine, hide_player: bool, in_conversation: Collection[str] = ()) -> str:
         if line.is_menu_talk:
             if hide_player:
                 return ""
+            nearby = self.__nearby(in_conversation, line.speaker.ref_id, PLAYER_REF_ID)
             if line.asked:
-                return f'Nearby, {line.player} asks {line.speaker.name}: "{line.asked}" {line.speaker.name} answers: "{line.words}"'
-            return f'Nearby, {line.speaker.name} says to {line.player}: "{line.words}"'
+                return f'{nearby}{line.player} asks {line.speaker.name}: "{line.asked}" {line.speaker.name} answers: "{line.words}"'
+            return f'{nearby}{line.speaker.name} says to {line.player}: "{line.words}"'
         to = self.__to(line, hide_player)
-        return f'Nearby, {line.speaker.name} says{f" to {to.name}" if to else ""}: "{line.words}"'
+        nearby = self.__nearby(in_conversation, line.speaker.ref_id, to.ref_id if to else None)
+        return f'{nearby}{line.speaker.name} says{f" to {to.name}" if to else ""}: "{line.words}"'
+
+    @staticmethod
+    def __nearby(in_conversation: Collection[str], *ref_ids: str | None) -> str:
+        """'Nearby, ' when none of the people in the line are in the conversation"""
+        return "" if any(ref_id in in_conversation for ref_id in ref_ids if ref_id) else "Nearby, "
 
     @staticmethod
     def __groups(lines: list[HeardLine]) -> list[list[HeardLine]]:

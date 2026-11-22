@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import copy
 import json
-import logging
 import os
 import re
 import threading
@@ -27,6 +26,10 @@ import soundfile as sf
 from scipy.signal import fftconvolve, lfilter
 
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 VOICE_EFFECTS_FOLDER = "voice_effects"
 NO_EFFECT = ("none", "off", "no") # in the voice_effect column: this NPC gets no effect, whatever their race
@@ -101,7 +104,7 @@ def built_in_effects_folder() -> str:
 def _warn_once(message: str) -> None:
     if message not in _warned:
         _warned.add(message)
-        logging.warning(message)
+        log.warning(message)
 
 
 def race_key(race: str | None) -> str:
@@ -351,7 +354,7 @@ class VoiceEffects:
             effect = self.find(chosen)
             if effect is not None:
                 if not effect.on:
-                    logging.debug(f"{getattr(speaker, 'name', '') or 'An NPC'} has the voice effect '{effect.title}', which isn't ticked, so no effect")
+                    log.debug(f"{getattr(speaker, 'name', '') or 'An NPC'} has the voice effect '{effect.title}', which isn't ticked, so no effect")
                     return None
                 return effect
             _warn_once(f"{getattr(speaker, 'name', '') or 'An NPC'} has the voice effect '{chosen}' in their voice_effect column, but there is no effect "

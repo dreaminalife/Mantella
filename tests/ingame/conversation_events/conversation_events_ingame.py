@@ -26,7 +26,7 @@ from typing import Any
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 from src.http.communication_constants import communication_constants as comm_consts  # noqa: E402
 from tests.ingame.silent_voice import start_silent_voice, voice_settings  # noqa: E402
-from tests.ingame.talk_settings.talk_settings_ingame import game_npc_event_notes, write_settings  # noqa: E402
+from tests.ingame.talk_settings.talk_settings_ingame import ENTRY, LOG_SETTINGS, game_npc_event_notes, log_entry, write_settings  # noqa: E402
 
 BATCH = "mwe"
 BATCH_LINES = [
@@ -37,7 +37,6 @@ BATCH_LINES = [
 START_FILE = "event_test_start.txt"  # In Mantella's folder: when setup ran. The check reads the log from then on
 BACKUP_FILE = "config.ini.bak-event-test"  # In Mantella's folder: your config.ini before setup
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-ENTRY = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d{3} ([^:\n]+): ", re.MULTILINE)
 
 
 def default_mantella_folder() -> str:
@@ -56,7 +55,7 @@ def setup(game_folder: str, mantella_folder: str):
         print(f"Can't start the silent voice ({e}). Is another in-game test still running?")
         sys.exit(1)
     shutil.copyfile(config_path, backup_path)
-    missing = write_settings(config_path, {**voice_settings(), "show_http_debug_messages": "True"})
+    missing = write_settings(config_path, {**voice_settings(), **LOG_SETTINGS})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
@@ -112,7 +111,7 @@ def read_log(mantella_folder: str, since: datetime) -> list[tuple[str, str]]:
         for i, match in enumerate(starts):
             if datetime.strptime(match.group(1), TIME_FORMAT) >= since:
                 end = starts[i + 1].start() if i + 1 < len(starts) else len(text)
-                entries.append((match.group(2), text[match.end():end].strip()))
+                entries.append(log_entry(match, text[match.end():end].strip()))
     return entries
 
 

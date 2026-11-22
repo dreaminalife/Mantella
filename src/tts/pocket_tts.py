@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
-import logging
 import os
 import re
 import shutil
@@ -32,6 +31,10 @@ from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import key_saves, read_key_file
 from src.voice_clips.preparing import in_background
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+voices_log = get_topic_logger(LogTopic.VOICES)
 
 NAME = "Pocket TTS"
 PROGRAM_VERSION = "v4.0.1" # Kyutai's release. Its program is 3.3.0, and pins the model of each language
@@ -97,7 +100,7 @@ def check_access(token: str, language: str, timeout: float = 10.0) -> str:
     try:
         answer = requests.head(url, headers={"Authorization": f"Bearer {token}"}, timeout=timeout, allow_redirects=False)
     except requests.RequestException as e:
-        logging.debug(f"Pocket TTS: could not reach Hugging Face to check the sign-in: {e}")
+        voices_log.debug(f"Pocket TTS: could not reach Hugging Face to check the sign-in: {e}")
         return ACCESS_UNKNOWN
     if answer.status_code in (200, 302, 307):
         return ACCESS_OK
@@ -116,7 +119,7 @@ def install(save_folder: str) -> str:
         return exe
     os.makedirs(folder, exist_ok=True)
     archive = os.path.join(folder, ARCHIVE)
-    logging.log(24, f"Pocket TTS: downloading Kyutai's program ({PROGRAM_VERSION}, about 8 MB)...")
+    voices_log.info( f"Pocket TTS: downloading Kyutai's program ({PROGRAM_VERSION}, about 8 MB)...")
     with requests.get(DOWNLOAD_URL, stream=True, timeout=60) as answer:
         answer.raise_for_status()
         digest = hashlib.sha256()
@@ -134,7 +137,7 @@ def install(save_folder: str) -> str:
     exe = _find_exe(folder)
     if not exe:
         raise RuntimeError(f"Kyutai's download has no {EXE} in it")
-    logging.log(24, "Pocket TTS: program ready")
+    voices_log.info( "Pocket TTS: program ready")
     return exe
 
 
@@ -181,7 +184,7 @@ def move_saved_voice(save_folder: str, from_key: str, to_key: str, clip_path: st
                     os.remove(os.path.join(folder, old))
             os.replace(source, os.path.join(folder, to_key + name))
         except OSError as e:
-            logging.warning(f"Could not reuse the saved voice, so it will be cloned again: {e}")
+            voices_log.warning(f"Could not reuse the saved voice, so it will be cloned again: {e}")
 
 
 def remove_saved_voices(save_folder: str, key: str) -> None:
@@ -271,14 +274,14 @@ class _Program:
             if self.is_running():
                 if self.settings == settings:
                     return
-                logging.info("Pocket TTS: the language or the sign-in changed, so the program starts again")
+                voices_log.info("Pocket TTS: the language or the sign-in changed, so the program starts again")
                 self.stop()
             elif _answers():
-                logging.info(f"Pocket TTS: a program already answers on port {PORT}, using it")
+                voices_log.info(f"Pocket TTS: a program already answers on port {PORT}, using it")
                 self.external, self.settings = True, settings
                 return
             command = [exe, "serve", "--host", "127.0.0.1", "--port", str(PORT), "--language", language]
-            logging.log(24, f"Pocket TTS: starting ({language})")
+            voices_log.info( f"Pocket TTS: starting ({language})")
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             with open(log_path, "ab") as log:
                 self.process = subprocess.Popen(command, cwd=os.path.dirname(exe), env=environment, stdout=log, stderr=subprocess.STDOUT,
@@ -300,7 +303,7 @@ class _Program:
             handle = win32api.OpenProcess(win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE, False, process.pid)
             win32job.AssignProcessToJobObject(self.job, handle)
         except Exception as e:
-            logging.debug(f"Pocket TTS: could not tie the program to Mantella ({e}); it is stopped when the voice service changes")
+            voices_log.debug(f"Pocket TTS: could not tie the program to Mantella ({e}); it is stopped when the voice service changes")
 
 
 _program = _Program()
@@ -368,7 +371,7 @@ class PocketTTS(ClipVoiceService):
                 # Started and not answering yet: the first start downloads Kyutai's model. Not waited for, so the backup speaks
                 raise RuntimeError("Pocket TTS is still getting ready (the first start downloads Kyutai's model, about 220 MB)")
             if _program.process is not None and not _program.is_running():
-                logging.warning(f"Pocket TTS stopped (exit code {_program.process.returncode}), starting it again. See {self.__log_path()}")
+                voices_log.warning(f"Pocket TTS stopped (exit code {_program.process.returncode}), starting it again. See {self.__log_path()}")
             _program.external = False
             self.__launch()
             if _program.external or _program.process is None:
@@ -458,7 +461,7 @@ class PocketTTS(ClipVoiceService):
         except Exception as e:
             self.__setup_error = str(e)
             utils.play_error_sound()
-            logging.error(f"Pocket TTS: {e}")
+            voices_log.error(f"Pocket TTS: {e}")
             add_notice(f"Pocket TTS: {e}")
         finally:
             self.__ready.set()
@@ -475,12 +478,12 @@ class PocketTTS(ClipVoiceService):
             self.__token_saves = saves
             self.__token = read_key_file(KEY_FILE)
             self.__access = ACCESS_UNKNOWN if self.__token else ACCESS_NO_TOKEN
-            logging.info("Pocket TTS: a new Hugging Face token was saved, so it is used from now on")
+            voices_log.info("Pocket TTS: a new Hugging Face token was saved, so it is used from now on")
             if self.__exe and not self.__stopped and _program.is_running():
                 self.__launch() # the program was started with the old sign-in: it starts again with the new one
 
     def __say_no_copying(self, message: str) -> None:
-        logging.warning(message)
+        voices_log.warning(message)
         add_notice("Pocket TTS can't clone voices, so NPCs use built-in voices. See Mantella's Text-to-Speech page.")
 
     def __environment(self) -> dict[str, str]:
@@ -516,7 +519,7 @@ class PocketTTS(ClipVoiceService):
                     self.__access = access
                     self.__say_no_copying(ACCESS_MESSAGES[access])
                 else:
-                    logging.warning("Pocket TTS could not download Kyutai's voice cloning model this time. "
+                    voices_log.warning("Pocket TTS could not download Kyutai's voice cloning model this time. "
                                     "Your sign-in is fine, so it tries again with the next line.")
             raise RuntimeError(f"Pocket TTS could not make a voice from {os.path.basename(clip_path)}: {output[-300:]}")
 

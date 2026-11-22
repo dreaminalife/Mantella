@@ -1,15 +1,17 @@
 """Moonshine on this PC: small and fast on a normal processor, English only. It can't take names"""
 from __future__ import annotations
 
-import logging
 import os
 
 import numpy as np
 
 from src.stt_backends.base import FAILED, NOT_DOWNLOADED, SpeechBackend, SpeechError
 from src.stt_backends.cleanup import clean, ensure_sentence_ending
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 
-LOGLEVEL = 27
+log = get_topic_logger(LogTopic.MICROPHONE)
+
 
 
 class MoonshineProgram(SpeechBackend):
@@ -28,14 +30,14 @@ class MoonshineProgram(SpeechBackend):
             raise self._load_error
         from moonshine_onnx import MoonshineOnnxModel, load_tokenizer
         if self.model == 'moonshine/tiny':
-            logging.warning('Speech-to-text model set to Moonshine Tiny. If mic input is being transcribed incorrectly, try switching to a larger model in the `Speech-to-Text` tab of the Mantella UI')
+            log.warning('Speech-to-text model set to Moonshine Tiny. If mic input is being transcribed incorrectly, try switching to a larger model in the `Speech-to-Text` tab of the Mantella UI')
         model_path = os.path.join(self.folder, self.full_model)
         try:
             if os.path.exists(f'{model_path}/encoder_model.onnx'):
-                logging.log(LOGLEVEL, 'Loading local Moonshine model...')
+                log.debug( 'Loading local Moonshine model...')
                 self._moonshine = MoonshineOnnxModel(models_dir=model_path, model_name=self.model)
             else:
-                logging.log(LOGLEVEL, 'Loading Moonshine model from Hugging Face...')
+                log.debug( 'Loading Moonshine model from Hugging Face...')
                 self._moonshine = MoonshineOnnxModel(model_name=self.model, model_precision=self.precision)
             self._tokenizer = load_tokenizer()
         except Exception as e:

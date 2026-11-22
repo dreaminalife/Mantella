@@ -14,6 +14,7 @@ from src.config.types.config_value_group import ConfigValueGroup
 from src.config.types.config_value_path import ConfigValuePath
 from src.config.types.config_value_string import ConfigValueString
 from src.config.definitions.other_definitions import OtherDefinitions
+from src.config.definitions.log_definitions import LOG_PART, LOG_PART_INTRO, LogDefinitions
 from src.config.definitions.startup_definitions import StartupDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.stt_definitions import PAGE_DESCRIPTION as STT_PAGE_DESCRIPTION, SERVICE_PART as STT_SERVICE_PART, TALKING_PART as STT_TALKING_PART, STTDefinitions
@@ -417,18 +418,13 @@ class MantellaConfigValueDefinitionsNew:
         other_category.add_config_value(OtherDefinitions.get_save_audio_data_to_character_folder_config_value())
         other_category.add_config_value(OtherDefinitions.get_hot_swap_enabled_config_value())
         other_category.add_config_value(OtherDefinitions.get_port_config_value())
-        other_category.add_config_value(OtherDefinitions.get_show_http_debug_messages_config_value())
-        other_category.add_config_value(OtherDefinitions.get_advanced_logs_config_value())
+        for log_value in LogDefinitions.get_log_config_values(): # The "Log" part: Off / Short / Full for each topic
+            other_category.add_config_value(log_value)
+        other_category.set_folded_part_intro(LOG_PART, LOG_PART_INTRO)
         # Startup settings (they used to have their own tab). config.ini values are read by name, so old [Startup] sections still load
         other_category.add_config_value(StartupDefinitions.get_auto_launch_ui_config_value())
         other_category.add_config_value(StartupDefinitions.get_play_startup_sound_config_value())
         other_category.add_config_value(StartupDefinitions.get_remove_mei_folders_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_debugging_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_play_audio_from_script_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_debugging_npc_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_use_default_player_response_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_default_player_response_config_value())
-        # other_category.add_config_value(OtherDefinitions.get_exit_on_first_exchange_config_value())
         result.add_base_group(other_category)
 
         model_profiles_category = ConfigValueGroup("Model Profiles", "Model Profiles", "Model profiles allow you to create parameter profiles for each model. These profiles can be applied across the entire system when profile application is enabled, making it convenient for users who want to assign different providers, temperatures, enable/disable thinking modes, and other parameters for different models. ", on_value_change_callback)

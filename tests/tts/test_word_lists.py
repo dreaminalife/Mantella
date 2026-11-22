@@ -72,7 +72,7 @@ def test_sound_symbols_only_for_a_service_that_takes_them(folder, shipped):
 def test_a_bad_row_is_skipped_with_one_warning(folder, shipped, caplog):
     words = WordLists(folder, shipped)
     write(folder, MY_LIST, "Auri,,,,\nAuri,Or-ee,loud,,\nAuri,Or-ee,,,\n")
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         assert words.apply("Auri", pocket(), "en") == "Or-ee"
         words.entries()
     assert sum("skipped" in r.message for r in caplog.records) == 2

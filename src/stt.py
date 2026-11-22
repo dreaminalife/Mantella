@@ -1,5 +1,4 @@
 import numpy as np
-import logging
 from src.config.config_loader import ConfigLoader
 import src.utils as utils
 from typing import Optional
@@ -18,6 +17,10 @@ from silero_vad import VADIterator, load_silero_vad
 from src.ptt_controller import PTTController
 
 import onnxruntime as ort
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 ort.set_default_logger_severity(4)
 
 class Transcriber:
@@ -30,7 +33,6 @@ class Transcriber:
     
     @utils.time_it
     def __init__(self, config: ConfigLoader, stt_secret_key_file: str, secret_key_file: str):
-        self.loglevel = 27
         self.language = config.stt_language
         self.listen_timeout = config.listen_timeout
         self.prompt = ''
@@ -45,7 +47,7 @@ class Transcriber:
         self.pause_threshold = config.pause_threshold
         self._temporary_pause: float | None = None # The Listen action: a longer pause for the player's next line only
         self.audio_threshold = config.audio_threshold
-        logging.log(self.loglevel, f"Audio threshold set to {self.audio_threshold}. If the mic is not picking up your voice, try lowering this `Speech-to-Text`->`Audio Threshold` value in the Mantella UI. If the mic is picking up too much background noise, try increasing this value.\n")
+        log.debug( f"Audio threshold set to {self.audio_threshold}. If the mic is not picking up your voice, try lowering this `Speech-to-Text`->`Audio Threshold` value in the Mantella UI. If the mic is picking up too much background noise, try increasing this value.\n")
 
         # PTT settings
         self.ptt_enabled = getattr(config, 'ptt_enabled', False)
@@ -67,8 +69,8 @@ class Transcriber:
         self.__reported_problems: set[str] = set() # each kind of problem is shown once, until the settings change
         language_problem = stt_backends.language_problem(self.__choice, self.language)
         if language_problem:
-            logging.warning(language_problem)
-        logging.log(self.loglevel, f"Speech-to-text: {self.__choice.preset.name}, model {self.__choice.model or '(set by the program)'}")
+            log.warning(language_problem)
+        log.debug( f"Speech-to-text: {self.__choice.preset.name}, model {self.__choice.model or '(set by the program)'}")
         self.__backend: SpeechBackend = stt_backends.build_backend(self.__choice, config, self.__secret_key_file)
         try:
             self.__backend.load()
@@ -121,17 +123,17 @@ class Transcriber:
         """Proactive Mode re-sends the whole recording every Refresh Frequency seconds: free on this PC, but every re-send is billed online.
         So it is off for the Online Service choices. Custom Service keeps it, as Mantella can't tell a paid address from a free program at home"""
         if config.proactive_mic_mode and self.__choice.preset.online:
-            logging.info(f"Proactive Mode is off while speech-to-text uses {self.__choice.preset.name}: each update would be a separate paid request.")
+            log.info(f"Proactive Mode is off while speech-to-text uses {self.__choice.preset.name}: each update would be a separate paid request.")
             return False
         return config.proactive_mic_mode
 
     def __report(self, error: SpeechError) -> None:
         """Shows a problem in the Mantella window once per kind, so a wrong key doesn't fill the log with every line the player says"""
         if error.kind in self.__reported_problems:
-            logging.debug(f"Speech-to-text: {error.message}")
+            log.debug(f"Speech-to-text: {error.message}")
             return
         self.__reported_problems.add(error.kind)
-        logging.error(f"Speech-to-text: {error.message}")
+        log.error(f"Speech-to-text: {error.message}")
 
     @utils.time_it
     def _transcribe(self, audio: np.ndarray) -> str:
@@ -147,17 +149,17 @@ class Transcriber:
             self.__report(SpeechError("unexpected", f"{self.__choice.preset.name} could not turn the recording into text: {e}"))
             transcription = ''
         if self.__backend.takes_hint and is_hint_copy(transcription, self.prompt): # Whisper sometimes answers silence with the names it was given
-            logging.debug(f"Speech-to-text returned only the names it was given ('{transcription}'), so it is thrown away")
+            log.debug(f"Speech-to-text returned only the names it was given ('{transcription}'), so it is thrown away")
             transcription = ''
 
         self.transcription_times.append((time.time() - self._speech_end_time))
         if (self.proactive_mic_mode) and (len(self.transcription_times) % 5 == 0):
             max_transcription_time = max(self.transcription_times[-5:])
             if max_transcription_time > self.min_refresh_secs:
-                logging.warning(f'Mic transcription took {round(max_transcription_time,3)} to process. To improve performance, try setting `Speech-to-Text`->`Refresh Frequency` to a value slightly higher than {round(max_transcription_time,3)} in the Mantella UI')
+                log.warning(f'Mic transcription took {round(max_transcription_time,3)} to process. To improve performance, try setting `Speech-to-Text`->`Refresh Frequency` to a value slightly higher than {round(max_transcription_time,3)} in the Mantella UI')
 
         if self.proactive_mic_mode:
-            logging.log(self.loglevel, f'Interim transcription: {transcription}')
+            log.debug( f'Interim transcription: {transcription}')
         
         # Only update the transcription if it contains a value, otherwise keep the existing transcription
         if transcription:
@@ -198,7 +200,7 @@ class Transcriber:
             daemon = True
         )
         self._processing_thread.start()
-        logging.log(self.loglevel, 'Listening...')
+        log.info( 'Listening...')
 
 
     def _process_audio(self) -> None:
@@ -212,7 +214,7 @@ class Transcriber:
                 chunk, status = self._audio_queue.get(timeout=0.1)
                 if status:
                     if self.__processing_audio_error_count % self.__warning_frequency == 0:
-                        logging.log(23, f"STT WARNING: Processing audio error: {status}")
+                        log.warning( f"STT WARNING: Processing audio error: {status}")
                     self.__processing_audio_error_count += 1
                     continue
 
@@ -224,14 +226,14 @@ class Transcriber:
                             # Begin or continue PTT-capture
                             self._audio_buffer = np.concatenate((self._audio_buffer, chunk))
                             if not self._ptt_active:
-                                logging.log(self.loglevel, 'PTT pressed')
+                                log.info( 'PTT pressed')
                                 self._ptt_active = True
                                 self._speech_detected = True
                                 self._speech_start_time = time.time()
                                 self._last_update_time = time.time()
                         else:
                             if self._ptt_active:
-                                logging.log(self.loglevel, 'PTT released - transcribing')
+                                log.info( 'PTT released - transcribing')
                                 # Check both buffer length and minimum duration to avoid corrupted audio
                                 audio_duration = len(self._audio_buffer) / self.SAMPLING_RATE if len(self._audio_buffer) > 0 else 0
                                 min_duration = 0.3  # Minimum 100ms of audio
@@ -242,7 +244,7 @@ class Transcriber:
                                         self._save_audio(self._audio_buffer)
                                     self._transcription_ready.set()
                                 else:
-                                    logging.debug(f'PTT released with insufficient audio (duration: {audio_duration:.3f}s, min: {min_duration}s)')
+                                    log.debug(f'PTT released with insufficient audio (duration: {audio_duration:.3f}s, min: {min_duration}s)')
                                 self._reset_state()
                                 self._soft_reset_vad()
                                 self._ptt_active = False
@@ -251,7 +253,7 @@ class Transcriber:
                                 self._audio_buffer = np.array([], dtype=np.float32)
                         # Check PTT timeout before continue to avoid unbounded buffering
                         if self._ptt_active and (len(self._audio_buffer) / self.SAMPLING_RATE) > self.listen_timeout:
-                            logging.warning(f'PTT timeout of {self.listen_timeout} seconds reached. Processing mic input...')
+                            log.warning(f'PTT timeout of {self.listen_timeout} seconds reached. Processing mic input...')
                             # No minimum duration check needed for timeout case - force transcription
                             if len(self._audio_buffer) > 0:
                                 self._current_transcription = self._transcribe(self._audio_buffer)
@@ -276,13 +278,13 @@ class Transcriber:
                     # Handle speech detection
                     if speech_dict:
                         if "start" in speech_dict and not self._speech_detected:
-                            logging.log(self.loglevel, 'Speech detected')
+                            log.debug( 'Speech detected')
                             self._speech_detected = True
                             self._speech_start_time = time.time()
                             self._last_update_time = time.time()
                         
                         if "end" in speech_dict and self._speech_detected:
-                            logging.log(self.loglevel, 'Speech ended')
+                            log.debug( 'Speech ended')
                             # If proactive mode is disabled, transcribe mic input only when speech end has been detected
                             if not self.proactive_mic_mode:
                                 self._current_transcription = self._transcribe(self._audio_buffer)
@@ -298,7 +300,7 @@ class Transcriber:
                         
                         # Check for maximum speech duration
                         if (len(self._audio_buffer) / self.SAMPLING_RATE) > self.listen_timeout:
-                            logging.warning(f'Listen timeout of {self.listen_timeout} seconds reached. Processing mic input...')
+                            log.warning(f'Listen timeout of {self.listen_timeout} seconds reached. Processing mic input...')
                             self._current_transcription = self._transcribe(self._audio_buffer)
                             self._transcription_ready.set()
 
@@ -306,11 +308,11 @@ class Transcriber:
                             self._soft_reset_vad()
                         # Regular update during speech
                         elif (self.proactive_mic_mode) and (chunk_count >= self.refresh_freq):
-                            logging.debug(f'Transcribing {self.min_refresh_secs} of mic input...')
+                            log.debug(f'Transcribing {self.min_refresh_secs} of mic input...')
                             self._current_transcription = self._transcribe(self._audio_buffer)
 
                             if self._consecutive_empty_count >= self._max_consecutive_empty:
-                                logging.warning(f'Could not transcribe input')
+                                log.warning(f'Could not transcribe input')
                                 self._transcription_ready.set()
                                 self._reset_state()
                                 self._soft_reset_vad()
@@ -318,11 +320,11 @@ class Transcriber:
                             chunk_count = 0  # Reset counter
             
             except queue.Empty:
-                logging.debug('Queue is empty')
+                log.debug('Queue is empty')
                 continue
             except Exception as e:
                 if self.__mic_input_process_error_count % self.__warning_frequency == 0:
-                    logging.log(23, f'STT WARNING: Error processing mic input: {str(e)}')
+                    log.warning( f'STT WARNING: Error processing mic input: {str(e)}')
                 self.__mic_input_process_error_count += 1
                 self._reset_state()
                 time.sleep(0.1)
@@ -352,7 +354,7 @@ class Transcriber:
         def input_callback(indata, frames, time, status):
             if status:
                 if self.__audio_input_error_count % self.__warning_frequency == 0:
-                    logging.log(23, f"STT WARNING: Audio input error: {status}")
+                    log.warning( f"STT WARNING: Audio input error: {status}")
                 self.__audio_input_error_count += 1
             # Store both data and status in queue
             q.put((indata.copy().flatten(), status))
@@ -433,7 +435,7 @@ class Transcriber:
                     self._ptt_active = False
                     self._reset_state()
                     self._soft_reset_vad()
-                    logging.info(f"PTT mode toggled to: {'enabled' if self.ptt_enabled else 'disabled'} - audio state reset")
+                    log.info(f"PTT mode toggled to: {'enabled' if self.ptt_enabled else 'disabled'} - audio state reset")
 
                 # VAD thresholds
                 vad_threshold_changed = (self.audio_threshold != new_config.audio_threshold) or (self.pause_threshold != new_config.pause_threshold)
@@ -456,12 +458,12 @@ class Transcriber:
             self.__reported_problems.clear()
             language_problem = stt_backends.language_problem(self.__choice, self.language)
             if language_problem:
-                logging.warning(language_problem)
+                log.warning(language_problem)
 
-            logging.info("Applied STT hot-swap settings in place.")
+            log.info("Applied STT hot-swap settings in place.")
             return True
         except Exception as e:
-            logging.error(f"STT hot-swap failed: {e}")
+            log.error(f"STT hot-swap failed: {e}")
             return False
 
 
@@ -506,12 +508,12 @@ class Transcriber:
                     if self._temporary_pause is not None: # Listen lasts for one line
                         self._temporary_pause = None
                         self.vad_iterator = self._create_vad_iterator()
-                    logging.log(self.loglevel, f"Player said '{transcription.strip()}'")
+                    log.info( f"Player said '{transcription.strip()}'")
                     return transcription
                 
             if self.play_cough_sound:
                 utils.play_no_mic_input_detected_sound()
-            logging.warning('Could not detect speech from mic input')
+            log.warning('Could not detect speech from mic input')
 
             self._transcription_ready.clear()
             self._speech_detected = False
@@ -547,7 +549,7 @@ class Transcriber:
                 break
                 
         self._reset_state()
-        logging.log(self.loglevel, 'Stopped listening for mic input')
+        log.info( 'Stopped listening for mic input')
 
 
     @staticmethod

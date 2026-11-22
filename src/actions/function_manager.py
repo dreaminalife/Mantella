@@ -1,18 +1,19 @@
 from __future__ import annotations
 import json
-import logging
 from pathlib import Path
 from copy import deepcopy
 from typing import TYPE_CHECKING
 from src.conversation.action import Action
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.ACTIONS)
 if TYPE_CHECKING: # Only for type hints: the config loads the actions, and these import the config
     from openai.types.chat import ChatCompletionMessageToolCall
     from src.character_manager import Character
     from src.characters_manager import Characters
     from src.games.gameable import Gameable
-
-logger = logging.getLogger()
 
 
 class FunctionManager:
@@ -58,7 +59,7 @@ class FunctionManager:
                         else:
                             parsed_arguments = {}
                     except json.JSONDecodeError:
-                        logger.warning(f"Could not parse function arguments as JSON: {tool_call['function']['arguments']}")
+                        log.warning(f"Could not parse function arguments as JSON: {tool_call['function']['arguments']}")
                         parsed_arguments = {}
 
                     # Get the action definition to validate against
@@ -124,7 +125,7 @@ class FunctionManager:
                                     if resolve_type == 'npc':
                                         validated_args[f'{param_name}_succeeded'] = False
                                     else:
-                                        logger.warning(f"Skipping action '{identifier}' - could not resolve '{param_value}' to {resolve_type} ID")
+                                        log.warning(f"Skipping action '{identifier}' - could not resolve '{param_value}' to {resolve_type} ID")
                                         validated_args = None
                                         break
 
@@ -141,7 +142,7 @@ class FunctionManager:
                         
                         # Check for duplicate tool call from previous turn
                         if filter_repeats and FunctionManager._is_duplicate_call(parsed_tool, action_def):
-                            logger.log(23, f"Filtered duplicate tool call: {identifier} with args {parsed_tool.get('arguments', {})}")
+                            log.debug(f"Filtered duplicate tool call: {identifier} with args {parsed_tool.get('arguments', {})}")
                             continue
                         
                         # Handle action-specific side effects
@@ -149,7 +150,7 @@ class FunctionManager:
                         
                         parsed_tools.append(parsed_tool)
                 except Exception as e:
-                    logger.error(f"Error parsing function call: {e}")
+                    log.error(f"Error parsing function call: {e}")
         
         # Update cache with this turn's tool calls
         if len(parsed_tools) > 0:
@@ -169,7 +170,7 @@ class FunctionManager:
         actions_dir = Path(actions_dir) if actions_dir else Path(utils.resolve_path()) / "data" / "actions"
         
         if not actions_dir.exists():
-            logger.warning(f"Actions directory '{actions_dir}' not found")
+            log.warning(f"Actions directory '{actions_dir}' not found")
             return
 
         FunctionManager._actions.clear()
@@ -183,7 +184,7 @@ class FunctionManager:
             try:
                 FunctionManager._load_action_file(file_path, disabled_set)
             except Exception as e:
-                logger.warning(f"Failed to load action file {file_path}: {e}")
+                log.warning(f"Failed to load action file {file_path}: {e}")
 
         # TODO: Load new functions folder
         # Load functions folder
@@ -193,9 +194,9 @@ class FunctionManager:
         #         try:
         #             FunctionManager._load_action_file(file_path)
         #         except Exception as e:
-        #             logger.warning(f"Failed to load function file {file_path}: {e}")
+        #             log.warning(f"Failed to load function file {file_path}: {e}")
 
-        logger.log(23, f"""Loaded {len(FunctionManager._actions)} actions from: 
+        log.info(f"""Loaded {len(FunctionManager._actions)} actions from: 
     {actions_dir}""")
 
 
@@ -215,15 +216,13 @@ class FunctionManager:
         
         mode = "Enabled" if advanced_actions_enabled else "Basic"
         if enabled_names:
-            logger.log(23, f"{mode} actions: {', '.join(enabled_names)}")
+            log.info(f"{mode} actions: {', '.join(enabled_names)}")
         else:
-            logger.log(23, f"{mode} actions: None")
+            log.info(f"{mode} actions: None")
         
         # Log disabled actions
         if FunctionManager._disabled_action_names:
-            logger.log(23, f"Disabled actions: {', '.join(FunctionManager._disabled_action_names)}\n")
-        else:
-            logger.log(23, "")
+            log.info(f"Disabled actions: {', '.join(FunctionManager._disabled_action_names)}\n")
 
 
     @staticmethod
@@ -284,7 +283,7 @@ class FunctionManager:
         for action_data in actions_data:
             name = action_data.get('name')
             if not name:
-                logger.warning(f"Action in '{file_path.name}' is missing a 'name' field, skipping")
+                log.warning(f"Action in '{file_path.name}' is missing a 'name' field, skipping")
                 continue
 
             # Skip actions whose name is in the disabled set
@@ -297,7 +296,7 @@ class FunctionManager:
             action_data['identifier'] = f"mantella_{identifier}" if not identifier.startswith('mantella_') else identifier
 
             FunctionManager._actions[action_data['identifier']] = action_data
-            logger.debug(f"Loaded action: {action_data['identifier']}")
+            log.debug(f"Loaded action: {action_data['identifier']}")
 
 
     @staticmethod
@@ -457,7 +456,7 @@ class FunctionManager:
                 name = tool_call['function']['name']
                 identifier = next((i for i, a in FunctionManager._actions.items() if a.get('name') == name), None)
                 if not identifier or identifier not in allowed:
-                    logger.log(23, f"{speaker.name} picked {name}, which NPCs can't use in this conversation. Nothing happens")
+                    log.info(f"{speaker.name} picked {name}, which NPCs can't use in this conversation. Nothing happens")
                     continue
                 raw_arguments = tool_call['function'].get('arguments') or '{}'
                 try:
@@ -479,14 +478,14 @@ class FunctionManager:
                 call = {'id': tool_call.get('id', ''), 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(arguments)}}
                 parsed = FunctionManager.parse_function_calls([call], characters, game, filter_repeats=False, record_shares=False)
             except Exception as e:
-                logger.error(f"Could not read the action {tool_call}: {e}")
+                log.error(f"Could not read the action {tool_call}: {e}")
                 continue
             for action in parsed:
                 arguments = action.get('arguments', {})
                 if not include_player:
                     named = [str(n).lower() for value in arguments.values() for n in (value if isinstance(value, list) else [value]) if isinstance(n, str)]
                     if any(n in player_names for n in named):
-                        logger.log(23, f"{speaker.name}'s {action['identifier']} names the player, who isn't part of this conversation. Nothing happens")
+                        log.info(f"{speaker.name}'s {action['identifier']} names the player, who isn't part of this conversation. Nothing happens")
                         continue
                 if action['identifier'] == FunctionManager.ADD_TO_CONVERSATION and free_places is not None and isinstance(arguments.get('source'), list):
                     if free_places <= 0:
@@ -652,7 +651,7 @@ class FunctionManager:
                 validated_args[arg_name] = arg_value
             else:
                 # LLM hallucinated a parameter that doesn't exist in the schema
-                logger.warning(
+                log.warning(
                     f"LLM provided unknown argument '{arg_name}' for action '{action_identifier}'. "
                     f"Valid parameters are: {list(defined_params.keys())}. Ignoring this argument."
                 )
@@ -671,9 +670,9 @@ class FunctionManager:
         """An action nobody it names can do. Asking for someone already in the conversation (to join it, or to come over) is no mistake:
         it's done already"""
         if nearby_only and FunctionManager._in_conversation(names, characters):
-            logger.info(f"Action '{identifier}' not needed: {', '.join(str(n) for n in names)} {'is' if len(names) == 1 else 'are'} already in the conversation")
+            log.info(f"Action '{identifier}' not needed: {', '.join(str(n) for n in names)} {'is' if len(names) == 1 else 'are'} already in the conversation")
             return
-        logger.warning(f"Skipping action '{identifier}' - no valid entities for parameter '{param_name}'")
+        log.warning(f"Skipping action '{identifier}' - no valid entities for parameter '{param_name}'")
 
     @staticmethod
     def _validate_npc_names(npc_names: list[str], characters: Characters, exclude_player: bool = True, include_nearby: bool = False, nearby_only: bool = False) -> list[str]:
@@ -733,7 +732,7 @@ class FunctionManager:
                     available = "nearby"
                 else:
                     available = "in conversation" if not include_nearby else "in conversation + nearby"
-                logger.warning(f"NPC name '{llm_name}' not found {available}. Available NPCs: {list(char_names_lower.values())}")
+                log.warning(f"NPC name '{llm_name}' not found {available}. Available NPCs: {list(char_names_lower.values())}")
         
         return valid_names
 
@@ -760,7 +759,7 @@ class FunctionManager:
                 if enum_values:
                     param_def['enum'] = enum_values
                 else:
-                    logger.warning(f"Skipping action '{action_identifier}' - no enum values for source '{enum_source}'")
+                    log.warning(f"Skipping action '{action_identifier}' - no enum values for source '{enum_source}'")
                     return False
                 # Remove enum_source from the schema as the LLM doesn't need to see it
                 del param_def['enum_source']
@@ -847,7 +846,7 @@ class FunctionManager:
             return context.get_character_names_as_text(include_player=include_player, include_nearby=True)
         
         else:
-            logger.warning(f"Unknown scope '{scope}'. No entities will be added to parameter description.")
+            log.warning(f"Unknown scope '{scope}'. No entities will be added to parameter description.")
             return ""
 
 
@@ -863,17 +862,17 @@ class FunctionManager:
             List of enum values, or empty list if source unknown or unavailable
         """
         if not game:
-            logger.warning(f"No game instance available for enum source lookup '{enum_source}'")
+            log.warning(f"No game instance available for enum source lookup '{enum_source}'")
             return []
         elif enum_source == 'idles':
             # Get enabled idle names from the game's idle table
             if hasattr(game, 'get_enabled_idle_names'):
                 return game.get_enabled_idle_names()
             else:
-                logger.warning(f"Game does not support idle enum source")
+                log.warning(f"Game does not support idle enum source")
                 return []
         else:
-            logger.warning(f"Unknown enum_source '{enum_source}'")
+            log.warning(f"Unknown enum_source '{enum_source}'")
             return []
 
 

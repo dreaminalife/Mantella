@@ -13,6 +13,15 @@ class communication_constants:
 
     KEY_REPLYTTYPE_INITCOMPLETED: str = PREFIX + "init_completed"
     KEY_REPLYTTYPE_STARTCONVERSATIONCOMPLETED: str = PREFIX + "start_conversation_completed"
+    # In the reply to the first request: the player speaks first (Automatic Greeting is off). The game then gives the player the turn
+    # right away, while it gathers the details for the start, and sends what the player typed once the conversation has started
+    KEY_PLAYERSPEAKSFIRST: str = PREFIX + "player_speaks_first"
+    # The player's turn came before the conversation started: the microphone starts listening now, so nothing the player says is missed.
+    # The player's input request after the start picks up what they said
+    KEY_REQUESTTYPE_LISTENBEFORESTART: str = PREFIX + "listen_before_start"
+    KEY_REPLYTYPE_LISTENINGBEFORESTART: str = PREFIX + "listening_before_start"
+    KEY_LISTEN_NAMES: str = PREFIX + "listen_names" # The NPCs the conversation starts with, so their names are heard right
+    KEY_LISTEN_PLAYERNAME: str = PREFIX + "listen_player_name"
 
     KEY_REQUEST_EXTRA_ACTIONS: str = PREFIX + "extra_actions"
     

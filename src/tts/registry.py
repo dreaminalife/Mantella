@@ -5,12 +5,15 @@ Piper, XTTS and xVASynth are listed with their own classes, unchanged. New servi
 """
 from __future__ import annotations
 
-import logging
 import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
 from src.config.definitions.tts_definitions import TTSEnum
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 if TYPE_CHECKING:
     from src.config.config_loader import ConfigLoader
@@ -242,7 +245,7 @@ class VoiceServiceRegistry:
             kept: list[VoiceServiceInfo] = []
             for setup in setups:
                 if normalize_service_name(setup.name) in taken:
-                    logging.warning(f"The voice setup '{setup.name}' has the same name as another voice service and is left out. Rename it on the Text-to-Speech page.")
+                    log.warning(f"The voice setup '{setup.name}' has the same name as another voice service and is left out. Rename it on the Text-to-Speech page.")
                     continue
                 taken.add(normalize_service_name(setup.name))
                 kept.append(setup)
@@ -274,7 +277,7 @@ def create_voice_service(name: str, config: "ConfigLoader", game: "Gameable | No
     """Starts the voice service of that name. Piper when the name is not in the list (a voice setup that was removed)"""
     info = voice_services.find(name)
     if info is None:
-        logging.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")
+        log.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")
         info = voice_services.find(FALLBACK_SERVICE)
     return serving_in_game(voice_services.create(info, config, game))
 

@@ -1,7 +1,6 @@
 """The speech-to-text parts of the Speech-to-Text page: the Key box of each online service, and the Test button"""
 from __future__ import annotations
 
-import logging
 import os
 import time
 from types import SimpleNamespace
@@ -16,6 +15,11 @@ from src.stt_backends import build_backend, chosen, language_problem
 from src.stt_backends.base import SAMPLING_RATE, SpeechError
 from src.stt_backends.keys import CHAT_KEY_FILE, key_for, read_key, save_key
 from src.stt_backends.presets import CUSTOM_KEY_FILE, PRESETS, find
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.SETTINGS_PAGE)
+microphone_log = get_topic_logger(LogTopic.MICROPHONE)
 
 TEST_SAMPLE = os.path.join("data", "stt_test_sample.wav")
 TEST_HINT = "Names: Balgruuf, Proventus, Dragonsreach." # the form every hint has (stt_backends/names.py)
@@ -119,7 +123,7 @@ def render_key_box(online_service_ui: Any | None, refresh_running_key: Callable[
         try:
             refresh_running_key()
         except Exception as e:
-            logging.debug(f"Could not hand the new key to speech-to-text: {e}")
+            log.warning(f"Could not hand the new key to speech-to-text: {e}")
         return gr.update(value="", placeholder=SAVED_PLACEHOLDER), message
 
     service_inputs = [online_service_ui] if online_service_ui is not None and hasattr(online_service_ui, "_id") else []
@@ -176,7 +180,7 @@ def _test_result(choice: Any, settings: SimpleNamespace, running_transcriber: An
                 backend.load()
                 load_seconds = time.monotonic() - load_start
                 if load_seconds > 1:
-                    logging.info(f"Speech-to-text test: loading {choice.preset.name} took {load_seconds:.1f} s")
+                    microphone_log.debug(f"Speech-to-text test: loading {choice.preset.name} took {load_seconds:.1f} s")
                 start = time.monotonic()
                 text = backend.transcribe(audio, TEST_HINT if backend.takes_hint else "", list(TEST_NAMES), settings.stt_language)
             finally:

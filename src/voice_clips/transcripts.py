@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import os
 import threading
 
 import numpy as np
 
 from src.tts.voice_folders import voice_clips_folder
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICE_CLIPS)
 
 FILE = "clip_words.json"
 _lock = threading.Lock()
@@ -32,7 +35,7 @@ def _read(path: str) -> dict[str, str]:
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as e:
-        logging.warning(f"Could not read {path}, so the clips' words are heard again: {e}")
+        log.warning(f"Could not read {path}, so the clips' words are heard again: {e}")
         return {}
 
 

@@ -4,13 +4,16 @@ The record never stores text, only the outcome number and when Mantella first sa
 See docs/quest_tags_1_user_edits.md, Part 1.
 """
 import json
-import logging
 import os
 import tempfile
 import threading
 import time
 from dataclasses import dataclass
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.QUEST_TAGS)
 
 FILE_NAME = "tag_outcomes.json"
 
@@ -39,7 +42,7 @@ def load(path: str) -> dict[str, dict] | None:
         # Records written before tag names were read with straight apostrophes may hold `risaad’s_caravan`
         return {utils.normalize_apostrophes(tag): entry for tag, entry in tags.items()}
     except Exception as e:
-        logging.warning(f"Quest tags: could not read {path}, treating it as missing. Error: {e}")
+        log.error(f"Quest tags: could not read {path}, treating it as missing. Error: {e}")
         return None
 
 

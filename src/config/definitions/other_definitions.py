@@ -111,46 +111,6 @@ class OtherDefinitions:
         return ConfigValueInt("port","Port","The port for the Mantella HTTP server to use.",4999, 0, 65535, tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
     
     @staticmethod
-    def get_show_http_debug_messages_config_value() -> ConfigValue:
-        return ConfigValueBool("show_http_debug_messages","Show HTTP Debug Messages","Display the JSON going in and out of the server in Mantella.exe's log.", False, tags=[ConfigValueTag.advanced,ConfigValueTag.share_row])
-    
-    @staticmethod
-    def get_advanced_logs_config_value() -> ConfigValue:
-        description = """Show the full LLM requests and responses in Mantella.exe's log, and save advanced logs to Mantella's My Games/Mantella/logging.log file.
-                        Useful for troubleshooting issues."""
-        return ConfigValueBool("advanced_logs", "Debug Mode", description, False, tags=[ConfigValueTag.advanced])
-    
-    #Debugging
-    @staticmethod
-    def get_debugging_config_value() -> ConfigValue:
-        return ConfigValueBool("debugging","Activate Debugging","Whether debugging is enabled.\nIf this is enabled, the values of all other variables in this section are ignored.", False, tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
-    def get_play_audio_from_script_config_value() -> ConfigValue:
-        return ConfigValueBool("play_audio_from_script","Play Audio From Script","Whether to play the generated voicelines directly from the exe.\nEnable this value if testing Mantella while Skyrim is not running.", True, tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
-    def get_debugging_npc_config_value() -> ConfigValue:
-        return ConfigValueString("debugging_npc","Debugging NPC","Selects the NPC to test.\nSet this value to None if you would instead prefer to select an NPC via the mod's spell / gun.", "Hulda", tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
-    def get_use_default_player_response_config_value() -> ConfigValue:
-        description = """Whether a default response is sent on the player's behalf (good for quickly testing if Mantella works without player input).
-                        When this value is enabled, the sentence contained in default_player_response (see below) will be repeatedly sent to the LLM.
-                        When this value is disabled, allows you to use mic / text input (depending on microphone_enabled setting)."""
-        return ConfigValueBool("use_default_player_response","Use Default Player Response",description, False, tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
-    def get_default_player_response_config_value() -> ConfigValue:
-        return ConfigValueString("default_player_response","Default Player Response","The default text sent to the LLM if 'Use Default Player Response' is enabled.", "Can you tell me something about yourself?", tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
-    def get_exit_on_first_exchange_config_value() -> ConfigValue:
-        description = """Whether to end the conversation after the first back and forth exchange.
-                        Enable this value if testing conversation saving on exit functionality."""
-        return ConfigValueBool("exit_on_first_exchange","Exit on First Exchange",description, False, tags=[ConfigValueTag.advanced])
-    
-    @staticmethod
     def get_save_audio_data_to_character_folder_config_value() -> ConfigValue:
         description = """Whether to save audio data to an NPC's voice folder instead of MantellaVoice00.
                         Enable this value if voicelines are not being played in-game."""

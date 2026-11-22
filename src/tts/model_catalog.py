@@ -11,7 +11,6 @@ A model that isn't on Mantella's list is used as typed, with every setting the s
 from __future__ import annotations
 
 import json
-import logging
 import os
 import threading
 from dataclasses import dataclass, field, replace
@@ -19,6 +18,10 @@ from datetime import date
 from typing import Any, Mapping
 
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 FILE_NAME = "voice_models.json"
 MALE, FEMALE = "male", "female"
@@ -147,7 +150,7 @@ class ModelCatalog:
     def __init__(self, path: str | None = None) -> None:
         self.__copy = CatalogCopy.read(path or os.path.join(utils.resolve_path(), "data", FILE_NAME))
         if self.__copy is None:
-            logging.warning(f"Mantella's list of voice models ({FILE_NAME}) is missing or broken, so only models you add can be used.")
+            log.warning(f"Mantella's list of voice models ({FILE_NAME}) is missing or broken, so only models you add can be used.")
 
     @classmethod
     def shared(cls) -> "ModelCatalog":

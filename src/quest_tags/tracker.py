@@ -14,6 +14,10 @@ from src.http.communication_constants import communication_constants as comm_con
 from src.quest_tags import history
 from src.quest_tags.conditions import ANSWER_MISSING, ANSWER_NOT_LOADED, ANSWER_UNREADABLE, Check, CheckList
 import src.utils as utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.QUEST_TAGS)
 
 ANSWERS_FILE_NAME = "quest_check_answers.json"
 
@@ -56,7 +60,7 @@ class QuestTagTracker:
             return False
         game_version = str(start_context[comm_consts.KEY_QUESTCHECKS_VERSION] or "")
         if game_version != game.quest_check_list.version:
-            logging.debug(f"Quest tags: the game has list version {game_version or '(none)'}, sending {game.quest_check_list.version} with the start reply")
+            log.debug(f"Quest tags: the game has list version {game_version or '(none)'}, sending {game.quest_check_list.version} with the start reply")
             return True
         return False
 
@@ -71,7 +75,7 @@ class QuestTagTracker:
         try:
             return self.__apply_report(game, world_id, report, moment)
         except Exception as e:
-            logging.warning(f"Quest tags: could not apply the game's answers, keeping the record as it is. Error: {e}")
+            log.error(f"Quest tags: could not apply the game's answers, keeping the record as it is. Error: {e}")
             return [], []
 
     def __apply_report(self, game: Gameable, world_id: str, report: dict[str, Any] | None, moment: str) -> tuple[list[history.OutcomeChange], list[history.OutcomeChange]]:
@@ -90,7 +94,7 @@ class QuestTagTracker:
             return [], []
         answers = [float(a) for a in (report.get(comm_consts.KEY_QUESTCHECKS_RESULTS) or [])]
         if len(answers) != len(check_list.checks):
-            logging.warning(f"Quest tags: the game sent {len(answers)} results for {len(check_list.checks)} checks - ignoring them")
+            log.warning(f"Quest tags: the game sent {len(answers)} results for {len(check_list.checks)} checks - ignoring them")
             return [], []
         self.__log_unanswered(check_list, answers)
         self.__save_answers(game, world_id, moment, check_list, answers)
@@ -98,28 +102,28 @@ class QuestTagTracker:
         outcomes = check_list.evaluate(answers)
         for tag, outcome in outcomes.items():
             if outcome is None:
-                logging.debug(f"Quest tag {tag}: outcome unknown (a check is about something not loaded right now)")
+                log.debug(f"Quest tag {tag}: outcome unknown (a check is about something not loaded right now)")
         path = history.record_path(game.conversation_folder_path, world_id)
         _, changes, is_first_check = history.update(path, outcomes, int(time.time()))
         if is_first_check:
             already_true = sum(1 for c in changes if c.new)
-            logging.info(f"Quest tags: first check for {world_id}: {already_true} outcomes already true, recorded as background")
+            log.info(f"Quest tags: first check for {world_id}: {already_true} outcomes already true, recorded as background")
             return changes, []
 
         announceable: list[history.OutcomeChange] = []
         for change in changes:
             if change.old is None:
-                logging.info(f"Quest tag {change.tag}: new tag, outcome {change.new} recorded as background")
+                log.info(f"Quest tag {change.tag}: new tag, outcome {change.new} recorded as background")
             elif change.new < change.old:
-                logging.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (no longer true)")
+                log.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (no longer true)")
             elif moment != self.MOMENT_PLAYER_INPUT:
-                logging.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} ({moment})")
+                log.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} ({moment})")
             elif not game.is_quest_tag_announced(change.tag):
-                logging.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (announce = no)")
+                log.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (announce = no)")
             elif change.new in check_list.tags[change.tag].death_only:
-                logging.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (death, not announced)")
+                log.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (death, not announced)")
             else:
-                logging.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (announced)")
+                log.info(f"Quest tag {change.tag}: outcome {change.old} -> {change.new} (announced)")
                 announceable.append(change)
         return changes, announceable
 
@@ -162,12 +166,12 @@ class QuestTagTracker:
             try:
                 history.write_json(path, saved)
             except Exception as e:  # Only for troubleshooting: never stops the record from being updated
-                logging.debug(f"Quest tags: could not write {path}. Error: {e}")
+                log.warning(f"Quest tags: could not write {path}. Error: {e}")
 
     def __log_once(self, key: str, level: int, message: str):
         if key not in self.__logged_once:
             self.__logged_once.add(key)
-            logging.log(level, message)
+            log.log(level, message)
 
 
 def _describe(check: Check) -> str:

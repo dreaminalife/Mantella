@@ -2,12 +2,15 @@
 Keys are never put in config.ini and never written to the log"""
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 
 from src import utils
 from src.stt_backends.presets import STTPreset
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 STT_KEY_FILE = "STT_SECRET_KEY.txt" # the old shared speech key: only read once, when an old setup moves over (copy_old_key)
 CHAT_KEY_FILE = "GPT_SECRET_KEY.txt"
@@ -81,8 +84,8 @@ def save_key(file_name: str, key: str, chat_key_file: str = CHAT_KEY_FILE) -> Pa
                 os.remove(existing)
             return None
         target.write_text(key + "\n", encoding="utf-8")
-        logging.info(f"Saved the key in {target.name}")
+        log.info(f"Saved the key in {target.name}")
         return target
     except OSError as e:
-        logging.error(f"Could not save the key in {target}: {e}")
+        log.error(f"Could not save the key in {target}: {e}")
         return None

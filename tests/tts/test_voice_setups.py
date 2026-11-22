@@ -248,7 +248,7 @@ def test_a_setup_not_set_up_for_the_language_is_named_once(voice_config, caplog)
     info = vs.to_service_info(vs.normalized(a_setup(name="German Only", languages="de")))
     assert info.speaks("de") and not info.speaks("en") and vs.to_service_info(vs.normalized(a_setup(languages="zh-cn"))).speaks("zh")
     assert vs.to_service_info(vs.normalized(a_setup(languages=""))).speaks("en")
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         OpenAIStyleService(voice_config, info)
         OpenAIStyleService(voice_config, info)
     assert caplog.text.count("German Only is set up for de, not for your Language setting (en)") == 1

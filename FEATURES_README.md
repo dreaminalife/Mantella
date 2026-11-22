@@ -72,6 +72,7 @@ Trying my best to explain why I added these features and how to make the most of
 - [Real World Timestamp](#real-world-timestamp)
 - [Notes](#notes)
 - [Rearrange Tabs](#rearrange-tabs)
+- [Log](#log)
 
 ## Character Tags
 
@@ -665,7 +666,7 @@ Skills can use the console's names (`archery`, `speech`) or the game's (`Marksma
 
 ### Troubleshooting
 
-Mantella's log (`Documents/My Games/Mantella/logging.log`) is the main place to look. Turn on **Other** tab → **Advanced** → **Debug Mode** to see the debug lines below.
+Mantella's log (`Documents/My Games/Mantella/logging.log`) is the main place to look. Set **Other** tab → **Log** → **Quest tags** to **Full** to see the lines marked Full below. See [Log](#log).
 
 **Files that help**
 
@@ -689,6 +690,8 @@ Deleting this file starts the record from scratch: everything already true becom
 
 **Log lines**
 
+Lines marked Warning are hidden when **Other** tab → **Log** → **Quest tags** is **Off**.
+
 
 | Log line                                                                                           | Meaning                                                                                                                                           |
 | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -696,8 +699,8 @@ Deleting this file starts the record from scratch: everything already true becom
 | `Quest tag temba_wide-arm_status slot 1: can't read ""'065AB3".getdead=1" (...)`                    | Warning. The condition's shape is wrong (a stray quote, three values…). That outcome never happens                                               |
 | `Quest tags: the game can't run getstagedone DA08 in the_whispering_door_quest slot 1 (...)`       | Warning. A misspelled command, too few or too many values, a name where a FormID is needed, or a FormID that's wrong. The check is not true. `MantellaQuestChecks.log` says which, e.g. `GetStageDone takes 2 value(s), got 1` |
 | `Quest tags: NPC not found for a death count: ... (check base_id in the characters CSV)`            | Warning. A `getdead` NPC's `base_id` in the characters CSV is wrong                                                                               |
-| `Quest tags: not found: getquestcompleted masquest in MaS_main_quest slot 1 (...)`                  | Debug. Its mod isn't installed (normal), or a typo in a quest name                                                                                 |
-| `Quest tags: not loaded: "Skyrim.esm\|0198B5".getdead in ... (...)`                                 | Debug. An NPC who isn't near you. The tag keeps its outcome until you are. A wrong FormID looks the same                                          |
+| `Quest tags: not found: getquestcompleted masquest in MaS_main_quest slot 1 (...)`                  | Full. Its mod isn't installed (normal), or a typo in a quest name                                                                                 |
+| `Quest tags: not loaded: "Skyrim.esm\|0198B5".getdead in ... (...)`                                 | Full. An NPC who isn't near you. The tag keeps its outcome until you are. A wrong FormID looks the same                                          |
 | `Quest tags: first check for <playthrough>: 37 outcomes already true, recorded as background`      | The first check in a playthrough                                                                                                                  |
 | `Quest tag whiterun_hold_civil_war: outcome 0 -> 2 (announced)`                                    | An outcome changed. Instead of `(announced)`: `(found at conversation start)`, `(found in catch-up)`, `(announce = no)`, `(death, not announced)` |
 | `Quest tag paarthurnax_quest: outcome 2 -> 1 (no longer true)`                                     | You loaded an older save, a quest restarted, or an NPC was resurrected                                                                            |
@@ -714,7 +717,7 @@ Deleting this file starts the record from scratch: everything already true becom
 | Nothing ever changes                            | Look for `the game sent no results` in the log. Then check `skse64.log` for `MantellaQuestChecks.dll`: if it didn't load, update SKSE / Address Library or check your game version. Also make sure Mantella-Spell is up to date and **Auto Quest Tag Outcomes** isn't **Off** |
 | An NPC doesn't know an outcome                  | 1. Does the NPC have the tag? Check **Runtime Tags** in the **Bio Editor**; remember `tags_overwrite` replaces `tags`. 2. Is `current` in `tag_outcomes.json` the outcome you expect? If not, search the log for the tag name. 3. Is the tag's `outcome_mode` set to `off`? Then it isn't checked. 4. Static: is `Additional info` excluded in [Bio Sections to Exclude](#bio-sections-to-exclude)? Dynamic: does your prompt leave out `{conversation_summary}`? |
 | The wrong outcome                               | Two outcomes are true at once (the higher one wins), or a check is not true because something is missing or can't be run. `quest_check_answers.json` shows each answer                                                                                            |
-| An outcome is stuck after travelling            | A check is about an NPC who isn't near you (`not loaded` in the debug log). It updates when you're near them again                                                                                                                                                 |
+| An outcome is stuck after travelling            | A check is about an NPC who isn't near you (`not loaded` in the log, with Quest tags at Full). It updates when you're near them again                                                                                                                                                 |
 | An outcome is news again                        | You loaded an older save; that's expected                                                                                                                                                                                                                           |
 | An NPC forgot an outcome                        | You loaded an older save, a repeatable errand quest started again, or an NPC was resurrected. Look for `no longer true` in the log                                                                                                                                  |
 | An announcement doesn't fit the people present  | Set `announce` to `no` for the tag, or silence it with **Ignored In-Game Events**                                                                                                                                                                                  |
@@ -1357,7 +1360,7 @@ The columns go in the character CSV, or in a character override file (see [File 
 
 NPCs remember Skyrim's own voiced lines they hear: lines from scenes, such as Mikael flirting with Carlotta in the Bannered Mare, and what you say in the dialogue menu. Talk to Mikael that evening and he knows Carlotta turned him down. Saadia, at the bar nearby, can mention it if you ask. Hulda, upstairs, heard nothing.
 
-- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Mikael says to Carlotta: "..."*. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
+- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Mikael says to Carlotta: "..."*. When Mikael or Carlotta is in the conversation, it leaves out "Nearby": *Mikael says to Carlotta: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
 - **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for a few in-game days. Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
 - **Overheard:** NPCs near a scene remember it as overheard, so they don't answer it as if it was said to them.
 - **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
@@ -1368,8 +1371,8 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 
 ### Where to find it
 
-- **Mantella MCM** -> **Vanilla Dialogues** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
-- **Conversation Wheel** -> **Vanilla** turns it on or off without opening the MCM.
+- **Mantella MCM** -> **Vanilla Dialogues** page: **Enabled** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
+- **Conversation Wheel** -> **Vanilla Dialogues** turns it on or off without opening the MCM.
 - **Other** tab (Advanced) -> **Vanilla Dialogue Memory (Days)**, **Most Vanilla Dialogue Lines per NPC** and **Lines That Only Open a Menu**.
 
 ### Quick start
@@ -1384,7 +1387,7 @@ A mod's menu line that only opens a menu, such as its settings, is not worth rem
 
 - The plugin catches lines from `RE::TESTopicInfoEvent` and keeps them in the save. The game add-on hands them over under `mantella_heard_lines` (`comm_consts.KEY_HEARDLINES`) with the start, continue, player input, event and NPC check requests.
 - `src/heard_lines/`: `HandOver.parse` reads them, `GameHeardLinesReceiver` sorts each line into the running conversation or into a listener's memory, `JsonHeardLinesStore` keeps `heard_lines.json` in each NPC's folder (chosen by `NpcFolder`, like the summaries) and the latest game time in `<world_id>/heard_lines_now.json`, and `PlainHeardLinesText` writes them in third person.
-- In a conversation they wait in the context apart from the in-game events, so Max Count Events, Ignored In-Game Events and Tidier In-Game Events never touch them. The log shows them under "Heard nearby since previous exchange". When the conversation ends, every line that went into it (or was still waiting) is kept as a heard line by the people in it who heard it, whether or not a summary is written. Not earlier: a prompt built again during the conversation (a join, each Game Master turn) would show the line twice.
+- In a conversation they wait in the context apart from the in-game events, so Max Count Events, Ignored In-Game Events and Tidier In-Game Events never touch them. The log shows them under "Heard nearby since previous exchange", with Vanilla Dialogues at Full. When the conversation ends, every line that went into it (or was still waiting) is kept as a heard line by the people in it who heard it, whether or not a summary is written. Not earlier: a prompt built again during the conversation (a join, each Game Master turn) would show the line twice.
 - In memory they are merged into the timeline by real time, never into "New developments". Writing a summary, thoughts or a reflection leaves them out.
 - A game time earlier than the latest one seen in a playthrough means an older save was loaded: every NPC of that playthrough loses the lines from after it.
 - Tests: `tests/heard_lines/`, the plugin's own unit tests (run on GitHub with every push), and the add-on checks in `tests/test_game_scripts.py`.
@@ -2077,6 +2080,65 @@ The order is saved in your `config.ini` (and in your browser), so it stays after
 
 The row of tabs at the top of the Mantella UI (Game, Large Language Model, Prompts, Conversation, Bio Editor, Tag Editor, Documentation, and the rest). There is no setting to turn on. To change the order back, drag the tabs back.
 
+## Log
+
+### What it does
+
+Choose what Mantella.exe's window and its log file (`Documents/My Games/Mantella/logging.log`) show. The log is split into topics, one for each part of Mantella. For each topic you pick:
+
+- **Off**: only warnings and errors. For **Quest tags**, only errors.
+- **Short**: one line for each thing that happens.
+- **Full**: everything Short shows, plus the whole text behind it, like whole prompts, whole LLM replies and the messages from the game.
+
+Every request to an LLM shows one line at Short: the model, its address and the settings sent (like temperature and max tokens). It shows under the topic of the feature that asked, like LLM requests and replies for NPC replies, Game Master or Memories. Full adds the whole request.
+
+**LLM requests and replies** has one more option, **Prompt and replies** (its default): everything Short shows, plus the NPCs' prompt, once when a conversation starts and again when someone joins, and each reply exactly as the LLM wrote it, with its token count. The raw reply shows in grey after the NPC's last line of that reply. Full shows the whole request with every reply instead.
+
+Warnings and errors always show, whatever you pick, except Quest tags' warnings at Off. Changes apply right away, with no restart. The window and the file always show the same lines.
+
+| Topic | Short shows | Full adds | Default |
+| --- | --- | --- | --- |
+| Conversation | Conversations starting and ending, who joins or leaves, and every spoken line | Whose turn it is, and when a reply limit is reached | Short |
+| Microphone | The mic turning on and off, and what Mantella heard you say | Your words as you speak, when you start and stop talking, and speech recognition loading | Short |
+| Voices | The voice service starting, and which voice each NPC uses | Each line being voiced, how long it plays, and the voice effects used | Short |
+| Voice clips | Clips being gathered to clone a voice, and how many each voice has | Each clip picked and what it says | Short |
+| LLM requests and replies | Each NPC reply: the model and settings used, how long it took, retries, and switching to the fallback model | The whole request every turn (the prompt and the conversation history), and the whole reply | Prompt and replies |
+| LLM models and profiles | Which LLM was picked from your model list, which model profile was used, and profiles you add, change or delete | Every setting in each profile | Short |
+| Game Master | What the Game Master decided (who speaks next, who walks up to you, who joins, which event starts) and how it went | The whole question asked to the Game Master and its whole answer | Short |
+| Actions | Each action an NPC takes, and actions that were refused | Why an action was refused, and its full details | Short |
+| Memories | Summaries, private thoughts and personal reflections being saved | Their whole text, and the prompt that wrote them | Short |
+| Quest tags | A quest outcome changing (like who holds Whiterun), and whether NPCs were told | Quest conditions the game couldn't check, and other details | Short |
+| In-game events | What NPCs are told happened each turn, like combat starting, an item picked up or a new location | Repeated events that were merged or left out | Short |
+| Vanilla Dialogues | How many of Skyrim's own lines NPCs heard, how many reached the conversation, and lines forgotten after loading an older save | Each line heard, and lines that couldn't be read | Short |
+| Vision | Screenshots being taken, and what the LLM saw in them | Screen and picture size, and the whole vision prompt | Short |
+| Bios and lorebook | Where each NPC's bio came from, and lorebook entries added | Which bio sections were used, and the bio templates loaded | Short |
+| Game connection | A line for each message the game and Mantella send each other | What each message says | Off |
+| Settings page | Settings saved, buttons pressed (like testing a voice) and prompt profiles edited | Every value that changed | Short |
+| Startup | Mantella's version, its folders, the game, and the settings page link | All your settings | Short |
+| Timings | How long each reply took: the LLM, the voice, and in total | How long every step took | Off |
+
+Each line in the window starts with its topic, e.g. `[Voices] Lydia uses FemaleNord`, so you can tell at a glance where it comes from. Spoken lines have no topic and stand out, so the conversation reads like a script.
+
+The log file starts each run with Mantella's version and what each topic was set to, and notes it when you change a topic. When you send a log with a bug report, set the topics you are asking about to **Full** first.
+
+The LLM and web libraries Mantella uses only show their warnings and errors.
+
+### Where to find it
+
+**Other** tab → **Log**. There is one row for each topic, with Off, Short and Full (and Prompt and replies for LLM requests and replies). This replaces the old **Debug Mode** and **Show HTTP Debug Messages** switches.
+
+### For developers
+
+- `src/logs/`: `LogTopic` (the topics, with their labels, colours, defaults and the Short and Full texts the settings page shows), `LogDetail` (Off, Short and Full are the levels WARNING, INFO and DEBUG), `get_topic_logger(topic)` (the logger `mantella.<topic>`), `spoken_line(...)`, and `ILogSetup` / `MantellaLogSetup`, which starts the window and file log and applies the choices.
+- Prompt and replies: a topic with a `prompt_text` offers it (`LogTopic.details`). Its topic logger is at INFO, like Short, and `get_prompt_logger(topic)` (the logger `mantella.<topic>.prompt`) is at INFO for Prompt and replies and Full, WARNING otherwise. The NPC prompt in `context.py` and the raw reply (`Full raw response`) in `output_manager.py` are `info` lines on it.
+- A line can have its own colour in the window: `log.info(text, extra=in_colour(LINE_GREY))` (the raw reply is grey, each LLM request line white). Warnings and errors keep theirs. The raw reply is put on the end-of-reply sentence (`Sentence.raw_reply_log`) and logged when the conversation takes that sentence from the queue, so it comes after the reply's lines.
+- In code, `log = get_topic_logger(LogTopic.VOICES)`. `log.info` shows at Short, `log.debug` at Full, and `log.warning` / `log.error` always. There are no custom level numbers. Lines that cost something to build only for Full go behind `log.isEnabledFor(logging.DEBUG)`.
+- The root logger stays at WARNING, which is what keeps the libraries quiet. A line written straight to `logging` instead of a topic logger only shows when it is a warning or an error.
+- Something that went wrong is a `log.warning` or `log.error`, never info or debug, so the player sees it whatever they picked. The settings load before the log starts: `catch_early_problems` shows their warnings in the window right away and adds them to logging.log once it starts.
+- LLM requests are logged once, under the topic of the feature that asks: `request_call(..., topic_log=...)` and `request_tool_calls(..., topic_log=...)`. NPC replies are under LLM requests and replies. `ClientBase.__log_request` writes the model, base URL and params as an `info` line (Short), as the default log did before the topics, and the whole request as `debug` (Full).
+- Settings: `src/config/definitions/log_definitions.py`, `log_<topic>` in config.ini. `ConfigLoader.log_choices` holds them, and the log setup gets every change right away.
+- Tests: `tests/logs/`, `tests/config/test_log_settings.py`.
+
 ## Hot Swap
 
 ### What it does
@@ -2312,13 +2374,53 @@ Because each NPC is prompted alone, they cannot leak each other's private memori
 |                       | **Decision model** (default)                                                                                                         | **LLM**                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | Setting               | **Use Decision Model for Game Master** on                                                                                            | **Use Decision Model for Game Master** off                                                 |
-| Model                 | **Game Master Decision Model** (default `typesafe/jev-1.13`) on **OpenRouter** or **NanoGPT**                                        | Any model on any service (**Game Master Model**, default `google/gemini-3.1-flash-lite`)  |
+| Model                 | **Game Master Decision Model** (default `typesafe/jev-1.13`) on **OpenRouter**, **NanoGPT** or a server on your own computer         | Any model on any service (**Game Master Model**, default `google/gemini-3.1-flash-lite`)  |
 | How it answers        | Does not write text. Picks one option from a fixed list (one per NPC, plus the player) and returns a probability for each one        | Replies with JSON: `{"next": "<name>", "reason": "<a few words>"}`                         |
 | Prompts used          | **Skyrim Game Master Prompt** (sent as the scene) + the three **Decision** prompts                                                   | **Skyrim Game Master Prompt**. The "who speaks next" question is added automatically       |
 | Parameters / profiles | None apply                                                                                                                           | **Game Master LLM Parameters**, or the model's profile with **Apply Profile for Game Master** |
 
 
 A decision model is fast and cheap, and it can only answer with a valid speaker. The decision prompts describe **when** to pick each option: **NPC Criteria** is filled in once per NPC (`{name}`), **Player Criteria** once for the player.
+
+**A decision model on your own computer**
+
+You can run a decision model yourself, the same way you can run a local model for conversations. Mantella doesn't come with one or start it for you.
+
+*Start the server*
+
+Start the decision model's server first, following its own instructions. It must accept the same requests Mantella sends to OpenRouter's decision models. Open decision models that come with such a server include [Kev](https://github.com/jaredpalmer/kev) and [Laya](https://github.com/NandhaKishorM/laya). Keep in mind:
+
+- Start the server without a key of its own. Mantella doesn't send your secret key to an address starting with `http://`, so a server that asks for one would turn the requests down.
+- It runs next to Skyrim, and next to your NPC model if that runs on your computer too. Pick a small model: for example, Kev's smallest needs about 4 GB of graphics memory.
+
+*Set up Mantella*
+
+On the **LLM** tab:
+
+1. Turn on **Multi-NPC Game Master Mode**, and leave **Use Decision Model for Game Master** on (the default).
+2. In **Game Master Decision Service**, type the full address the server gives for decision requests, e.g. `http://localhost:8009/v1/systemone`. Mantella sends requests to exactly that address and adds nothing to it.
+3. In **Game Master Decision Model**, press **Update**, then type the model name the server expects.
+4. Under **Advanced**, set **Game Master Custom Token Count** to the model's token limit. Raise it above the default of 4096 if the model allows: a group with several bios can be too long for 4096.
+
+[NPC Initiative](#npc-initiative) and [NPC Events](#npc-events) use the same server.
+
+*Check that it works*
+
+Start a group conversation and look in the Mantella log for lines like these:
+
+- `Game Master: using decision model kev-latest on http://localhost:8009/v1/systemone`
+- `Game Master decision request ... url='http://localhost:8009/v1/systemone'`
+- `Game Master: Lydia speaks next (confidence 0.80: ...)`
+
+| The log says                                                                         | What to do                                                                  |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `Game Master decision call failed: ...` saying the connection was refused            | The server isn't running, or the port in the address is wrong               |
+| `Game Master decision call failed with status 401` (or `403`)                        | The server was started with a key. Start it without one                     |
+| `Game Master decision call failed with status 404`                                   | The address is wrong. Copy the full address from the server's instructions |
+| `Game Master prompt is too long for the decision model`                              | Raise **Game Master Custom Token Count**                                    |
+| `Game Master Decision Service must be OpenRouter, NanoGPT or a full address ...`     | The address has to start with `http://` or `https://`                       |
+
+If the server only answers "who speaks next" and turns down the questions about who a line was spoken to, Mantella asks again without them, so the conversation goes on. A slow server is not a problem for the conversation either: see below. NPC Initiative waits at most 10 seconds for an answer and otherwise skips that check.
 
 **When the Game Master cannot decide**
 
@@ -2338,7 +2440,7 @@ Even with no limit, the oldest lines are dropped from the Game Master's request 
 
 ### Where to find it
 
-**LLM** tab → **Multi-NPC Game Master Mode** and (**Thoughts and Reflections**) **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction**, and, in **All Conversations**, **Game Master Spoken To Threshold** and **Game Master Message Limit**.
+**LLM** tab → **Multi-NPC Game Master Mode** and (**Thoughts and Reflections**) **Include Turn Thoughts for Game Master**, plus the Game Master model settings: **Use Decision Model for Game Master**, **Game Master Decision Service**, **Game Master Decision Model** (and **Game Master Custom Token Count** under **Advanced**, for a decision model on your own computer) — or, with the decision model off, **Game Master LLM Service**, **Game Master Model**, **Game Master LLM Parameters** (and **Game Master Custom Token Count** under **Advanced**). **Conversation** page (below the live conversation) → the talk settings (shared, or each kind's own), **Max NPC Turns per Player Turn** (in each kind's section), **Max NPC Turns per Direction**, and, in **All Conversations**, **Game Master Spoken To Threshold** and **Game Master Message Limit**.
 
 **Prompts** tab → **Skyrim Game Master Prompt**, **Skyrim Game Master NPC Prompt**, and the three decision prompts (**Skyrim Game Master Decision Instructions**, **Skyrim Game Master Decision NPC Criteria**, **Skyrim Game Master Decision Player Criteria**). Who a line was spoken to is asked with **Skyrim Shout Decision Spoken To Criteria**, **Skyrim Shout Decision Not Spoken To Criteria**, **Skyrim Shout Decision Part Of Event Criteria** and **Skyrim Shout Decision Not Part Of Event Criteria**, and **Skyrim Shout Group Answer Note** asks for a short answer; despite their names, these are used in every group conversation with the Game Master, not only in Shout. All of them can be overlaid with [prompt profiles](#prompt-profiles).
 
@@ -2543,7 +2645,7 @@ Who can answer, and what they remember, follow the [Shout](#shout) settings. The
 
 ### Where to find it
 
-In game, with no conversation running: **Say** on the [Conversation Wheel](#conversation-wheel), or the **Open Text Prompt** hotkey.
+In game, with no conversation running: **Say to Room** on the [Conversation Wheel](#conversation-wheel), or the **Open Text Prompt** hotkey.
 
 **Prompts** tab → the `{if say_to_room}` parts of the **Skyrim Game Master Prompt** and **Skyrim Decision Nearby Criteria**, and **Skyrim Say To Room Decision Nobody Criteria**.
 
@@ -2551,7 +2653,7 @@ In game, with no conversation running: **Say** on the [Conversation Wheel](#conv
 
 1. Set up the Game Master model as in [Game Master Mode](#game-master-mode) → **Quick start** step 1.
 2. In game, stand in an inn with no conversation running.
-3. Press **Open Text Prompt** (or pick **Say** on the wheel) and type *Innkeeper, a room for the night!*
+3. Press **Open Text Prompt** (or pick **Say to Room** on the wheel) and type *Innkeeper, a room for the night!*
 4. The innkeeper answers and joins. Keep talking, or let the conversation end.
 
 **Notes**
@@ -3061,14 +3163,14 @@ Outside a conversation:
 | Option | What it does |
 | --- | --- |
 | **Companions** | Starts one conversation with your companions nearby |
-| **Say** | [Say something to the room](#say-something-to-the-room) |
+| **Say to Room** | [Say something to the room](#say-something-to-the-room) |
 | **Talk** | Shown when you're looking at someone. Starts a conversation with them |
 | **Companion** | Shown when you're looking at someone. Puts them on your companions list, or takes them off |
 | **NPC Event** | Starts an [NPC Event](#npc-events) now |
 | **Approach** | Checks right away whether someone nearby has a reason to talk to you, like [NPC Initiative](#npc-initiative)'s **Check Now** |
-| **Vanilla** | Shown when the MantellaHeardLines plugin is installed. Turns [Vanilla Dialogues](#vanilla-dialogues) on or off. The description under the wheel says what a click does: **Turn on Vanilla Dialogues** or **Turn off Vanilla Dialogues** |
+| **Vanilla Dialogues** | Shown when the MantellaHeardLines plugin is installed. Turns [Vanilla Dialogues](#vanilla-dialogues) on or off. The description under the wheel says what a click does: **Turn on Vanilla Dialogues** or **Turn off Vanilla Dialogues** |
 
-In a conversation (while you watch NPCs talk without you, only **Step in** or **Join** and **Vanilla** are shown):
+In a conversation (while you watch NPCs talk without you, only **Step in** or **Join** and **Vanilla Dialogues** are shown):
 
 | Option | What it does |
 | --- | --- |
@@ -3079,7 +3181,7 @@ In a conversation (while you watch NPCs talk without you, only **Step in** or **
 | **Companions** | Brings in your companions nearby who aren't in the conversation yet |
 | **Shout / Private** | Switches [Shout](#shout) on or off |
 | **Talk Event / Nearby Event / Random Event** | Something happens. See [Talk, Nearby and Random Events](#talk-nearby-and-random-events) |
-| **Vanilla** | The same as outside a conversation |
+| **Vanilla Dialogues** | The same as outside a conversation |
 
 **Companions** are your followers who are following you right now, plus anyone on your companions list. Nearby means within 20 meters, at most the 6 nearest, and free to talk. The list is saved with your game.
 

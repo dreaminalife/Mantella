@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import os
 import threading
 from typing import Any, Callable
 
 from src.tts.voice_folders import voice_clips_folder
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 FOLDER = "online_voices"
 OLD_TRY_PREFIX = "try_" # voices an earlier Mantella made to try a clip before using it
@@ -89,7 +92,7 @@ class ClonedVoices:
         except FileNotFoundError:
             pass
         except (OSError, ValueError) as e:
-            logging.warning(f"Could not read {self.__path}, so its voices are cloned again: {e}")
+            log.warning(f"Could not read {self.__path}, so its voices are cloned again: {e}")
         return {"account": "", "voices": {}}
 
     def __write(self, data: dict[str, Any]) -> None:
@@ -140,7 +143,7 @@ class VoiceKeeper:
                 try:
                     self.__delete(key, voice_id)
                 except Exception as e:
-                    logging.warning(f"{self.service_name}: could not delete a voice Mantella no longer uses ({voice_id}). "
+                    log.warning(f"{self.service_name}: could not delete a voice Mantella no longer uses ({voice_id}). "
                                     f"You can delete it on the {self.service_name} website: {e}")
         thread = threading.Thread(target=run, args=(api_key,), name=f"{self.service_name}: delete voices", daemon=True)
         thread.start()

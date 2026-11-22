@@ -12,7 +12,6 @@ Lines longer than 275 characters get a "502 Bad Gateway" from Iodine (measured o
 Iodine's bug: such a line fails like any other, and the Backup Voice Service speaks it."""
 from __future__ import annotations
 
-import logging
 
 import requests
 
@@ -22,6 +21,10 @@ from src.tts.registry import IODINE_LANGUAGES
 from src.tts.voice_picker import VoicePick
 from src.tts.voice_style import IODINE_TEMPERATURE
 from src.tts.voice_tags import RESET, SOUND_WORDS, TAG_RE, ServiceCues, VoiceTags, tag_key, tidy
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 NAME = "Iodine"
 KEY_FILE = "IODINE_SECRET_KEY.txt"
@@ -177,7 +180,7 @@ class Iodine(OnlineCloneService):
         answer = self.__send_clone(name, sound, transcript)
         code, message = _error(answer)
         if transcript and code == "invalid_transcript":
-            logging.info(f"Iodine didn't take the words heard in the clips for {name} ({message}), so it hears them itself")
+            log.info(f"Iodine didn't take the words heard in the clips for {name} ({message}), so it hears them itself")
             answer = self.__send_clone(name, sound, "")
             code, message = _error(answer)
         if answer.status_code == 401:
@@ -208,7 +211,7 @@ class Iodine(OnlineCloneService):
         try:
             heard = words_for(clip_paths, self._config)
         except Exception as e:
-            logging.warning(f"Speech-to-Text couldn't hear the clips' words ({e}), so Iodine hears them itself")
+            log.warning(f"Speech-to-Text couldn't hear the clips' words ({e}), so Iodine hears them itself")
             return clip_paths, ""
         kept = [(path, words.strip()) for path, words in zip(clip_paths, heard) if words and words.strip()]
         transcript = " ".join(words for _, words in kept)

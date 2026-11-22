@@ -12,7 +12,6 @@ needn't wait for it. Only for the NPCs in the conversation, whose lines are comi
 """
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -21,6 +20,10 @@ from typing import Any
 from src.tts.voice_picker import STAND_INS, VOICE_TYPE_CLIP, VoiceSpeaker
 from src.voice_clips.clip_store import ClipStore, voice_key
 from src.voice_clips.requests import ClipRequests
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICE_CLIPS)
 
 GIVE_UP_SECONDS = 900 # a voice type whose clip never comes (the game was closed) stops being looked at
 LOOK_AGAIN_SECONDS = 2.0
@@ -197,7 +200,7 @@ class VoicePreparation:
             try:
                 service.prepared_voice(pick)
             except Exception as e:
-                logging.debug(f"{service.info.name}: could not make the voice '{pick.label}' ahead: {e}. Their first line makes it")
+                log.debug(f"{service.info.name}: could not make the voice '{pick.label}' ahead: {e}. Their first line makes it")
             finally:
                 _background.on = False
             return True
@@ -234,7 +237,7 @@ class VoicePreparation:
                 else:
                     self.__make_next()
             except Exception as e:
-                logging.warning(f"Voice clips: could not get a voice ready ahead: {e}")
+                log.warning(f"Voice clips: could not get a voice ready ahead: {e}")
                 time.sleep(LOOK_AGAIN_SECONDS)
 
     def __make_next(self) -> None:
@@ -259,7 +262,7 @@ class VoicePreparation:
                 except Exception as e:
                     wanted.failures += 1
                     wanted.failed_at = time.time()
-                    logging.debug(f"{maker.info.name}: could not make the voice '{pick.label}' ahead: {e}")
+                    log.debug(f"{maker.info.name}: could not make the voice '{pick.label}' ahead: {e}")
                 finally:
                     _background.on = False
                 self.__wake.set() # look again at once: there may be more

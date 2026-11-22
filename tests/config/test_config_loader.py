@@ -72,23 +72,33 @@ def test_update_config_loader_with_changed_config_values(tmp_path):
     assert config_loader.game == GameEnum.FALLOUT4
 
 
-def test_debug_mode_applies_without_restart(tmp_path):
-    '''Turning Debug Mode on or off changes which logs are let through right away'''
-    import logging
-    config_loader = ConfigLoader(tmp_path)
-    root_logger = logging.getLogger()
-    original_level = root_logger.level
-    try:
-        root_logger.setLevel(logging.INFO)
-        config_loader.definitions.get_config_value_definition('advanced_logs').value = True
-        config_loader.update_config_loader_with_changed_config_values()
-        assert root_logger.isEnabledFor(15)
+def test_log_choices_apply_without_restart(tmp_path):
+    '''Changing what a log topic shows reaches the log right away, and again when the settings are reloaded'''
+    from src.logs.log_detail import LogDetail
+    from src.logs.log_setup import ILogSetup
+    from src.logs.log_topic import LogTopic
 
-        config_loader.definitions.get_config_value_definition('advanced_logs').value = False
-        config_loader.update_config_loader_with_changed_config_values()
-        assert not root_logger.isEnabledFor(15)
-    finally:
-        root_logger.setLevel(original_level)
+    class FakeLogSetup(ILogSetup):
+        def __init__(self):
+            self.applied = []
+        def catch_early_problems(self):
+            pass
+        def start(self, file_path, version, choices):
+            pass
+        def apply(self, choices):
+            self.applied.append(dict(choices))
+
+    config_loader = ConfigLoader(tmp_path)
+    assert config_loader.log_choices[LogTopic.GAME_MASTER] == LogDetail.SHORT
+    log_setup = FakeLogSetup()
+    config_loader.use_log_setup(log_setup)
+
+    config_loader.definitions.get_config_value_definition(LogTopic.GAME_MASTER.setting_id).value = LogDetail.FULL.value
+    assert log_setup.applied[-1][LogTopic.GAME_MASTER] == LogDetail.FULL
+
+    config_loader.update_config_loader_with_changed_config_values()
+    assert config_loader.log_choices[LogTopic.GAME_MASTER] == LogDetail.FULL
+    assert log_setup.applied[-1][LogTopic.GAME_MASTER] == LogDetail.FULL
 
 
 def test_definitions_property(tmp_path):

@@ -596,14 +596,16 @@ class LLMDefinitions:
     @staticmethod
     def get_game_master_decision_service_config_value() -> ConfigValue:
         description = """Selects the service the Game Master decision model runs on when Use Decision Model for Game Master is enabled.
+                        To use a decision model running on your own computer, type the full address its server gives for decision requests, e.g. `http://localhost:8009/v1/systemone`. Mantella sends the same requests it sends to OpenRouter's decision models, so the server must accept them.
                         Ensure you have the correct secret key set in the appropriate file for the service:
                         - OpenRouter: `GPT_SECRET_KEY.txt`
                         - NanoGPT: `NANOGPT_SECRET_KEY.txt` (or `GPT_SECRET_KEY.txt` as fallback)"""
-        return ConfigValueSelection("game_master_decision_service","Game Master Decision Service",description,"OpenRouter",["OpenRouter", "NanoGPT"], tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("game_master_decision_service","Game Master Decision Service",description,"OpenRouter",["OpenRouter", "NanoGPT"], allows_free_edit=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
 
     @staticmethod
     def get_game_master_decision_model_config_value() -> ConfigValue:
         description = """Select the decision model the Game Master uses when Use Decision Model for Game Master is enabled. Press the *Update* button to load the decision models available on the Game Master Decision Service.
+                        For a decision model running on your own computer, type the model name its server expects. Set Game Master Custom Token Count to the model's token limit.
                         The instructions and the criteria for each option can be changed in the Game Master Decision prompts."""
         return ConfigValueSelection("game_master_decision_model","Game Master Decision Model",description,"typesafe/jev-1.13",["typesafe/jev-1.13"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
 

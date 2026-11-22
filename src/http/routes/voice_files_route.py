@@ -18,8 +18,8 @@ SAFE_KEY = re.compile(r"^[a-z0-9]+$")
 
 
 class voice_files_route(routeable):
-    def __init__(self, config: ConfigLoader, show_debug_messages: bool = False) -> None:
-        super().__init__(config, show_debug_messages)
+    def __init__(self, config: ConfigLoader) -> None:
+        super().__init__(config)
 
     def _setup_route(self):
         pass

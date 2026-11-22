@@ -1,5 +1,6 @@
 import src.utils as utils
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 from openai.types.chat import ChatCompletionMessageParam
 import unicodedata
 from src.config.config_loader import ConfigLoader
@@ -9,6 +10,10 @@ from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.prompt_profile_manager import PromptSectionError
 from src.prompt_label import label_prompt
 from src.llm.messages import ImageMessage
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VISION)
 
 class VisionCapture:
     '''One screenshot (and its transcription) shared by several requests, so only the first of them captures the game window
@@ -56,9 +61,9 @@ class ImageClient(ClientBase):
 
         if self.__custom_vision_model:
             if self._is_local:
-                logging.info(f"Running local vision model")
+                log.info(f"Running local vision model")
             else:
-                logging.log(23, f"Running Mantella with custom vision model '{config.vision_llm}'")
+                log.info(f"Running Mantella with custom vision model '{config.vision_llm}'")
 
         self.__end_of_sentence_chars = ['.', '?', '!', ';', '。', '？', '！', '；', '：']
         self.__end_of_sentence_chars = [unicodedata.normalize('NFKC', char) for char in self.__end_of_sentence_chars]
@@ -72,7 +77,7 @@ class ImageClient(ClientBase):
             expanded = config.prompt_profile_manager.resolve_prompt("vision_prompt", config.vision_prompt)
             return expanded.format(game=config.game.display_name)
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             return ""
 
     @utils.time_it
@@ -120,18 +125,18 @@ class ImageClient(ClientBase):
                     vision_prompt = self.__vision_prompt
                 vision_prompt = label_prompt(vision_prompt, self.__config.prompt_profile_manager, "vision_prompt")
                 image_msg_instance = ImageMessage(self.__config, image, vision_prompt, self.__detail, True)
-                image_transcription = self.request_call(image_msg_instance)
+                image_transcription = self.request_call(image_msg_instance, topic_log=get_topic_logger(LogTopic.VISION))
                 if image_transcription:
                     last_punctuation = max(image_transcription.rfind(p) for p in self.__end_of_sentence_chars)
                     # filter transcription to full sentences
                     image_transcription = image_transcription if last_punctuation == -1 else image_transcription[:last_punctuation + 1]
 
-                    logging.log(23, f"Image transcription: {image_transcription}")
+                    log.info(f"Image transcription: {image_transcription}")
                     if capture:
                         capture.transcription = image_transcription
                 else:
                     utils.play_error_sound()
-                    logging.warning(f"The vision model {self.model_name} sent back no description of the screenshot, so the NPC answers without "
+                    log.warning(f"The vision model {self.model_name} sent back no description of the screenshot, so the NPC answers without "
                                     f"seeing it. The model may not be able to read images, or it ran out of room before writing one: try a "
                                     f"higher max_tokens in Custom Vision Model Parameters, or another Custom Vision Model")
             if image_transcription:
@@ -198,7 +203,7 @@ class ImageClient(ClientBase):
             try:
                 self._sonnet_cache_connector = SonnetCacheConnector(getattr(config, 'sonnet_prompt_caching_enabled', False))
             except Exception as e:
-                logging.debug(f"Failed to update Sonnet cache connector during hot-swap: {e}")
+                log.warning(f"Failed to update Sonnet cache connector during hot-swap: {e}")
             
             # Update vision-specific settings
             self.__vision_prompt = self.__format_vision_prompt(config)
@@ -207,9 +212,9 @@ class ImageClient(ClientBase):
             # Update image manager with new settings
             self.__image_manager = image_manager_for(config)
             
-            logging.info("ImageClient hot-swap completed successfully")
+            log.debug("ImageClient hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"ImageClient hot-swap failed: {e}")
+            log.error(f"ImageClient hot-swap failed: {e}")
             return False

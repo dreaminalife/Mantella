@@ -1,6 +1,4 @@
 import asyncio
-import json
-import logging
 import threading
 from typing import Any, Hashable
 
@@ -27,6 +25,16 @@ from src.tts.voice_notices import take_notices
 from src import utils
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.tts_definitions import TTSEnum
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.GAME_CONNECTION)
+startup_log = get_topic_logger(LogTopic.STARTUP)
+settings_log = get_topic_logger(LogTopic.SETTINGS_PAGE)
+conversation_log = get_topic_logger(LogTopic.CONVERSATION)
+voice_clips_log = get_topic_logger(LogTopic.VOICE_CLIPS)
+vision_log = get_topic_logger(LogTopic.VISION)
+game_master_log = get_topic_logger(LogTopic.GAME_MASTER)
 
 class mantella_route(routeable):
     """Main route for Mantella conversations
@@ -34,8 +42,8 @@ class mantella_route(routeable):
     Args:
         routeable (_type_): _description_
     """
-    def __init__(self, config: ConfigLoader, stt_secret_key_file: str, image_secret_key_file: str, secret_key_file: str, language_info: dict[Hashable, str], show_debug_messages: bool = False) -> None:
-        super().__init__(config, show_debug_messages)
+    def __init__(self, config: ConfigLoader, stt_secret_key_file: str, image_secret_key_file: str, secret_key_file: str, language_info: dict[Hashable, str]) -> None:
+        super().__init__(config)
         self.__language_info: dict[Hashable, str] = language_info
         self.__secret_key_file: str = secret_key_file
         self.__stt_secret_key_file = stt_secret_key_file
@@ -49,7 +57,7 @@ class mantella_route(routeable):
 
         # if not self._can_route_be_used():
         #     error_message = "MantellaSoftware settings faulty. Please check MantellaSoftware's window or log."
-        #     logging.error(error_message)
+        #     log.error(error_message)
 
     def start_loading_in_background(self):
         """Loads the settings, TTS, LLM clients and character data right away instead of on the first request from the game"""
@@ -60,7 +68,7 @@ class mantella_route(routeable):
             with self.__request_lock: # Any request arriving meanwhile waits for this instead of loading again
                 self._can_route_be_used()
         except Exception as e:
-            logging.error(f"Loading on startup failed, it will be retried when a conversation starts: {e}")
+            startup_log.error(f"Loading on startup failed, it will be retried when a conversation starts: {e}")
 
     def _supports_hot_swap(self) -> bool:
         """Returns True since mantella_route supports hot-swapping settings"""
@@ -106,15 +114,15 @@ class mantella_route(routeable):
             )
             
             if success and game_hot_swap_success:
-                logging.info("Hot-swapped settings successfully without ending conversation or reloading character data")
+                settings_log.info("Hot-swapped settings successfully without ending conversation or reloading character data")
                 return True
             else:
-                logging.warning("Hot-swap failed, falling back to full reinitialization")
+                settings_log.warning("Hot-swap failed, falling back to full reinitialization")
                 chat_manager.stop_voice_services(keep=tts) # the backup started above: the full reinitialization starts its own
                 return False
                 
         except Exception as e:
-            logging.error(f"Error during hot-swap: {e}")
+            settings_log.error(f"Error during hot-swap: {e}")
             return False
 
     @utils.time_it
@@ -150,12 +158,12 @@ class mantella_route(routeable):
         # Set the global reference for UI access
         try:
             from src.ui.settings_ui_constructor import set_game_manager_reference
-            logging.info("Setting global game manager reference for character data reload...")
+            settings_log.debug("Setting global game manager reference for character data reload...")
             set_game_manager_reference(self.__game)
-            logging.info("Global game manager reference has been set for character data reload.")
+            settings_log.debug("Global game manager reference has been set for character data reload.")
         except ImportError:
             # If the UI module is not available, just continue
-            logging.warning("Could not import set_game_manager_reference. Character data reload button in UI will not work.")
+            settings_log.warning("Could not import set_game_manager_reference. Character data reload button in UI will not work.")
             pass
 
     @utils.time_it
@@ -185,9 +193,9 @@ class mantella_route(routeable):
                 return await self.__with_extras(await asyncio.to_thread(self.__process_voice_clips_delivered, received_json))
             # Handled in a worker thread, so the server stays free to receive an interruption
             request_type = received_json.get(comm_consts.KEY_REQUESTTYPE) if received_json else None
-            if request_type not in self.ENDABLE_REQUESTS:
-                return await self.__with_extras(await asyncio.to_thread(self.__process_request, received_json))
             arrival = (self.__game, self.__game.ends_requested if self.__game else 0)
+            if request_type not in self.ENDABLE_REQUESTS:
+                return await self.__with_extras(await asyncio.to_thread(self.__process_request, received_json, arrival))
             worker = asyncio.ensure_future(asyncio.to_thread(self.__process_request, received_json, arrival))
             answered_early = asyncio.get_running_loop().create_future()
             self.__waiting.append((request_type, answered_early))
@@ -237,8 +245,7 @@ class mantella_route(routeable):
         itself with a reply the game ignores. Otherwise the end request is answered with the end right away.
         The conversation ends here once the requests before are done, without the game waiting: what the NPCs remember of it is saved
         then. A conversation started meanwhile waits for that"""
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        self._log_received(received_json)
         end_reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
         game = self.__game
         if game:
@@ -255,7 +262,7 @@ class mantella_route(routeable):
                     return
                 self.__game.end_requested_conversation()
             except Exception:
-                logging.exception("Ending the conversation failed")
+                conversation_log.exception("Ending the conversation failed")
 
     async def __with_extras(self, reply: dict[str, Any]) -> dict[str, Any]:
         """Puts the voice clip requests and voice notices on the reply the game gets, whatever it is"""
@@ -268,18 +275,16 @@ class mantella_route(routeable):
                 if voice_clip_requests:
                     reply[comm_consts.KEY_VOICECLIP_REQUESTS] = voice_clip_requests # The add-on hands these to MantellaVoiceClips.dll, whatever the reply is
             except Exception as e:
-                logging.warning(f"Voice clips: could not add the requests to the reply: {e}")
+                voice_clips_log.warning(f"Voice clips: could not add the requests to the reply: {e}")
             notices = take_notices()
             if notices:
                 reply[comm_consts.KEY_VOICE_NOTICES] = notices
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+        self._log_sent(reply)
         return reply
 
     def __process_show(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """Show: never replies with an error, which would end the conversation"""
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        self._log_received(received_json)
         game = self.__game
         reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_SHOWRECEIVED, comm_consts.KEY_SHOW_TAKEN: False}
         if game:
@@ -287,39 +292,34 @@ class mantella_route(routeable):
                 reply = game.show_picture()
             except Exception:
                 # The game ends the conversation on an error reply. Here it only says the picture couldn't be taken
-                logging.exception("Show failed")
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+                vision_log.exception("Show failed")
+        self._log_sent(reply)
         return reply
 
     def __process_npc_initiative_check(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """Never replies with an error: the game would end a conversation the player started meanwhile"""
         with self.__request_lock: # Only held to check the settings, which this may reload
             game = self.__game if self._can_route_be_used() else None
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        self._log_received(received_json)
         if not game:
-            logging.error("NPC Initiative check skipped: MantellaSoftware settings faulty. Please check MantellaSoftware's window or log.")
+            game_master_log.error("NPC Initiative check skipped: MantellaSoftware settings faulty. Please check MantellaSoftware's window or log.")
             reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCINITIATIVE, comm_consts.KEY_NPCINITIATIVE_CHOSEN_REFID: 0}
         else:
             reply = game.npc_initiative_check(received_json)
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+        self._log_sent(reply)
         return reply
 
     def __process_npc_event_check(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """Never replies with an error: the game would end a conversation the player started meanwhile"""
         with self.__request_lock: # Only held to check the settings, which this may reload
             game = self.__game if self._can_route_be_used() else None
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        self._log_received(received_json)
         if not game:
-            logging.error("NPC Event check skipped: MantellaSoftware settings faulty. Please check MantellaSoftware's window or log.")
+            game_master_log.error("NPC Event check skipped: MantellaSoftware settings faulty. Please check MantellaSoftware's window or log.")
             reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCEVENT, comm_consts.KEY_NPCEVENT_ID: 0, comm_consts.KEY_NPCEVENT_PARTICIPANT_REFIDS: []}
         else:
             reply = game.npc_event_check(received_json)
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_out, json.dumps(reply, indent=4))
+        self._log_sent(reply)
         return reply
 
     def __process_request(self, received_json: dict[str, Any] | None, arrival: tuple[GameStateManager | None, int] | None = None) -> dict[str, Any]:
@@ -331,24 +331,26 @@ class mantella_route(routeable):
         with self.__request_lock: # Requests other than interruptions are still handled one at a time
             if not self._can_route_be_used():
                 error_message = "MantellaSoftware settings faulty. Please check MantellaSoftware's window or log."
-                logging.error(error_message)
+                log.error(error_message)
                 return self.error_message(error_message)
             if not self.__game:
                 error_message = "Game manager setup failed. There is most likely an issue with the config.ini."
-                logging.error(error_message)
+                log.error(error_message)
                 return self.error_message(error_message)
             reply = {}
             if received_json:
-                logging.debug('Processing request...')
-                if self._show_debug_messages:
-                    logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+                self._log_received(received_json)
                 request_type: str = received_json[comm_consts.KEY_REQUESTTYPE]
                 try:
                     match request_type:
                         case comm_consts.KEY_REQUESTTYPE_INIT:
                             # nothing needs to be done for this request aside from self._can_route_be_used() being triggered
-                            logging.debug('Mantella settings initialized')
-                            reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTTYPE_INITCOMPLETED}
+                            log.debug('Mantella settings initialized')
+                            reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTTYPE_INITCOMPLETED,
+                                     comm_consts.KEY_PLAYERSPEAKSFIRST: self.__game.player_speaks_first}
+                        case comm_consts.KEY_REQUESTTYPE_LISTENBEFORESTART:
+                            ends_before = arrival[1] if arrival and arrival[0] is self.__game else None
+                            reply = self.__game.listen_before_start(received_json, ends_before)
                         case comm_consts.KEY_REQUESTTYPE_STARTCONVERSATION:
                             # Not after the settings changed meanwhile: the new game manager counts the ends from 0
                             ends_before = arrival[1] if arrival and arrival[0] is self.__game else None
@@ -369,7 +371,7 @@ class mantella_route(routeable):
                             reply = self.error_message(f"Request type '{request_type}' was not recognized")
                 except Exception:
                     # Otherwise the failure only reaches the game, as an HTTP error that ends the conversation, and never this log
-                    logging.exception(f"Request '{request_type}' failed")
+                    log.exception(f"Request '{request_type}' failed")
                     raise
             else:
                 reply = self.error_message(f"Request did not contain properly formatted json!")
@@ -377,13 +379,12 @@ class mantella_route(routeable):
 
     def __process_voice_clips_delivered(self, received_json: dict[str, Any]) -> dict[str, Any]:
         """The game copied the lines of a request: they are taken in"""
-        if self._show_debug_messages:
-            logging.log(self._log_level_http_in, json.dumps(received_json, indent=4))
+        self._log_received(received_json)
         try:
             changed = self.__voice_clip_requests().collect()
-            logging.debug(f"Voice clips: request {received_json.get(comm_consts.KEY_VOICECLIP_REQUESTID, '')} delivered, {changed} clip(s) changed")
+            voice_clips_log.debug(f"Voice clips: request {received_json.get(comm_consts.KEY_VOICECLIP_REQUESTID, '')} delivered, {changed} clip(s) changed")
         except Exception:
-            logging.exception("Voice clips: could not take in what the game delivered")
+            voice_clips_log.exception("Voice clips: could not take in what the game delivered")
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_VOICECLIP_DELIVERED}
 
     def __voice_clip_requests(self):

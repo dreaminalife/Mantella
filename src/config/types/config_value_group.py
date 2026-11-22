@@ -16,6 +16,11 @@ class ConfigValueGroup(ConfigValue[list[ConfigValue]]):
         self.set_on_value_change_callback(on_value_change_callback)
         self.page = page
         self.foldable = foldable
+        self.folded_part_intros: dict[str, str] = {} # A folded part's name: the line shown at its top when opened
+
+    def set_folded_part_intro(self, part: str, intro: str):
+        """A line at the top of a folded part (see ConfigValue.in_folded_part), saying what it is for"""
+        self.folded_part_intros[part] = intro
 
     def add_config_value(self, new_value: ConfigValue):
         self.value.append(new_value)

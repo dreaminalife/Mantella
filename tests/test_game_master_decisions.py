@@ -221,7 +221,7 @@ def test_decision_model_player_choice_returns_none(post):
 @patch("src.conversation.game_master.requests.post")
 def test_decision_model_logs_full_request_without_api_key(post, caplog):
     post.return_value = decision_response("Lydia")
-    with caplog.at_level(15): # The full request is only logged in debug mode
+    with caplog.at_level(logging.DEBUG): # The full request is only logged at Full
         game_master(config(), [npc("Lydia")], client()).choose_next_speaker(MagicMock(), [], False)
 
     logged = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Game Master decision request:")]
@@ -284,9 +284,21 @@ def test_decision_model_broken_prompt_profile_returns_none(post):
 
 
 @patch("src.conversation.game_master.requests.post")
-def test_decision_model_needs_openrouter_or_nanogpt(post):
+def test_decision_model_on_a_typed_address_is_sent_there_unchanged(post):
+    lydia = npc("Lydia")
+    post.return_value = decision_response("Lydia")
+    local = client("http://localhost:8009/v1/systemone")
+    local.model_name = "kev-4b"
+    assert game_master(config(), [lydia], local).choose_next_speaker(MagicMock(), [], False) is lydia
+    assert post.call_args.args[0] == "http://localhost:8009/v1/systemone"
+    assert post.call_args.kwargs["json"]["model"] == "kev-4b"
+
+
+@patch("src.conversation.game_master.requests.post")
+def test_decision_model_needs_a_known_service_or_an_address(post, caplog):
     assert game_master(config(), [npc("Lydia")], client("OpenAI")).choose_next_speaker(MagicMock(), [], False) is None
     post.assert_not_called()
+    assert "Game Master Decision Service must be OpenRouter, NanoGPT or a full address starting with http:// or https://, not 'OpenAI'." in caplog.text
 
 
 @patch("src.conversation.game_master.requests.post")
@@ -348,6 +360,14 @@ def test_nanogpt_decision_model_list_keeps_only_decision_models(get):
     assert model_list.available_models[0][0].endswith(f"Prompt: {utils.format_price(0.042)}")
 
 
+@patch("src.llm.client_base.requests.get")
+def test_decision_model_list_on_a_typed_address_lets_the_model_name_be_typed(get):
+    model_list = ClientBase.get_decision_model_list("http://localhost:8009/v1/systemone", "GPT_SECRET_KEY.txt")
+    get.assert_not_called()
+    assert model_list.allows_manual_model_input
+    assert [value for _, value in model_list.available_models] == ["Custom model"]
+
+
 @patch("src.llm.client_base.requests.get", side_effect=requests.ConnectionError("offline"))
 def test_decision_model_list_error_keeps_saved_model(_get):
     model_list = ClientBase.get_decision_model_list("OpenRouter", "GPT_SECRET_KEY.txt")
@@ -360,6 +380,7 @@ def test_decision_model_list_error_keeps_saved_model(_get):
 @pytest.mark.parametrize("service, key_files", [
     ("OpenRouter", ["GPT_SECRET_KEY.txt"]),
     ("NanoGPT", ["NANOGPT_SECRET_KEY.txt", "GPT_SECRET_KEY.txt"]),
+    ("http://localhost:8009/v1/systemone", ["GPT_SECRET_KEY.txt"]),
 ])
 @patch("src.llm.client_base.ClientBase.get_decision_model_list")
 @patch("src.llm.client_base.ClientBase.__init__", return_value=None)
@@ -428,14 +449,14 @@ def test_decision_prompts_are_profile_types_and_overlay_the_prompts_tab(tmp_path
 @patch("src.conversation.game_master.requests.post")
 def test_game_master_request_time_is_logged(post, caplog):
     post.return_value = decision_response("Lydia")
-    with caplog.at_level(23):
+    with caplog.at_level(logging.DEBUG):
         game_master(config(), [npc("Lydia")], client()).choose_next_speaker(MagicMock(), [], False)
     assert "Game Master request took" in caplog.text
 
     caplog.clear()
     chat_client = client()
     chat_client.request_call.side_effect = RuntimeError("down")
-    with caplog.at_level(23):
+    with caplog.at_level(logging.DEBUG):
         assert game_master(config(use_decision_model=False), [npc("Lydia")], chat_client).choose_next_speaker(MagicMock(), [], False) is None
     assert "Game Master request took" in caplog.text
 
@@ -471,7 +492,7 @@ def test_decision_model_null_confidence_keeps_the_choice(post, caplog):
     response = decision_response("Lydia")
     response.json.return_value["answers"][DECISION_QUESTION].update({"confidence": None, "probabilities": {"Lydia": "high"}})
     post.return_value = response
-    with caplog.at_level(23):
+    with caplog.at_level(logging.DEBUG):
         assert game_master(config(), [lydia], client()).choose_next_speaker(MagicMock(), [], False) is lydia
     assert "Lydia speaks next (confidence None, probabilities {'Lydia': 'high'})" in caplog.text
 
@@ -961,7 +982,7 @@ def test_turning_game_master_mode_off_mid_turn_generates_no_more_replies():
 def test_npc_prompt_is_logged_once_until_logged_again(caplog):
     setup = TurnSetup([LYDIA, None, LYDIA, None, LYDIA, None])
     try:
-        with caplog.at_level(23):
+        with caplog.at_level(logging.DEBUG):
             for log_again in [False, False, True]:
                 if log_again:
                     setup.turns.log_prompts_again()

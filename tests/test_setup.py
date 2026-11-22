@@ -10,6 +10,10 @@ from unittest.mock import patch
 from pytest import MonkeyPatch
 from pytest import LogCaptureFixture
 import pandas as pd
+import src.utils as utils
+from src.logs.log_detail import LogDetail
+from src.logs.log_setup import ILogSetup
+from src.logs.log_topic import LogTopic, default_log_choices
 
 @pytest.fixture
 def mantella_setup() -> MantellaSetup:
@@ -110,35 +114,34 @@ def test_get_custom_user_folder_missing_section(mantella_setup: MantellaSetup, t
     assert "Could not find option 'custom_user_folder'" in caplog.text
 
 
-def test_setup_logging(mantella_setup: MantellaSetup, tmp_path: Path):
-    log_file = tmp_path / "test_log.log"
-    
-    # Reset root logger to avoid interference from pytest
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.NOTSET)  # Reset to default
-    root_logger.handlers = []  # Clear any existing handlers
-    
-    # Test with advanced_logs=False
-    mantella_setup._setup_logging(str(log_file), advanced_logs=False)
-    
-    # Verify logger configuration
-    assert root_logger.level == logging.INFO
-    assert len(root_logger.handlers) == 2  # Console and file handler
-    file_handler = next(h for h in root_logger.handlers if isinstance(h, RotatingFileHandler))
-    assert file_handler.maxBytes == 10 * 1024 * 1024
-    assert file_handler.backupCount == 1
-    # The full LLM requests / responses (level 15) are only logged in debug mode
-    assert not root_logger.isEnabledFor(15)
-    
-    # Test with advanced_logs=True
-    root_logger.handlers = []  # Clear handlers
-    mantella_setup._setup_logging(str(log_file), advanced_logs=True)
-    
-    # Verify logger configuration
-    assert root_logger.level == logging.DEBUG
-    assert len(root_logger.handlers) == 2
-    console_handler = next(h for h in root_logger.handlers if type(h) is logging.StreamHandler)
-    assert console_handler.level == 15
+def test_initialise_starts_the_log_with_the_players_choices(mantella_setup: MantellaSetup, tmp_path: Path, monkeypatch: MonkeyPatch):
+    '''The log starts after the settings are loaded, with the version and what each topic shows, and settings changes reach it'''
+    class FakeLogSetup(ILogSetup):
+        def __init__(self):
+            self.started = None
+            self.applied = []
+            self.caught_early = False
+        def catch_early_problems(self):
+            self.caught_early = True
+        def start(self, file_path, version, choices):
+            self.started = (file_path, version, choices)
+        def apply(self, choices):
+            self.applied.append(choices)
+
+    monkeypatch.setattr(utils, "get_my_games_directory", lambda custom_folder: str(tmp_path) + os.sep)
+    monkeypatch.setattr(utils, "cleanup_mei", lambda remove: None) # leave the real temp folders alone
+    monkeypatch.setattr(utils, "cleanup_tmp", lambda folder: None)
+    log_setup = FakeLogSetup()
+    config, _ = mantella_setup.initialise("config.ini", "logging.log", "data/language_support.csv", version="9.9.9", log_setup=log_setup)
+
+    assert log_setup.caught_early # before the settings load, so their warnings reach the file
+    file_path, version, choices = log_setup.started
+    assert file_path == os.path.join(str(tmp_path) + os.sep, "logging.log")
+    assert version == "9.9.9"
+    assert choices == default_log_choices()
+
+    config.definitions.get_config_value_definition(LogTopic.TIMINGS.setting_id).value = LogDetail.FULL.value
+    assert log_setup.applied[-1][LogTopic.TIMINGS] == LogDetail.FULL
 
 
 def test_get_language_info_valid(mantella_setup: MantellaSetup, languages_csv_file: str):

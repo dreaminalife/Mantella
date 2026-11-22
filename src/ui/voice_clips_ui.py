@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import html
 import json
-import logging
 import math
 import os
 import re
@@ -29,6 +28,10 @@ from src.voice_clips.clip_store import (CANDIDATES, MOST_CHOSEN, NPCS, NPCS_SEEN
 from src.voice_clips.picks import KEEP_MINE, TAKE_THEIRS, export_picks, import_picks
 from src.voice_clips.preparing import preparation_for
 from src.voice_clips.requests import LINES_TO_HEAR, MOST_MORE, clip_requests_for
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 LATER = "the next time you talk to someone in game"
 PITCH_STEPS = 4 # semitones up or down on the page
@@ -485,7 +488,7 @@ def render_voice_clips_editor(config: ConfigLoader, chat_manager_getter: Callabl
         try:
             path = speak_with_clip(config, chat_manager_getter, view.name, pick, (sentence or "").strip() or TEST_LINE)
         except Exception as e:
-            logging.warning(f"Hear the voice failed: {e}")
+            log.warning(f"Hear the voice failed: {e}")
             return gr.update(value=None, visible=False), f"Could not speak: {e}"
         which = "the clips above" if view.clip_seconds and len(lines_used(store, view, kind, key)) > 1 else "the clip above"
         return gr.update(value=path, visible=True), f"**▶ The test sentence, in the voice {view.name} cloned from {which}.**"

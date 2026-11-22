@@ -1,7 +1,6 @@
 """Vanilla Dialogues: the heard lines each NPC keeps, next to their summaries, one set per playthrough"""
 from abc import ABC, abstractmethod
 import json
-import logging
 import os
 import threading
 from typing import Any
@@ -10,6 +9,10 @@ from src.games.gameable import Gameable
 from src.heard_lines.heard_line import GameTime, HeardLine, HeardPerson
 from src.quest_tags.history import write_json
 from src.remember.npc_folder import NpcFolder
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VANILLA_DIALOGUES)
 
 
 class HeardLinesStore(ABC):
@@ -110,7 +113,7 @@ class JsonHeardLinesStore(HeardLinesStore):
                 forgotten += len(lines) - len(kept)
                 write_json(path, {"lines": [line.to_dict() for line in kept]})
         if forgotten:
-            logging.info(f"Vanilla Dialogues: an older save was loaded, so {forgotten} heard lines from after it were forgotten")
+            log.info(f"Vanilla Dialogues: an older save was loaded, so {forgotten} heard lines from after it were forgotten")
 
     def __npc_path(self, world_id: str, name: str, ref_id: str) -> str:
         return os.path.join(NpcFolder(self.__game.conversation_folder_path).path(world_id, name, ref_id), JsonHeardLinesStore.FILE_NAME)
@@ -138,5 +141,5 @@ def _read_json(path: str) -> Any:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError) as e:
-        logging.warning(f"Vanilla Dialogues: could not read {path} ({e})")
+        log.warning(f"Vanilla Dialogues: could not read {path} ({e})")
         return None

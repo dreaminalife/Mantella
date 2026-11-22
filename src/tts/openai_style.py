@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import base64
 import io
-import logging
 import os
 from typing import Any
 
@@ -19,6 +18,10 @@ from src.tts.clip_service import ClipVoiceService
 from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_picker import BUILT_IN, VoicePick, VoiceSpeaker
 from src.tts.voice_setups import CLIP_BASE64, CLIP_NAME, CLIP_PATH, read_key_file
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 DEFAULT_VOICE = "default"
 
@@ -110,5 +113,5 @@ class OpenAIStyleService(ClipVoiceService):
             response = requests.get(f"{self._url}/v1/models", headers=self.headers(), timeout=5)
             return response.status_code < 500, f"{self._url} answered {response.status_code}."
         except requests.RequestException as e:
-            logging.debug(f"{self._url} did not answer: {e}")
+            log.debug(f"{self._url} did not answer: {e}")
             return False, f"Nothing answers at {self._url}. Is the program running?"

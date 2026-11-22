@@ -38,7 +38,7 @@ class RecordingModel(FakeModel):
         self.npc_requests.append(str(messages.get_openai_messages()))
         yield self.npc_lines.pop(0)
 
-    def request_call(self, messages: message_thread) -> str:
+    def request_call(self, messages: message_thread, topic_log=None) -> str:
         reply = super().request_call(messages)
         if reply == SUMMARY:
             self.summary_prompts.append(str(messages.get_openai_messages()[0]["content"]))

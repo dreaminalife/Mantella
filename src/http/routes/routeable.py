@@ -1,21 +1,43 @@
+import json
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
 from fastapi import FastAPI
 from src.config.config_loader import ConfigLoader
 from src.http.communication_constants import communication_constants as comm_consts
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 from src import utils
+
+log = get_topic_logger(LogTopic.GAME_CONNECTION)
+
+
+def _log_message(direction: str, message: Any, type_key: str) -> None:
+    """Game connection: Short names the message, Full adds the whole message"""
+    if not log.isEnabledFor(logging.INFO):
+        return
+    kind = str(message.get(type_key, "message")) if isinstance(message, dict) else "message"
+    kind = kind.removeprefix(comm_consts.PREFIX)
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug(f"{direction}: {kind}\n{json.dumps(message, indent=4)}")
+    else:
+        log.info(f"{direction}: {kind}")
+
 
 class routeable(ABC):
     """Base class for different http server routes
     """
-    def __init__(self, config: ConfigLoader, show_debug_messages: bool = False) -> None:
+    def __init__(self, config: ConfigLoader) -> None:
         super().__init__()
         self._config: ConfigLoader = config
         self._has_route_been_initialized: bool = False
-        self._show_debug_messages: bool = show_debug_messages
-        self._log_level_http_in = 41
-        self._log_level_http_out = 42
+
+    def _log_received(self, received_json: Any) -> None:
+        _log_message("Received from the game", received_json, comm_consts.KEY_REQUESTTYPE)
+
+    def _log_sent(self, reply: Any) -> None:
+        _log_message("Sent to the game", reply, comm_consts.KEY_REPLYTYPE)
 
     @abstractmethod
     def add_route_to_server(self, app: FastAPI):

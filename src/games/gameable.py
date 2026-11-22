@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,10 @@ import soundfile as sf
 import threading
 import wave
 import shutil
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CHARACTERS)
 
 class Gameable(ABC):
     """Abstract class for different implementations of games to support. 
@@ -34,12 +37,13 @@ class Gameable(ABC):
         try:
             self.__character_df: pd.DataFrame = self.__get_character_df(path_to_character_df)
         except:
-            logging.error(f'Unable to read / open {path_to_character_df}. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters, or saving the CSV in an incompatible format.')
+            log.error(f'Unable to read / open {path_to_character_df}. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters, or saving the CSV in an incompatible format.')
             input("Press Enter to exit.")
         
         self._is_vr: bool = config.game.is_vr
         if "voice_effect" not in self.__character_df.columns: # so an override file can set it: one NPC's voice effect
             self.__character_df["voice_effect"] = ""
+        self.__override_files_by_name: dict[str, list[str]] = {} # The override files that changed or added each NPC, by lower case name
         #Apply character overrides
         mod_overrides_folder = os.path.join(*[config.mod_path_base, self.extender_name, "Plugins","MantellaSoftware","data",f"{mantella_game_folder_path}","character_overrides"])
         self.__apply_character_overrides(mod_overrides_folder, self.__character_df.columns.values.tolist())
@@ -63,11 +67,11 @@ class Gameable(ABC):
             ref_id = str(matching_rows.iloc[0].get('ref_id', '') or '')
             if ref_id and ref_id.lower() != 'nan':
                 return ref_id
-            logging.warning(f"NPC '{name}' found but has no ref_id in the character list")
+            log.warning(f"NPC '{name}' found but has no ref_id in the character list")
         elif matching_rows.shape[0] > 1:
-            logging.warning(f"Several NPCs are called '{name}' ({matching_rows.shape[0]}): can't tell which one")
+            log.warning(f"Several NPCs are called '{name}' ({matching_rows.shape[0]}): can't tell which one")
         else:
-            logging.warning(f"No NPC called '{name}' in the character list")
+            log.warning(f"No NPC called '{name}' in the character list")
         return None
     
     @property
@@ -230,9 +234,9 @@ class Gameable(ABC):
         full_id_search = base_id[-full_id_len:].lstrip('0')  # Strip leading zeros from the last 6 characters
 
         # Log raw inputs and normalized values used for matching
-        logging.info(f"Character match input: name='{character_name}', base_id='{base_id}', race='{race}'")
+        log.debug(f"Character match input: name='{character_name}', base_id='{base_id}', race='{race}'")
         try:
-            logging.debug(f"Normalized values: name='{character_name_lower}', full_id_search='{full_id_search.lower()}', race='{race_lower}'")
+            log.debug(f"Normalized values: name='{character_name_lower}', full_id_search='{full_id_search.lower()}', race='{race_lower}'")
         except Exception:
             pass
 
@@ -266,7 +270,7 @@ class Gameable(ABC):
             partial_id_match = vectorized_partial_id_match(self.character_df['base_id'], length) == partial_id_search
             _attempted_partial_lengths.append(length)
         try:
-            logging.debug(f"Attempted partial ID lengths (in order): {_attempted_partial_lengths}")
+            log.debug(f"Attempted partial ID lengths (in order): {_attempted_partial_lengths}")
         except Exception:
             pass
 
@@ -283,39 +287,42 @@ class Gameable(ABC):
         # Log counts for each strategy to understand ambiguity or misses
         try:
             match_counts = { key: int(mask.sum()) for key, mask in ordered_matchers.items() }
-            logging.debug(f"Match counts by strategy: {match_counts}")
+            log.debug(f"Match counts by strategy: {match_counts}")
         except Exception:
             pass
 
         for matcher in ordered_matchers:
             view = self.character_df.loc[ordered_matchers[matcher]]
             if view.shape[0] == 1: #If there is exactly one match
-                #logging.info(f'Matched {character_name} in CSV by {matcher}')
+                #log.info(f'Matched {character_name} in CSV by {matcher}')
                 return ordered_matchers[matcher]
             
-        logging.info(f"No unique match for name='{character_name}', base_id(last6)='{full_id_search}', race='{race}'. See debug match counts above.")
+        log.debug(f"No unique match for name='{character_name}', base_id(last6)='{full_id_search}', race='{race}'. See debug match counts above.")
         return None
 
     @utils.time_it
     def find_character_info(self, base_id: str, character_name: str, race: str, gender: int, ingame_voice_model: str):
-        logging.info(f"find_character_info input: name='{character_name}', base_id='{base_id}', race_raw='{race}', gender={gender}, ingame_voice_model='{ingame_voice_model}'")
+        log.debug(f"find_character_info input: name='{character_name}', base_id='{base_id}', race_raw='{race}', gender={gender}, ingame_voice_model='{ingame_voice_model}'")
         try:
             character_race = race.split('<')[1].split('Race ')[0]
         except Exception:
             character_race = str(race)
         try:
-            logging.debug(f"find_character_info normalized race: '{character_race}'")
+            log.debug(f"find_character_info normalized race: '{character_race}'")
         except Exception:
             pass
         matcher = self._get_matching_df_rows_matcher(base_id, character_name, character_race)
         if isinstance(matcher, type(None)):
-            logging.info(f"No unique CSV match for name='{character_name}', base_id='{base_id}', race='{character_race}'")
-            logging.info(f"Could not find {character_name} in {self.game_name_in_filepath}_characters.csv. Loading as a generic NPC.")
+            log.debug(f"No unique CSV match for name='{character_name}', base_id='{base_id}', race='{character_race}'")
+            log.info(f"Could not find {character_name} in {self.game_name_in_filepath}_characters.csv. Loading as a generic NPC.")
             character_info = self.load_unnamed_npc(character_name, character_race, gender, ingame_voice_model)
             is_generic_npc = True
         else:
             result = self.character_df.loc[matcher]
             character_info = result.to_dict('records')[0]
+            override_files = self.__override_files_by_name.get(str(character_name).strip().lower(), [])
+            bio_source = f"{self.game_name_in_filepath}_characters.csv" + (f" and the override file {', '.join(override_files)}" if override_files else "")
+            log.info(f"The bio of {character_name} comes from {bio_source}")
             if (character_info['voice_model'] is None) or (pd.isnull(character_info['voice_model'])) or (character_info['voice_model'] == ''):
                 character_info['voice_model'] = self.find_best_voice_model(race, gender, ingame_voice_model) 
             is_generic_npc = False                                   
@@ -360,7 +367,7 @@ class Gameable(ABC):
             # If no candidate has this name, treat as "no match" so we can create a new row
             if not name_match_mask.any():
                 try:
-                    logging.info(
+                    log.debug(
                         "Override validation: treating override as NEW row because no "
                         f"candidate name matches (override name='{oname}', "
                         f"candidates={candidate_names.unique().tolist()})"
@@ -436,7 +443,7 @@ class Gameable(ABC):
         # If no candidates pass validation, treat as no match
         if not validation_mask.any():
             try:
-                logging.debug(f"Override validation failed: name match found but base_id/race mismatch. Override will be added as new row.")
+                log.debug(f"Override validation failed: name match found but base_id/race mismatch. Override will be added as new row.")
             except Exception:
                 pass
             return None
@@ -447,6 +454,12 @@ class Gameable(ABC):
         return validated_matcher if validated_matcher.any() else None
 
     @utils.time_it
+    def __note_override_file(self, name: Any, file: str) -> None:
+        """For the log: which override files changed or added this NPC, each once"""
+        files = self.__override_files_by_name.setdefault(str(name).strip().lower(), [])
+        if file not in files:
+            files.append(file)
+
     def __apply_character_overrides(self, overrides_folder: str, character_df_column_headers: list[str]):
         os.makedirs(overrides_folder, exist_ok=True)
         override_files: list[str] = os.listdir(overrides_folder)
@@ -491,6 +504,7 @@ class Gameable(ABC):
                             matcher = self._get_matching_df_rows_matcher(base_id, name, race)
                             # Validate that the match actually corresponds to this override's identifying fields
                             matcher = self.__validate_override_match(matcher, base_id, race, name)
+                            self.__note_override_file(name, file)
                             if isinstance(matcher, type(None)): #character not in csv, add as new row
                                 row = []
                                 for entry in headers:
@@ -530,6 +544,7 @@ class Gameable(ABC):
                         matcher = self._get_matching_df_rows_matcher(base_id, name, race)
                         # Validate that the match actually corresponds to this override's identifying fields
                         matcher = self.__validate_override_match(matcher, base_id, race, name)
+                        self.__note_override_file(name, file)
                         if isinstance(matcher, type(None)): #character not in csv, add as new row
                             row = []
                             for entry in headers:
@@ -554,7 +569,7 @@ class Gameable(ABC):
                                     if incoming:
                                         self.character_df.loc[matcher, entry] = incoming
             except Exception as e:
-                logging.log(logging.WARNING, f"Could not load character override file '{file}' in '{overrides_folder}'. Most likely there is an error in the formating of the file. Error: {e}")
+                log.warning(f"Could not load character override file '{file}' in '{overrides_folder}'. Most likely there is an error in the formating of the file. Error: {e}")
 
     @utils.time_it
     def _create_all_voice_folders(self, mod_path: str, voice_folder_col: str):
@@ -645,9 +660,9 @@ class Gameable(ABC):
             self.__reflections_folder_path = os.path.join(config.save_folder, f"data/{mantella_game_folder_path}/reflections")
             conversation_log.game_path = self.__conversation_folder_path
             
-            logging.info(f"{self.__class__.__name__} hot-swap completed successfully")
+            log.debug(f"{self.__class__.__name__} hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"{self.__class__.__name__} hot-swap failed: {e}")
+            log.error(f"{self.__class__.__name__} hot-swap failed: {e}")
             return False

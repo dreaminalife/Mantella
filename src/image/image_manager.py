@@ -1,4 +1,3 @@
-import logging
 import base64
 import os
 import re
@@ -11,6 +10,10 @@ import cv2
 import ctypes
 from pathlib import Path
 from src.config.definitions.game_definitions import GameEnum
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VISION)
 
 class ImageManager:
     '''
@@ -59,7 +62,7 @@ class ImageManager:
             self.__game_image_file_path: str = str(Path(game_image_path) / "Mantella_Vision.jpg")
             if self.__use_game_screenshots:
                 if os.path.exists(self.__game_image_file_path):
-                    logging.log(23, f'Removing leftover in-game vision screenshot from previous run...')
+                    log.info(f'Removing leftover in-game vision screenshot from previous run...')
                     os.remove(self.__game_image_file_path)
 
         if self.__save_screenshot:
@@ -72,7 +75,7 @@ class ImageManager:
         try:
             ctypes.windll.user32.SetProcessDPIAware()
         except:
-            logging.warning('Failed to read monitor DPI. Images may not be saved in the correct dimensions.')
+            log.warning('Failed to read monitor DPI. Images may not be saved in the correct dimensions.')
 
 
     @property
@@ -99,7 +102,7 @@ class ImageManager:
             gog_title = self.__window_title + ' GOG'
             hwnd = win32gui.FindWindow(None, gog_title)
             if not hwnd:
-                logging.error(f"Window '{self.__window_title}' not found")
+                log.error(f"Window '{self.__window_title}' not found")
                 self.__capture_params = None
                 return None
 
@@ -249,7 +252,7 @@ class ImageManager:
         
         except Exception as e:
             utils.play_error_sound()
-            logging.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             self.reset_capture_params() # reset the window capture coordinates
             return None
         
@@ -271,7 +274,7 @@ class ImageManager:
             temporary = None
         except OSError as e:
             # Only a copy for the player to look at: the picture still goes to the NPC
-            logging.warning(f"Could not save the picture to {self.__image_path}: {e}")
+            log.warning(f"Could not save the picture to {self.__image_path}: {e}")
         finally:
             if temporary and os.path.exists(temporary):
                 os.remove(temporary)
@@ -283,6 +286,6 @@ class ImageManager:
             for name in old:
                 os.remove(os.path.join(self.__image_path, name))
             if old:
-                logging.info(f"Removed {len(old)} old saved screenshots from {self.__image_path}. Only the newest picture is kept now")
+                log.info(f"Removed {len(old)} old saved screenshots from {self.__image_path}. Only the newest picture is kept now")
         except OSError as e:
-            logging.warning(f"Could not remove the old saved screenshots in {self.__image_path}: {e}")
+            log.warning(f"Could not remove the old saved screenshots in {self.__image_path}: {e}")

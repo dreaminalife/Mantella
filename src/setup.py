@@ -1,13 +1,15 @@
 import configparser
-import logging
-from logging.handlers import RotatingFileHandler
 import os
 from typing import Hashable
-import src.color_formatter as cf
 import src.utils as utils
 import pandas as pd
 import sys
 from src.config.config_loader import ConfigLoader
+from src.logs.log_setup import ILogSetup, MantellaLogSetup
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.STARTUP)
 
 class MantellaSetup:
     def __init__(self):
@@ -15,21 +17,26 @@ class MantellaSetup:
         self.config = None
         self.language_info = {}
 
-    def initialise(self, config_file, logging_file, language_file) -> tuple[ConfigLoader, dict[Hashable, str]]:
+    def initialise(self, config_file, logging_file, language_file, version: str, log_setup: ILogSetup | None = None) -> tuple[ConfigLoader, dict[Hashable, str]]:
         '''Initialize Mantella with configuration, logging, and language settings'''
         self._set_cwd_to_exe_dir()
+        self.log_setup = log_setup or MantellaLogSetup()
+        self.log_setup.catch_early_problems() # The log only starts once the settings say what it shows
         self.save_folder = utils.get_my_games_directory(self._get_custom_user_folder())
-        self.config = ConfigLoader(self.save_folder, config_file)    
-        self._setup_logging(os.path.join(self.save_folder,logging_file), self.config.advanced_logs)
-        
-        logging.log(23, f'''Mantella.exe running in: 
+        self.config = ConfigLoader(self.save_folder, config_file)
+        self.log_setup.start(os.path.join(self.save_folder, logging_file), version, self.config.log_choices)
+        self.config.use_log_setup(self.log_setup)
+        self.config.log_loaded_settings()
+
+        log.info(f'Mantella v{version}')
+        log.info(f'''Mantella.exe running in: 
     {os.getcwd()}
     config.ini, logging.log, and conversation histories available in:
     {self.save_folder}''')
-        logging.log(23, f'''Mantella currently running for {self.config.game.display_name}. Mantella mod files located in: 
+        log.info(f'''Mantella currently running for {self.config.game.display_name}. Mantella mod files located in: 
     {self.config.mod_path}''')
         if not self.config.have_all_config_values_loaded_correctly:
-            logging.error("Cannot start Mantella. Not all settings that are required are set to correct values. This error often occurs when you start Mantella.exe manually without setting up the `Game` tab in the Mantella UI.")
+            log.error("Cannot start Mantella. Not all settings that are required are set to correct values. This error often occurs when you start Mantella.exe manually without setting up the `Game` tab in the Mantella UI.")
 
         # clean up old instances of exe runtime files
         utils.cleanup_mei(self.config.remove_mei_folders)
@@ -58,61 +65,18 @@ class MantellaSetup:
             
         except Exception as e:
             utils.play_error_sound()
-            logging.error(repr(e))
-            logging.error(f"Unable to read / open '{file_name}'. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters.")
-            logging.log(logging.WARNING, "Using default user folder in '../Documents/My Games/Mantella/'.")
+            log.error(repr(e))
+            log.error(f"Unable to read / open '{file_name}'. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters.")
+            log.warning("Using default user folder in '../Documents/My Games/Mantella/'.")
             return ""      
         
         try:
             return user_folder_config.get("UserFolder","custom_user_folder")
         except Exception as e:
             utils.play_error_sound()
-            logging.error(f"Could not find option 'custom_user_folder' in section 'UserFolder' in '{file_name}'.")
-            logging.log(logging.WARNING, "Using default user folder in '../Documents/My Games/Mantella/'.")
+            log.error(f"Could not find option 'custom_user_folder' in section 'UserFolder' in '{file_name}'.")
+            log.warning("Using default user folder in '../Documents/My Games/Mantella/'.")
             return ""
-
-    def _setup_logging(self, file_name, advanced_logs=False):
-        '''Configure logging with custom levels and formatters'''
-        logging_level = logging.DEBUG if advanced_logs else logging.INFO
-        logging.basicConfig(level=logging_level, format='%(levelname)s: %(message)s', handlers=[], encoding='utf-8')
-
-        # create custom formatter
-        formatter = cf.CustomFormatter()
-
-        # add formatter to ch
-        console_handler = logging.StreamHandler()
-        # The full LLM requests / responses (level 15) only reach the console in debug mode, when the root logger lets them through
-        console_handler.setLevel(15)
-        console_handler.setFormatter(formatter)
-
-        # Create a formatter for file output
-        file_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-
-        # Create a file handler and set the formatter. When the log reaches 10 MB, it is moved to logging.log.1 (replacing the previous one) and a new log is started
-        file_handler = RotatingFileHandler(file_name, maxBytes=10 * 1024 * 1024, backupCount=1, encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(file_formatter)
-
-        # Add the handlers to the logger
-        logging.getLogger().addHandler(console_handler)
-        logging.getLogger().addHandler(file_handler)
-
-        # custom levels
-        logging.addLevelName(15, "LLM")
-
-        logging.addLevelName(21, "INFO")
-        logging.addLevelName(22, "INFO")
-        logging.addLevelName(23, "INFO")
-        logging.addLevelName(24, "Startup")
-        logging.addLevelName(26, "INFO")
-
-        logging.addLevelName(27, "STT")
-        logging.addLevelName(28, "LLM")
-        logging.addLevelName(29, "TTS")
-
-        logging.addLevelName(41, "HTTP-in")
-        logging.addLevelName(42, "HTTP-out")
-        logging.addLevelName(43, "Queue")
 
     def _get_language_info(self, file_name, language) -> dict[Hashable, str]:
         language_df = pd.read_csv(file_name)
@@ -120,5 +84,5 @@ class MantellaSetup:
             language_info: dict[Hashable, str] = language_df.loc[language_df['alpha2']==language].to_dict('records')[0]
             return language_info
         except:
-            logging.error(f"Could not load language '{language}'. Please set a valid language in config.ini\n")
+            log.error(f"Could not load language '{language}'. Please set a valid language in config.ini\n")
             return {}

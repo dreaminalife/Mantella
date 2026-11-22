@@ -9,12 +9,15 @@ See docs/quest_tags_1_user_edits.md, Parts 4 and 5.
 """
 import hashlib
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Union
 
 import pandas as pd
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.QUEST_TAGS)
 
 # Reserved answers. Integers this small are exact in Papyrus' 32-bit floats
 ANSWER_MISSING = -9999901.0     # What the check is about doesn't exist in this game: not true
@@ -307,7 +310,7 @@ class CheckList:
     def log_unreadable(self):
         total = sum(len(c.outcomes) for c in self.tags.values()) + len(self.unreadable)
         if total:
-            logging.info(f"Quest tags: {total - len(self.unreadable)} of {total} conditions readable")
+            log.info(f"Quest tags: {total - len(self.unreadable)} of {total} conditions readable")
         for outcome in self.unreadable:
             code = " ".join(outcome.code.split())
-            logging.warning(f'Quest tag {outcome.tag} slot {outcome.slot}: can\'t read "{code}" ({outcome.reason})')
+            log.warning(f'Quest tag {outcome.tag} slot {outcome.slot}: can\'t read "{code}" ({outcome.reason})')

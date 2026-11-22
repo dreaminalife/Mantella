@@ -8,6 +8,11 @@ plus the combat notices of context.py. Any other event is passed on as it is.
 """
 import re
 
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.INGAME_EVENTS)
+
 # Kinds of events that can be merged. The combat kinds describe a state, so their order per person has to be kept
 _HIT = "hit"
 _USED = "used"
@@ -126,6 +131,8 @@ def tidy_events(events: list[str]) -> list[str]:
         text = line.text() if isinstance(line, _Group) else line
         if text:
             result.append(text)
+    if len(result) < len(events):
+        log.debug(f"Merged or dropped in-game events: {len(events)} events became {len(result)}")
     return result
 
 

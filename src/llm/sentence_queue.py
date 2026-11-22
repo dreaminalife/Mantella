@@ -1,14 +1,14 @@
-import logging
 import queue
 import threading
 from typing import Callable
 from src.llm.sentence import Sentence
 from src import utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
 
 class SentenceQueue:
-    __logging_level = 42
-    __should_log = False
-
     def __init__(self) -> None:
         self.__queue: queue.Queue[Sentence] = queue.Queue[Sentence]()
         self.__get_lock: threading.Lock = threading.Lock()
@@ -84,5 +84,4 @@ class SentenceQueue:
     
     @utils.time_it
     def log(self, text: str):
-        if(self.__should_log):
-            logging.log(self.__logging_level, text)
+        log.debug(text)

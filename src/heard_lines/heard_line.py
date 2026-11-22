@@ -10,9 +10,12 @@ The game add-on sends them, unparsed, under KEY_HEARDLINES with requests it alre
 from __future__ import annotations
 from dataclasses import dataclass
 import json
-import logging
 from typing import Any
 import src.utils as utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VANILLA_DIALOGUES)
 
 PLAYER_REF_ID = "000014" # The player's reference, masked like every other ref id
 
@@ -149,10 +152,10 @@ class HandOver:
         try:
             data = json.loads(text)
         except ValueError as e:
-            logging.warning(f"Vanilla Dialogues: could not read the heard lines from the game ({e})")
+            log.warning(f"Vanilla Dialogues: could not read the heard lines from the game ({e})")
             return None
         if not isinstance(data, dict):
-            logging.warning("Vanilla Dialogues: could not read the heard lines from the game (not a JSON object)")
+            log.warning("Vanilla Dialogues: could not read the heard lines from the game (not a JSON object)")
             return None
         player = str(data.get("player") or "").strip()
         lines: list[HeardLine] = []
@@ -161,7 +164,7 @@ class HandOver:
             if line:
                 lines.append(line)
             else:
-                logging.debug(f"Vanilla Dialogues: skipped an unreadable heard line: {item}")
+                log.debug(f"Vanilla Dialogues: skipped an unreadable heard line: {item}")
         return HandOver(GameTime.from_game(data.get("now")), tuple(lines))
 
 

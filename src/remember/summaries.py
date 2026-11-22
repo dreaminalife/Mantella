@@ -1,5 +1,6 @@
 from collections import defaultdict
-import logging
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 import os
 import re
 import time
@@ -25,6 +26,8 @@ from src.prompt_profile_manager import PromptSectionError
 from src.prompt_label import label_prompt
 from src.bio_section_filter import apply_bio_section_filter, should_filter_memory_bios
 from src import utils
+
+log = get_topic_logger(LogTopic.MEMORIES)
 
 # ---------------------------------------------------------------------------
 # Summary-block parsing helpers
@@ -308,7 +311,6 @@ class Summaries(Remembering):
     def __init__(self, game: Gameable, config: ConfigLoader, client: LLMClient, language_name: str, summary_client: ClientBase | None = None, summary_limit_pct: float = 0.3, inner_monologue=None, personal_reflection=None,
                  heard_lines_store: HeardLinesStore | None = None, heard_lines_text: HeardLinesText | None = None) -> None:
         super().__init__()
-        self.loglevel = 28
         self.__config = config
         self.__game: Gameable = game
         self.__summary_limit_pct: float = summary_limit_pct
@@ -423,7 +425,7 @@ class Summaries(Remembering):
                             HeardPerson(character.ref_id, NpcFolder.base_name(character.name)))
             return self.__heard_lines_text.memory_entries(lines, listener, self.__heard_lines_store.latest_now(world_id), hide_player)
         except Exception as e:
-            logging.error(f"Vanilla Dialogues: could not read the lines {character.name} heard: {e}")
+            log.error(f"Vanilla Dialogues: could not read the lines {character.name} heard: {e}")
             return []
 
     @utils.time_it
@@ -624,7 +626,7 @@ class Summaries(Remembering):
                     conversation_start_ts=conversation_start_ts,
                 )
             except Exception as e:
-                logging.error(f"Failed to save private thoughts: {e}", exc_info=True)
+                log.error(f"Failed to save private thoughts: {e}", exc_info=True)
 
         if self.__personal_reflection and should_save_reflections:
             try:
@@ -643,7 +645,7 @@ class Summaries(Remembering):
                     for npc_name, npc in characters.items():
                         params = npc_message_threads.get(npc_name)
                         if params is None or len(params.messages) < 5:
-                            logging.info(f"Personal reflection not saved for {npc_name}. Not enough dialogue spoken.")
+                            log.info(f"Personal reflection not saved for {npc_name}. Not enough dialogue spoken.")
                             continue
                         reflection_characters[npc_name] = npc
                         reflection_summaries[npc_name] = full_summaries.get(npc_name, "")
@@ -656,7 +658,7 @@ class Summaries(Remembering):
                     conversation_start_ts=conversation_start_ts,
                 )
             except Exception as e:
-                logging.error(f"Failed to save personal reflections: {e}", exc_info=True)
+                log.error(f"Failed to save personal reflections: {e}", exc_info=True)
 
         return saved_summaries
 
@@ -680,18 +682,18 @@ class Summaries(Remembering):
                 if sharer_name in threads:
                     summary = self.__create_new_conversation_summary(threads[sharer_name], world_id, conversation_start_ts, was_directed)
             if not summary:
-                logging.info(f"{sharer_name} has nothing to share with {recipient_name}: the conversation was too short")
+                log.info(f"{sharer_name} has nothing to share with {recipient_name}: the conversation was too short")
                 continue
             others = [name for name in characters if name != sharer_name] + ([f"{player_name} (the player)"] if player_name else [])
             shared = f"{sharer_name} told {recipient_name} about a conversation with {', '.join(others) or 'others'}: {summary.strip().lstrip('-').strip()}"
             self.__append_new_conversation_summary(shared, SimpleNamespace(name=recipient_name, ref_id=recipient_ref_id), world_id)
-            logging.log(23, f"{sharer_name} shared the conversation with {recipient_name}")
+            log.info(f"{sharer_name} shared the conversation with {recipient_name}")
 
     @utils.time_it
     def save_thoughts_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None, conversation_start_ts: int | None = None):
         """Generate private thoughts from the current conversation without writing a new summary."""
         if not self.__inner_monologue:
-            logging.info("Private thoughts not saved. Inner monologue is not available.")
+            log.info("Private thoughts not saved. Inner monologue is not available.")
             return
 
         self.may_add_missing_join_leave_messages(messages, npcs_in_conversation)
@@ -713,13 +715,13 @@ class Summaries(Remembering):
                 conversation_start_ts=conversation_start_ts,
             )
         except Exception as e:
-            logging.error(f"Failed to save private thoughts: {e}", exc_info=True)
+            log.error(f"Failed to save private thoughts: {e}", exc_info=True)
 
     @utils.time_it
     def save_reflections_only(self, messages: message_thread, npcs_in_conversation: Characters, world_id: str, save_timestamp: int | None = None, conversation_start_ts: int | None = None):
         """Generate personal reflections from existing summaries without writing a new summary."""
         if not self.__personal_reflection:
-            logging.info("Personal reflections not saved. Personal reflection is not available.")
+            log.info("Personal reflections not saved. Personal reflection is not available.")
             return
 
         self.may_add_missing_join_leave_messages(messages, npcs_in_conversation)
@@ -740,7 +742,7 @@ class Summaries(Remembering):
                 conversation_start_ts=conversation_start_ts,
             )
         except Exception as e:
-            logging.error(f"Failed to save personal reflections: {e}", exc_info=True)
+            log.error(f"Failed to save personal reflections: {e}", exc_info=True)
 
 
         
@@ -867,9 +869,9 @@ class Summaries(Remembering):
         # The 'Name - ref_id' folder, else the older 'Name' folder, else a new 'Name - ref_id' folder
         target_folder = NpcFolder(self.__game.conversation_folder_path).path(world_id, character.name, character.ref_id)
         if not os.path.exists(target_folder):
-            logging.info(f"{target_folder} does not exist. A new summary file will be created.")
+            log.info(f"{target_folder} does not exist. A new summary file will be created.")
         elif log_file_info:
-            logging.info(f"Loaded latest summary file from: {target_folder}")
+            log.info(f"Loaded latest summary file from: {target_folder}")
         
         latest_file_number = get_latest_file_number(target_folder)
         return f"{target_folder}/{base_name}_summary_{latest_file_number}.txt"
@@ -917,7 +919,7 @@ class Summaries(Remembering):
             # Director Mode: the player was not part of the conversation, and their lines were scene directions
             memory_template = PromptDefinitions.apply_prompt_conditions("memory_prompt", memory_template, {"director"} if was_directed else set())
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             return ""
         # Searched after the shared sections are expanded, so variables used only inside a section are searched too
         lorebook_text = self.__build_lorebook_text_for_prompt(
@@ -942,10 +944,10 @@ class Summaries(Remembering):
                 if len(npcInfo.messages) >= 5:
                     return self.summarize_conversation(npcInfo.messages.transform_to_dict_representation(npcInfo.messages.get_talk_only()), prompt)
                 else:
-                    logging.info(f"Conversation summary not saved. Not enough dialogue spoken.")
+                    log.info(f"Conversation summary not saved. Not enough dialogue spoken.")
                 break
             except:
-                logging.error('Failed to summarize conversation. Retrying...')
+                log.error('Failed to summarize conversation. Retrying...')
                 time.sleep(5)
                 continue
         return ""
@@ -998,7 +1000,7 @@ class Summaries(Remembering):
         count_tokens_summaries = self.__summary_client.get_count_tokens(conversation_summaries)
         # if summaries token limit is reached, summarize the summaries
         if count_tokens_summaries > summary_limit:
-            logging.info(f'Token limit of conversation summaries reached ({count_tokens_summaries} / {summary_limit} tokens). Creating new summary file...')
+            log.info(f'Token limit of conversation summaries reached ({count_tokens_summaries} / {summary_limit} tokens). Creating new summary file...')
             while True:
                 try:
                     # Try to extract player name from existing summaries if present is not needed here; default to last known from recent talks
@@ -1024,7 +1026,7 @@ class Summaries(Remembering):
                             "resummarize_prompt", resummarize_template
                         )
                     except PromptSectionError as e:
-                        logging.error(str(e))
+                        log.error(str(e))
                         return ""
                     # Searched after the shared sections are expanded, so variables used only inside a section are searched too
                     lorebook_text = self.__build_lorebook_text_for_prompt(
@@ -1044,7 +1046,7 @@ class Summaries(Remembering):
                     long_conversation_summary = self.summarize_conversation(sanitized_summaries, prompt)
                     break
                 except:
-                    logging.error('Failed to summarize conversation. Retrying...')
+                    log.error('Failed to summarize conversation. Retrying...')
                     time.sleep(5)
                     continue
 
@@ -1065,24 +1067,22 @@ class Summaries(Remembering):
         if len(text_to_summarize) > 5:
             messages = message_thread(self.__config, prompt)
             messages.add_message(UserMessage(self.__config, text_to_summarize))
-            # Log the summary prompt being sent
-            logging.log(23, f'Summary prompt sent to LLM: {prompt.strip()}')
 
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 try:
-                    summary = self.__summary_client.request_call(messages)
+                    summary = self.__summary_client.request_call(messages, topic_log=get_topic_logger(LogTopic.MEMORIES))
                     if summary:
                         break
-                    logging.info(f"Summarizing conversation failed (attempt {attempt}/{max_retries}).")
+                    log.info(f"Summarizing conversation failed (attempt {attempt}/{max_retries}).")
                 except Exception as e:
-                    logging.error(f"Summarizing conversation error (attempt {attempt}/{max_retries}): {e}")
+                    log.error(f"Summarizing conversation error (attempt {attempt}/{max_retries}): {e}")
                     summary = ''
                 if attempt < max_retries:
                     time.sleep(5)
 
             if not summary:
-                logging.info(f"Summarizing conversation failed after {max_retries} attempts.")
+                log.error(f"Summarizing conversation failed after {max_retries} attempts.")
                 return ""
 
             npc_name = "Someone"
@@ -1094,9 +1094,9 @@ class Summaries(Remembering):
             summary = summary.replace('the user', 'the player')
             summary += '\n\n'
 
-            logging.log(self.loglevel, f'Conversation summary: {summary.strip()}')
-            logging.info(f"Conversation summary saved")
+            log.debug(f'Conversation summary: {summary.strip()}')
+            log.info(f"Conversation summary saved")
         else:
-            logging.info(f"Conversation summary not saved. Not enough dialogue spoken.")
+            log.info(f"Conversation summary not saved. Not enough dialogue spoken.")
 
         return summary

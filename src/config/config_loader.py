@@ -17,6 +17,7 @@ from src.conversation.action import Action
 from src.actions.function_manager import FunctionManager
 from src.config.definitions.action_definitions import ACTION_KINDS, NOT_OFFERED, OLD_KEYWORDS, actions_key, carried_over_ticks
 from src.config.stt_carry_over import OLD_STT_KEYS, carried_over_stt
+from src.config.definitions.log_definitions import RETIRED_LOG_KEYS
 from src.stt_backends.presets import PRESETS as STT_PRESETS
 from src.stt_backends.keys import STT_KEY_FILE, copy_old_key
 from src.config.config_values import ConfigValues
@@ -26,11 +27,20 @@ from src.config.config_json_writer import ConfigJsonWriter
 from src.config.config_file_writer import ConfigFileWriter
 from src.config.types.config_value_string import ConfigValueString
 from src.prompt_profile_manager import PromptProfileManager
+from src.logs.log_detail import LogDetail
+from src.logs.log_setup import ILogSetup
+from src.logs.log_topic import LogChoices, LogTopic
+from src.logs.topic_logger import get_topic_logger
+from src.config.types.config_value import ConfigValue
+from src.config.types.config_value_group import ConfigValueGroup
 import src.utils as utils
 from pathlib import Path
 import json
 
+log = get_topic_logger(LogTopic.STARTUP)
+
 VOICE_SERVICE_KEYS = ("tts_service", "tts_backup_service")
+SECRET_WORDS = ("key", "token", "password", "secret") # a setting whose identifier or name has one of these is never written to the log
 
 class ConfigLoader:
     def __init__(self, mygame_folder_path: str, file_name='config.ini', game_override: GameEnum | None = None, prompt_profiles_path: str | None = None):
@@ -38,7 +48,9 @@ class ConfigLoader:
         self.save_folder = mygame_folder_path
         self.__has_any_value_changed: bool = False
         self.__log_next_system_prompt: bool = False
+        self.__log_setup: ILogSetup | None = None
         self.__is_initial_load: bool = True
+        self.__loaded_settings_logged: bool = False
         self.__file_name = os.path.join(mygame_folder_path, file_name)
         self.__game_override = game_override
         self.__prompt_profile_manager = PromptProfileManager(prompt_profiles_path)
@@ -47,21 +59,22 @@ class ConfigLoader:
         voice_setups_for(mygame_folder_path) # the player's voice setups go in the TTS Service list
         self.__definitions: ConfigValues = MantellaConfigValueDefinitionsNew.get_config_values(self.is_run_integrated, self.__actions, self.__on_config_value_change)
         if not os.path.exists(self.__file_name):
-            logging.log(24,"Cannot find 'config.ini'. Assuming first time usage of MantellaSoftware and creating it.")
+            log.info("Cannot find 'config.ini'. Assuming first time usage of MantellaSoftware and creating it.")
             self.__write_config_state(self.__definitions)
 
         config = configparser.ConfigParser()
         try:
             config.read(self.__file_name, encoding='utf-8')
         except Exception as e:
-            logging.error(repr(e))
-            logging.error(f'Unable to read / open config.ini. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters.')
+            log.error(repr(e))
+            log.error(f'Unable to read / open config.ini. If you have recently edited this file, please try reverting to a previous version. This error is normally due to using special characters.')
             input("Press Enter to exit.")
 
         create_back_up_configini = False
         old_actions: str | None = None # The old Actions list of the Other tab, which the Actions section of the Conversation page replaces
         old_stt: dict[str, str] = {} # The old External Whisper Service settings, which Online Service and Custom Service replace
         has_action_switches = False
+        has_retired_log_keys = False
         action_keys = {actions_key(kind) for kind in ACTION_KINDS}
         for section_name in config.sections():
             for (each_key, each_value) in config.items(section_name):
@@ -70,6 +83,9 @@ class ConfigLoader:
                     continue
                 if each_key in OLD_STT_KEYS:
                     old_stt[each_key] = each_value
+                    continue
+                if each_key in RETIRED_LOG_KEYS: # Replaced by the Log part, nothing to carry over: dropped without a warning
+                    has_retired_log_keys = True
                     continue
                 has_action_switches = has_action_switches or each_key in action_keys
                 try:
@@ -90,12 +106,12 @@ class ConfigLoader:
                     result = config_value.parse(unescaped_value)
                     if each_key in VOICE_SERVICE_KEYS and not result.is_success:
                         utils.play_error_sound()
-                        logging.warning(f"The voice service '{each_value}' chosen as {config_value.name} no longer exists (a voice setup that was removed or renamed?). {FALLBACK_SERVICE} is used instead. Pick another one on the Text-to-Speech page.")
+                        log.warning(f"The voice service '{each_value}' chosen as {config_value.name} no longer exists (a voice setup that was removed or renamed?). {FALLBACK_SERVICE} is used instead. Pick another one on the Text-to-Speech page.")
                 except:
                     create_back_up_configini = True
                     # TODO: filter out warnings for ['game', 'skyrim_mod_folder', 'skyrimvr_mod_folder', 'fallout4_mod_folder', 'fallout4vr_mod_folder', fallout4vr_folder]
                     utils.play_error_sound()
-                    logging.warning(f"Could not identify config value '{each_key} = {each_value}' in current config.ini. Value will not be loaded. A backup of this config.ini will be created.")
+                    log.warning(f"Could not identify config value '{each_key} = {each_value}' in current config.ini. Value will not be loaded. A backup of this config.ini will be created.")
 
         if old_actions is not None:
             if not has_action_switches:
@@ -109,7 +125,7 @@ class ConfigLoader:
         moved_models = self.__carry_over_models() # also on a start that writes a backup, often the first after an update
         if create_back_up_configini:
             self.__write_config_state(self.__definitions, True)
-        elif moved_models:
+        elif moved_models or has_retired_log_keys:
             self.__write_config_state(self.__definitions)
 
         self.__is_initial_load = False
@@ -153,7 +169,7 @@ class ConfigLoader:
                 continue
             if keyword.value == old_keyword:
                 keyword.value = new_keyword
-        logging.log(24, f"Your Actions list ({', '.join(old_ticked) or 'nothing ticked'}) was moved to the new Actions section of the Conversation page.")
+        log.info(f"Your Actions list ({', '.join(old_ticked) or 'nothing ticked'}) was moved to the new Actions section of the Conversation page.")
 
     def __carry_over_stt(self, old_stt: dict[str, str], config: configparser.ConfigParser) -> bool:
         """Someone updating: their External Whisper Service setup moves to Online Service or Custom Service (see carried_over_stt),
@@ -166,9 +182,9 @@ class ConfigLoader:
             try:
                 self.__definitions.get_config_value_definition(identifier).value = value
             except Exception as e:
-                logging.warning(f"Could not move the old speech-to-text setting to {identifier}: {e}")
+                log.warning(f"Could not move the old speech-to-text setting to {identifier}: {e}")
         if message:
-            logging.log(24, message)
+            log.info(message)
         return bool(changes)
 
     @property
@@ -204,14 +220,32 @@ class ConfigLoader:
         self.__log_next_system_prompt = False
         return should_log
     
+    def use_log_setup(self, log_setup: ILogSetup) -> None:
+        """The log started after the settings were loaded: from now on, changes to what it shows apply right away"""
+        self.__log_setup = log_setup
+
+    def log_loaded_settings(self) -> None:
+        """Every setting value read at startup, one line each, for the Full detail of the Startup topic.
+        The log only starts after the ConfigLoader is built, so Setup calls this once, right after that. Settings that could hold a secret are skipped"""
+        if self.__loaded_settings_logged or not log.isEnabledFor(logging.DEBUG):
+            return
+        self.__loaded_settings_logged = True
+        def write(config_value: ConfigValue) -> None:
+            if isinstance(config_value, ConfigValueGroup):
+                for child in config_value.value:
+                    write(child)
+                return
+            text = f"{config_value.identifier} {config_value.name}".lower()
+            if not any(word in text for word in SECRET_WORDS):
+                log.debug(f"{config_value.identifier} = {config_value.value}")
+        for group in self.__definitions.base_groups:
+            write(group)
+
     def update_config_loader_with_changed_config_values(self):
-        was_debug_mode = self.advanced_logs
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
-        if self.advanced_logs != was_debug_mode:
-            # The log handlers let through whatever the root logger lets through, so Debug Mode applies without a restart
-            logging.getLogger().setLevel(logging.DEBUG if self.advanced_logs else logging.INFO)
-            logging.info(f"Debug Mode {'enabled' if self.advanced_logs else 'disabled'}")
+        if self.__log_setup:
+            self.__log_setup.apply(self.log_choices)
 
     def get_ui_tab_order(self) -> list[str]:
         try:
@@ -247,7 +281,7 @@ class ConfigLoader:
                 self.__definitions.get_string_value("summary_llm_params").replace('\n', '')
             )
         except Exception as e:
-            logging.error(f"""Error in parsing Summary LLM parameter list: {e}
+            log.error(f"""Error in parsing Summary LLM parameter list: {e}
 Summary LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
             self.summary_llm_params = None
         self.__apply_memory_task_llm_settings_from_definitions()
@@ -271,7 +305,7 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
         try:
             llm_params: dict[str, Any] | None = json.loads(self.__definitions.get_string_value(f"{key}_llm_params").replace('\n', ''))
         except Exception as e:
-            logging.error(f"""Error in parsing {label} LLM parameter list: {e}
+            log.error(f"""Error in parsing {label} LLM parameter list: {e}
 {label} LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
             llm_params = None
         return use_summary_model, apply_profile, llm_api, llm, custom_token_count, llm_params
@@ -317,6 +351,11 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
         self.__has_any_value_changed = True
         if not self.__is_initial_load:
             self.__write_config_state(self.__definitions)
+        if self.__log_setup:
+            self.__log_setup.apply(self.__chosen_log_choices()) # Right away, not with the game's next request
+
+    def __chosen_log_choices(self) -> LogChoices:
+        return {topic: LogDetail.from_setting(self.__definitions.get_string_value(topic.setting_id), topic.default, topic.details) for topic in LogTopic}
     
     def __write_config_state(self, definitions: ConfigValues, create_back_up_configini: bool = False):
         try:
@@ -324,7 +363,7 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             writer.write(self.__file_name, definitions, create_back_up_configini)
         except Exception as e:
             utils.play_error_sound()
-            logging.error(24, f"Failed to write default 'config.ini'. Possible reason: MantellaSoftware does not have rights to write at its location. Exception: {repr(e)}")
+            log.error(f"Failed to write default 'config.ini'. Possible reason: MantellaSoftware does not have rights to write at its location. Exception: {repr(e)}")
 
     def chosen_voice_service_name(self, identifier: str = "tts_service") -> str:
         """The voice service picked on the settings page right now. tts_service_name only changes with the next request from the game,
@@ -343,7 +382,7 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
         name = self.__definitions.get_string_value(identifier, False)
         service = voice_services.find(name)
         if service is None:
-            logging.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")
+            log.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")
             service = voice_services.find(FALLBACK_SERVICE)
         return service.name
 
@@ -543,7 +582,7 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             try:
                 self.llm_params: dict[str, Any] | None = json.loads(self.__definitions.get_string_value("llm_params").replace('\n', ''))
             except Exception as e:
-                logging.error(f"""Error in parsing LLM parameter list: {e}
+                log.error(f"""Error in parsing LLM parameter list: {e}
 LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
                 self.llm_params = None
 
@@ -570,7 +609,7 @@ LLM parameter list must follow the Python dictionary format: https://www.w3schoo
             try:
                 self.multi_npc_llm_params: dict[str, Any] | None = json.loads(self.__definitions.get_string_value("multi_npc_llm_params").replace('\n', ''))
             except Exception as e:
-                logging.error(f"""Error in parsing Multi-NPC LLM parameter list: {e}
+                log.error(f"""Error in parsing Multi-NPC LLM parameter list: {e}
 Multi-NPC LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
                 self.multi_npc_llm_params = None
 
@@ -583,7 +622,7 @@ Multi-NPC LLM parameter list must follow the Python dictionary format: https://w
             try:
                 self.game_master_llm_params: dict[str, Any] | None = json.loads(self.__definitions.get_string_value("game_master_llm_params").replace('\n', ''))
             except Exception as e:
-                logging.error(f"""Error in parsing Game Master LLM parameter list: {e}
+                log.error(f"""Error in parsing Game Master LLM parameter list: {e}
 Game Master LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
                 self.game_master_llm_params = None
             self.game_master_use_decision_model = self.__definitions.get_bool_value("game_master_use_decision_model")
@@ -629,7 +668,7 @@ Game Master LLM parameter list must follow the Python dictionary format: https:/
             try:
                 self.summary_llm_params: dict[str, Any] | None = json.loads(self.__definitions.get_string_value("summary_llm_params").replace('\n', ''))
             except Exception as e:
-                logging.error(f"""Error in parsing Summary LLM parameter list: {e}
+                log.error(f"""Error in parsing Summary LLM parameter list: {e}
 Summary LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
                 self.summary_llm_params = None
             self.__apply_memory_task_llm_settings_from_definitions()
@@ -669,12 +708,12 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             try:
                 self.llm_pool_one_on_one = json.loads(self.__definitions.get_string_value("llm_pool_one_on_one"))
             except Exception as e:
-                logging.error(f"Error parsing one-on-one LLM pool: {e}")
+                log.error(f"Error parsing one-on-one LLM pool: {e}")
                 self.llm_pool_one_on_one = []
             try:
                 self.llm_pool_multi_npc = json.loads(self.__definitions.get_string_value("llm_pool_multi_npc"))
             except Exception as e:
-                logging.error(f"Error parsing multi-NPC LLM pool: {e}")
+                log.error(f"Error parsing multi-NPC LLM pool: {e}")
                 self.llm_pool_multi_npc = []
 
             self.sequential_llm_one_on_one_per_request_enabled = self.__definitions.get_bool_value("sequential_llm_one_on_one_per_request_enabled")
@@ -682,12 +721,12 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             try:
                 self.sequential_llm_pool_one_on_one = json.loads(self.__definitions.get_string_value("sequential_llm_pool_one_on_one"))
             except Exception as e:
-                logging.error(f"Error parsing sequential one-on-one LLM pool: {e}")
+                log.error(f"Error parsing sequential one-on-one LLM pool: {e}")
                 self.sequential_llm_pool_one_on_one = []
             try:
                 self.sequential_llm_pool_multi_npc = json.loads(self.__definitions.get_string_value("sequential_llm_pool_multi_npc"))
             except Exception as e:
-                logging.error(f"Error parsing sequential multi-NPC LLM pool: {e}")
+                log.error(f"Error parsing sequential multi-NPC LLM pool: {e}")
                 self.sequential_llm_pool_multi_npc = []
             
             self.max_count_events = self.__definitions.get_int_value("max_count_events")
@@ -703,9 +742,8 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
 
             #HTTP
             self.port = self.__definitions.get_int_value("port")
-            self.show_http_debug_messages: bool = self.__definitions.get_bool_value("show_http_debug_messages")
 
-            self.advanced_logs = self.__definitions.get_bool_value("advanced_logs")
+            self.log_choices: LogChoices = self.__chosen_log_choices()
 
             self.save_audio_data_to_character_folder = self.__definitions.get_bool_value("save_audio_data_to_character_folder")
 
@@ -760,14 +798,14 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             try:
                 self.vision_llm_params = json.loads(self.__definitions.get_string_value("vision_llm_params").replace('\n', ''))
             except Exception as e:
-                logging.error(f"""Error in parsing LLM parameter list: {e}
+                log.error(f"""Error in parsing LLM parameter list: {e}
 LLM parameter list must follow the Python dictionary format: https://www.w3schools.com/python/python_dictionaries.asp""")
                 self.vision_llm_params = None
             
             pass
         except Exception as e:
             utils.play_error_sound()
-            logging.error('Parameter missing/invalid in config.ini file!')
+            log.error('Parameter missing/invalid in config.ini file!')
             raise e
 
     def __overlay_prompt(self, prompt_type: str, fallback: str) -> str:

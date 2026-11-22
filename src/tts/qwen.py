@@ -6,7 +6,6 @@ as the request's instruction."""
 from __future__ import annotations
 
 import base64
-import logging
 
 import requests
 
@@ -16,6 +15,10 @@ from src.tts.online_service import (BadKey, CantSpeak, CloneFailed, CloneRefused
 from src.tts.voice_notices import add_notice
 from src.tts.voice_picker import VoicePick
 from src.tts.voice_tags import VoiceTags, rewrite_tags
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 NAME = "Qwen"
 KEY_FILE = "QWEN_SECRET_KEY.txt"
@@ -105,7 +108,7 @@ class Qwen(OnlineCloneService):
         """Without a Workspace ID every line goes to the backup service: said once, like a missing key, so Qwen never goes quiet unnoticed"""
         super().serve_in_game()
         if self._api_key and not _workspace_id:
-            logging.warning(self.why_not)
+            log.warning(self.why_not)
             add_notice("Qwen has no Workspace ID, so the backup voice service speaks. See Mantella's Text-to-Speech page.")
 
     def is_ready(self) -> bool:

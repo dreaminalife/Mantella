@@ -1,9 +1,12 @@
 import json
 import os
-import logging
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import sys
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 
 
 class ModelProfile:
@@ -140,22 +143,22 @@ class ModelProfileManager:
                         # New format
                         profiles_data = data["profiles"]
                         version = data.get("metadata", {}).get("version", "1.0")
-                        logging.info(f"Loading profile format version {version}")
+                        log.debug(f"Loading profile format version {version}")
                     else:
                         # Legacy format - convert on the fly
                         profiles_data = data
-                        logging.info("Loading legacy profile format")
+                        log.debug("Loading legacy profile format")
                     
                     self._profiles = {
                         profile_id: ModelProfile.from_dict(profile_data)
                         for profile_id, profile_data in profiles_data.items()
                     }
                     
-                logging.info(f"Loaded {len(self._profiles)} model profiles from {self.storage_path}")
+                log.debug(f"Loaded {len(self._profiles)} model profiles from {self.storage_path}")
             else:
-                logging.info(f"No existing model profiles found at {self.storage_path}, starting with empty profiles")
+                log.debug(f"No existing model profiles found at {self.storage_path}, starting with empty profiles")
         except Exception as e:
-            logging.error(f"Error loading model profiles from {self.storage_path}: {e}")
+            log.error(f"Error loading model profiles from {self.storage_path}: {e}")
             self._profiles = {}
     
     def _save_profiles(self) -> None:
@@ -181,9 +184,9 @@ class ModelProfileManager:
             with open(self.storage_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             
-            logging.info(f"Saved {len(self._profiles)} model profiles to {self.storage_path}")
+            log.debug(f"Saved {len(self._profiles)} model profiles to {self.storage_path}")
         except Exception as e:
-            logging.error(f"Error saving model profiles: {e}")
+            log.error(f"Error saving model profiles: {e}")
     
     def get_service_short_name(self, service: str) -> str:
         """
@@ -232,11 +235,11 @@ class ModelProfileManager:
             self._save_profiles()
             
             action = "Updated" if profile_id in self._profiles else "Created"
-            logging.info(f"{action} model profile: {profile_id}")
+            log.info(f"{action} model profile: {profile_id}")
             return True
             
         except Exception as e:
-            logging.error(f"Error creating/updating model profile: {e}")
+            log.error(f"Error creating/updating model profile: {e}")
             return False
 
     def save_profile_slots(
@@ -289,7 +292,7 @@ class ModelProfileManager:
                 self._save_profiles()
             return True
         except Exception as e:
-            logging.error(f"Error saving model profile slots: {e}")
+            log.error(f"Error saving model profile slots: {e}")
             return False
     
     def update_profile(self, profile_id: str, name: str, service: str, model: str, parameters: Dict[str, Any]) -> bool:
@@ -308,7 +311,7 @@ class ModelProfileManager:
         """
         try:
             if profile_id not in self._profiles:
-                logging.warning(f"Profile with ID {profile_id} not found")
+                log.warning(f"Profile with ID {profile_id} not found")
                 return False
             
             # Create new profile and check if the new ID conflicts with existing profiles
@@ -316,7 +319,7 @@ class ModelProfileManager:
             new_profile_id = new_profile.get_profile_id()
             
             if new_profile_id != profile_id and new_profile_id in self._profiles:
-                logging.warning(f"Cannot update profile: new ID {new_profile_id} already exists")
+                log.warning(f"Cannot update profile: new ID {new_profile_id} already exists")
                 return False
             
             # Remove old profile if ID changed
@@ -325,11 +328,11 @@ class ModelProfileManager:
             
             self._profiles[new_profile_id] = new_profile
             self._save_profiles()
-            logging.info(f"Updated model profile: {profile_id} -> {new_profile_id}")
+            log.info(f"Updated model profile: {profile_id} -> {new_profile_id}")
             return True
             
         except Exception as e:
-            logging.error(f"Error updating model profile: {e}")
+            log.error(f"Error updating model profile: {e}")
             return False
     
     def delete_profile(self, profile_id: str) -> bool:
@@ -344,16 +347,16 @@ class ModelProfileManager:
         """
         try:
             if profile_id not in self._profiles:
-                logging.warning(f"Profile with ID {profile_id} not found")
+                log.warning(f"Profile with ID {profile_id} not found")
                 return False
             
             del self._profiles[profile_id]
             self._save_profiles()
-            logging.info(f"Deleted model profile: {profile_id}")
+            log.info(f"Deleted model profile: {profile_id}")
             return True
             
         except Exception as e:
-            logging.error(f"Error deleting model profile: {e}")
+            log.error(f"Error deleting model profile: {e}")
             return False
     
     def get_profile(self, service: str, model: str) -> Optional[ModelProfile]:
@@ -409,7 +412,7 @@ class ModelProfileManager:
                     weights=[profile.weight for profile in enabled_profiles],
                     k=1
                 )[0]
-                logging.info(
+                log.info(
                     f"Randomly selected model profile {selected_profile.slot} "
                     f"for {service}/{model}"
                 )
@@ -438,13 +441,13 @@ class ModelProfileManager:
         try:
             profile = self.select_profile(service, model, random_enabled)
             if profile is not None:
-                logging.info(f"Applying profile {profile.slot} parameters for {service}/{model}")
+                log.debug(f"Applying profile {profile.slot} parameters for {service}/{model}")
                 return profile.parameters.copy()
             else:
-                logging.debug(f"No profile found for {service}/{model}, using fallback parameters")
+                log.debug(f"No profile found for {service}/{model}, using fallback parameters")
                 return fallback_params if fallback_params else {}
         except Exception as e:
-            logging.error(f"Error applying profile for {service}/{model}: {e}")
+            log.error(f"Error applying profile for {service}/{model}: {e}")
             return fallback_params if fallback_params else {}
     
     def has_profile(self, service: str, model: str) -> bool:
@@ -461,7 +464,7 @@ class ModelProfileManager:
         try:
             return bool(self.get_profiles_for_model(service, model))
         except Exception as e:
-            logging.error(f"Error checking if profile exists for {service}/{model}: {e}")
+            log.error(f"Error checking if profile exists for {service}/{model}: {e}")
             return False
 
     def get_all_profiles(self) -> Dict[str, ModelProfile]:

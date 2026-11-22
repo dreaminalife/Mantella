@@ -1,3 +1,4 @@
+import logging
 from typing import AsyncGenerator
 from src.llm.llm_model_list import LLMModelList
 from src.llm.ai_client import AIClient
@@ -33,7 +34,7 @@ class LLMTestClient(AIClient):
             for word in reply:
                 yield word + " "
 
-    def request_call(self, messages: Message | message_thread) -> str | None:
+    def request_call(self, messages: Message | message_thread, topic_log: logging.Logger | None = None) -> str | None:
         """A standard sync request call to the LLM. 
         This method generates a new client, calls 'client.chat.completions.create', returns the result and closes when finished
 

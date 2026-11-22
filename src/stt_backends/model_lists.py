@@ -1,12 +1,15 @@
 """The Model dropdown of an online choice: the speech models the service lists, or the ready-made suggestions when it can't be asked"""
 from __future__ import annotations
 
-import logging
 
 import requests
 
 from src.stt_backends.keys import key_for
 from src.stt_backends.presets import DEEPGRAM_MODEL_LIST, OPENAI_MODEL_LIST, OPENROUTER_MODEL_LIST, STTPreset
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 LIST_TIMEOUT_SECONDS = 5
 
@@ -40,6 +43,6 @@ def speech_models(preset: STTPreset, llm_api: str = "") -> list[str]:
     try:
         listed = _listed(preset, key)
     except Exception as e:
-        logging.warning(f"Could not get {preset.name}'s list of models ({type(e).__name__}). The Model list shows the recommended ones.")
+        log.warning(f"Could not get {preset.name}'s list of models ({type(e).__name__}). The Model list shows the recommended ones.")
         return suggestions
     return suggestions + sorted({m for m in listed if m and m not in suggestions})

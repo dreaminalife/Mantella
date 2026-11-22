@@ -1,5 +1,8 @@
-import logging
 from src.llm.sentence_content import SentenceContent
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
 
 
 class drop_last_sentences_buffer:
@@ -36,6 +39,6 @@ class drop_last_sentences_buffer:
         if self.__held:
             for sentence in self.__held:
                 speaker_name = sentence.speaker.name if sentence.speaker else "NPC"
-                logging.log(28, f"Dropped last sentence from {speaker_name} (not spoken, not saved to history): {sentence.text.strip()}")
+                log.info(f"Dropped last sentence from {speaker_name} (not spoken, not saved to history): {sentence.text.strip()}")
         self.__held.clear()
         return to_emit

@@ -1,4 +1,3 @@
-import logging
 import re
 from typing import Any, Hashable, TYPE_CHECKING
 import regex
@@ -25,6 +24,8 @@ from src.character_manager import Character
 import src.utils as utils
 from src.http.communication_constants import communication_constants as comm_consts
 from src.stt import Transcriber
+from src.stt_backends import names as stt_names
+from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.game_definitions import GameEnum
 from src.games.fallout4 import Fallout4
 from src.games.skyrim import Skyrim
@@ -33,6 +34,20 @@ from src.quest_tags.tracker import QuestTagTracker
 from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver, HeardLinesReceiver
 from src.heard_lines.heard_lines_store import HeardLinesStore, JsonHeardLinesStore
 from src.heard_lines.heard_lines_text import HeardLinesText, PlainHeardLinesText
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger, spoken_line
+
+log = get_topic_logger(LogTopic.CONVERSATION)
+game_master_log = get_topic_logger(LogTopic.GAME_MASTER)
+models_and_profiles_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
+memories_log = get_topic_logger(LogTopic.MEMORIES)
+vanilla_dialogues_log = get_topic_logger(LogTopic.VANILLA_DIALOGUES)
+ingame_events_log = get_topic_logger(LogTopic.INGAME_EVENTS)
+quest_tags_log = get_topic_logger(LogTopic.QUEST_TAGS)
+characters_log = get_topic_logger(LogTopic.CHARACTERS)
+ai_replies_log = get_topic_logger(LogTopic.AI_REPLIES)
+microphone_log = get_topic_logger(LogTopic.MICROPHONE)
+startup_log = get_topic_logger(LogTopic.STARTUP)
 
 if TYPE_CHECKING:
     from src.conversation.bystanders import EventPerson
@@ -84,16 +99,16 @@ class GameStateManager:
                     # Log profile application for multi-NPC
                     has_profile = profile_manager.has_profile(config.multi_npc_llm_api, config.multi_npc_llm)
                     if has_profile:
-                        logging.info(f"Applied profile for multi-NPC conversations: {config.multi_npc_llm_api}/{config.multi_npc_llm}")
-                        logging.info(f"Multi-NPC Profile Parameters: {multi_npc_llm_params}")
+                        models_and_profiles_log.info(f"Applied profile for multi-NPC conversations: {config.multi_npc_llm_api}/{config.multi_npc_llm}")
+                        models_and_profiles_log.debug(f"Multi-NPC Profile Parameters: {multi_npc_llm_params}")
                     else:
-                        logging.info(f"No profile found for multi-NPC {config.multi_npc_llm_api}/{config.multi_npc_llm}, using manual parameters: {multi_npc_llm_params}")
+                        models_and_profiles_log.info(f"No profile found for multi-NPC {config.multi_npc_llm_api}/{config.multi_npc_llm}, using manual parameters: {multi_npc_llm_params}")
                         
                 except Exception as e:
-                    logging.error(f"Error applying profile for multi-NPC conversations: {e}")
+                    models_and_profiles_log.error(f"Error applying profile for multi-NPC conversations: {e}")
                     multi_npc_llm_params = config.multi_npc_llm_params
             else:
-                logging.info(f"Multi-NPC Parameters (manual): {multi_npc_llm_params}")
+                models_and_profiles_log.debug(f"Multi-NPC Parameters (manual): {multi_npc_llm_params}")
             
             multi_npc_client = ClientBase(
                 config.multi_npc_llm_api,
@@ -122,13 +137,13 @@ class GameStateManager:
                 # Log profile application for multi-NPC (same model as main)
                 has_profile = profile_manager.has_profile(config.llm_api, config.llm)
                 if has_profile:
-                    logging.info(f"Applied profile for multi-NPC conversations (same model as main): {config.llm_api}/{config.llm}")
-                    logging.info(f"Multi-NPC Profile Parameters (same model): {multi_npc_llm_params}")
+                    models_and_profiles_log.info(f"Applied profile for multi-NPC conversations (same model as main): {config.llm_api}/{config.llm}")
+                    models_and_profiles_log.debug(f"Multi-NPC Profile Parameters (same model): {multi_npc_llm_params}")
                 else:
-                    logging.info(f"No profile found for multi-NPC {config.llm_api}/{config.llm}, using manual parameters: {multi_npc_llm_params}")
+                    models_and_profiles_log.info(f"No profile found for multi-NPC {config.llm_api}/{config.llm}, using manual parameters: {multi_npc_llm_params}")
                     
             except Exception as e:
-                logging.error(f"Error applying profile for multi-NPC conversations: {e}")
+                models_and_profiles_log.error(f"Error applying profile for multi-NPC conversations: {e}")
                 multi_npc_llm_params = config.llm_params
             
             multi_npc_client = ClientBase(
@@ -197,7 +212,7 @@ class GameStateManager:
         try:
             client._sonnet_cache_connector = SonnetCacheConnector(True)
         except Exception as e:
-            logging.debug(f"Failed to attach Sonnet cache connector to {client_context}: {e}")
+            ai_replies_log.warning(f"Failed to attach Sonnet cache connector to {client_context}: {e}")
 
     def _create_rememberer(self, game: Gameable, config: ConfigLoader, client: LLMClient, summary_client, thoughts_client=None, reflection_client=None) -> Summaries:
         inner_monologue = InnerMonologue(game, config, client, self.__language_info['language'], thoughts_client)
@@ -232,7 +247,7 @@ class GameStateManager:
         try:
             self.__heard_lines_receiver.receive(hand_over, self.__heard_lines_world_id, conversation)
         except Exception as e:
-            logging.error(f"Vanilla Dialogues: could not handle the heard lines: {e}")
+            vanilla_dialogues_log.error(f"Vanilla Dialogues: could not handle the heard lines: {e}")
 
     def stop_voice_services(self) -> None:
         """Before Mantella starts over with new settings: stops the voice programs it started"""
@@ -271,7 +286,7 @@ class GameStateManager:
             # Update LLM client with hot-swapping
             llm_client_success = self.__client.hot_swap_settings(config, secret_key_file, image_secret_key_file)
             if not llm_client_success:
-                logging.warning("LLM client hot-swap failed, using new client")
+                log.warning("LLM client hot-swap failed, using new client")
                 self.__client = llm_client
             
             # Update basic components
@@ -313,16 +328,16 @@ class GameStateManager:
                         # Log profile application for multi-NPC (hot-swap)
                         has_profile = profile_manager.has_profile(config.multi_npc_llm_api, config.multi_npc_llm)
                         if has_profile:
-                            logging.info(f"Hot-swap: Applied profile for multi-NPC conversations: {config.multi_npc_llm_api}/{config.multi_npc_llm}")
-                            logging.info(f"Hot-swap Multi-NPC Profile Parameters: {multi_npc_llm_params}")
+                            models_and_profiles_log.info(f"Hot-swap: Applied profile for multi-NPC conversations: {config.multi_npc_llm_api}/{config.multi_npc_llm}")
+                            models_and_profiles_log.debug(f"Hot-swap Multi-NPC Profile Parameters: {multi_npc_llm_params}")
                         else:
-                            logging.info(f"Hot-swap: No profile found for multi-NPC {config.multi_npc_llm_api}/{config.multi_npc_llm}, using manual parameters: {multi_npc_llm_params}")
+                            models_and_profiles_log.info(f"Hot-swap: No profile found for multi-NPC {config.multi_npc_llm_api}/{config.multi_npc_llm}, using manual parameters: {multi_npc_llm_params}")
                             
                     except Exception as e:
-                        logging.error(f"Error applying profile for multi-NPC conversations: {e}")
+                        models_and_profiles_log.error(f"Error applying profile for multi-NPC conversations: {e}")
                         multi_npc_llm_params = config.multi_npc_llm_params
                 else:
-                    logging.info(f"Hot-swap Multi-NPC Parameters (manual): {multi_npc_llm_params}")
+                    models_and_profiles_log.debug(f"Hot-swap Multi-NPC Parameters (manual): {multi_npc_llm_params}")
                 
                 multi_npc_client = ClientBase(
                     config.multi_npc_llm_api,
@@ -351,13 +366,13 @@ class GameStateManager:
                     # Log profile application for multi-NPC (same model as main - hot-swap)
                     has_profile = profile_manager.has_profile(config.llm_api, config.llm)
                     if has_profile:
-                        logging.info(f"Hot-swap: Applied profile for multi-NPC conversations (same model as main): {config.llm_api}/{config.llm}")
-                        logging.info(f"Hot-swap Multi-NPC Profile Parameters (same model): {multi_npc_llm_params}")
+                        models_and_profiles_log.info(f"Hot-swap: Applied profile for multi-NPC conversations (same model as main): {config.llm_api}/{config.llm}")
+                        models_and_profiles_log.debug(f"Hot-swap Multi-NPC Profile Parameters (same model): {multi_npc_llm_params}")
                     else:
-                        logging.info(f"Hot-swap: No profile found for multi-NPC {config.llm_api}/{config.llm}, using manual parameters: {multi_npc_llm_params}")
+                        models_and_profiles_log.info(f"Hot-swap: No profile found for multi-NPC {config.llm_api}/{config.llm}, using manual parameters: {multi_npc_llm_params}")
                         
                 except Exception as e:
-                    logging.error(f"Error applying profile for multi-NPC conversations: {e}")
+                    models_and_profiles_log.error(f"Error applying profile for multi-NPC conversations: {e}")
                     multi_npc_llm_params = config.llm_params
                 
                 multi_npc_client = ClientBase(
@@ -410,9 +425,9 @@ class GameStateManager:
                         self.__stt = Transcriber(config, self.__stt_api_file, self.__api_file)
                         # Do not auto-start listening; the conversation loop will restart it as needed
                         if was_listening:
-                            logging.info("Rebuilt STT transcriber due to hot-swap; listening will restart on next tick.")
+                            microphone_log.info("Rebuilt STT transcriber due to hot-swap; listening will restart on next tick.")
             except Exception as e:
-                logging.error(f"Failed to hot-swap STT settings: {e}")
+                log.error(f"Failed to hot-swap STT settings: {e}")
             
             # If there's an active conversation, update it with new settings
             if self.__talk:
@@ -453,7 +468,7 @@ class GameStateManager:
                         self._attach_sonnet_cache(conversation_client, config, "random one-on-one hot-swap client")
                         
                         profile_status = "with profile" if llm_selection.from_profile else "without profile"
-                        logging.info(f"Hot-swap: Using randomly selected LLM for one-on-one conversation: {llm_selection.service}/{llm_selection.model} ({profile_status})")
+                        models_and_profiles_log.info(f"Hot-swap: Using randomly selected LLM for one-on-one conversation: {llm_selection.service}/{llm_selection.model} ({profile_status})")
                     
                     # Random selection for multi-NPC conversations
                     if config.random_llm_multi_npc_enabled:
@@ -483,10 +498,10 @@ class GameStateManager:
                         chat_manager.update_multi_npc_client(multi_npc_conversation_client)
                         
                         profile_status = "with profile" if multi_npc_selection.from_profile else "without profile"
-                        logging.info(f"Hot-swap: Using randomly selected LLM for multi-NPC conversation: {multi_npc_selection.service}/{multi_npc_selection.model} ({profile_status})")
+                        models_and_profiles_log.info(f"Hot-swap: Using randomly selected LLM for multi-NPC conversation: {multi_npc_selection.service}/{multi_npc_selection.model} ({profile_status})")
                         
                 except Exception as e:
-                    logging.error(f"Error in random LLM selection during hot-swap, using main client: {e}")
+                    models_and_profiles_log.error(f"Error in random LLM selection during hot-swap, using main client: {e}")
                     conversation_client = self.__client
                 
                 # Update the chat manager with the conversation client
@@ -503,11 +518,11 @@ class GameStateManager:
                 if not success:
                     return False
             
-            logging.info("GameStateManager hot-swap completed successfully")
+            log.debug("GameStateManager hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"GameStateManager hot-swap failed: {e}")
+            log.error(f"GameStateManager hot-swap failed: {e}")
             return False
 
     ###### react to calls from the game #######
@@ -523,7 +538,7 @@ class GameStateManager:
         if ends_before is not None and self.__ends_requested > ends_before:
             # The game ended this conversation while the request waited for the ones before. It was told so already, and the end
             # was for this conversation, so it is not started. The last conversation's end is handled by its own end request
-            logging.log(24, "The conversation was ended before it started")
+            log.info("The conversation was ended before it started")
             return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
         self.__ends_handled = max(self.__ends_handled, self.__ends_requested if ends_before is None else ends_before)
         # The game ended the last conversation and its end has not been handled yet. Or the game and server are out of sync
@@ -549,9 +564,9 @@ class GameStateManager:
         if event_id:
             if pending_event and pending_event.id == event_id and self.__ensure_game_master_client():
                 context_for_conversation.npc_event = pending_event
-                logging.log(26, f"NPC Event {event_id} starts: {pending_event.text}")
+                game_master_log.info(f"NPC Event {event_id} starts: {pending_event.text}")
             else:
-                logging.warning(f"NPC Event {event_id} could not be started. Without the Game Master model the start fails, otherwise the NPCs have a radiant conversation instead.")
+                game_master_log.warning(f"NPC Event {event_id} could not be started. Without the Game Master model the start fails, otherwise the NPCs have a radiant conversation instead.")
         
         # Determine LLM client to use based on random selection settings
         conversation_llm_client = self.__client  # Default to main client
@@ -590,7 +605,7 @@ class GameStateManager:
                 self._attach_sonnet_cache(conversation_llm_client, self.__config, "random one-on-one client")
                 
                 profile_status = "with profile" if llm_selection.from_profile else "without profile"
-                logging.info(f"Using randomly selected LLM for one-on-one conversation: {llm_selection.service}/{llm_selection.model} ({profile_status})")
+                models_and_profiles_log.info(f"Using randomly selected LLM for one-on-one conversation: {llm_selection.service}/{llm_selection.model} ({profile_status})")
             
             # Random selection for multi-NPC conversations
             if self.__config.random_llm_multi_npc_enabled:
@@ -621,10 +636,10 @@ class GameStateManager:
                 self.__chat_manager.update_multi_npc_client(multi_npc_conversation_client)
                 
                 profile_status = "with profile" if multi_npc_selection.from_profile else "without profile"
-                logging.info(f"Using randomly selected LLM for multi-NPC conversation: {multi_npc_selection.service}/{multi_npc_selection.model} ({profile_status})")
+                models_and_profiles_log.info(f"Using randomly selected LLM for multi-NPC conversation: {multi_npc_selection.service}/{multi_npc_selection.model} ({profile_status})")
                     
         except Exception as e:
-            logging.error(f"Error in random LLM selection, using default clients: {e}")
+            models_and_profiles_log.error(f"Error in random LLM selection, using default clients: {e}")
             conversation_llm_client = self.__client
         
         # Update the chat manager to use the conversation-specific client
@@ -710,7 +725,7 @@ class GameStateManager:
             reply[comm_consts.KEY_NPCEVENT_ADDACTOR_REFID] = event.pending_add.refid
         elif event and replyType == comm_consts.KEY_REPLYTYPE_ENDCONVERSATION:
             # The scene is over. The game only cleans up on its side, so the conversation ends here and its summaries are saved
-            logging.log(26, "NPC Event ended")
+            game_master_log.info("NPC Event ended")
             if not self.__talk.has_already_ended:
                 self.__talk.end()
             self.__talk = None
@@ -732,6 +747,7 @@ class GameStateManager:
             return reply
         if sentence_to_play:
             if not sentence_to_play.error_message:
+                spoken_line(log, sentence_to_play.speaker.name, sentence_to_play.text)
                 self.__game.prepare_sentence_for_game(sentence_to_play, self.__talk.context, self.__config, topicInfoID, self.__first_line)                        
                 reply[comm_consts.KEY_REPLYTYPE_NPCTALK] = self.sentence_to_json(sentence_to_play, topicInfoID)
                 self.__first_line = False
@@ -781,10 +797,10 @@ class GameStateManager:
             self.__update_context(input_json)
             kind = str(input_json.get(comm_consts.KEY_EVENT_KIND, "")).lower() # Papyrus can change a string's case: "random" arrives as "Random"
             if not multi_npc_game_master.is_enabled(self.__config):
-                logging.warning("Events need Game Master Mode")
+                game_master_log.warning("Events need Game Master Mode")
                 return nothing
             if not self.__ensure_game_master_client():
-                logging.error("Events need the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
+                game_master_log.error("Events need the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
                 return nothing
             context = talk.context
             player = context.npcs_in_conversation.get_player_character()
@@ -827,13 +843,13 @@ class GameStateManager:
                                                                contains_player=True, always_multi_npc=True, hide_player=hides_player)
             history_lines = talk.event_history_lines() if bool(getattr(self.__config, f"{kind}_event_send_history", False)) else []
             hint = str(input_json.get(comm_consts.KEY_EVENT_HINT, "")).strip()
-            logging.log(26, f"Event ({kind}) about: {', '.join(names) or 'nobody'}. With bios and memories: {', '.join(c.name for c in described) or 'nobody'}."
+            game_master_log.info(f"Event ({kind}) about: {', '.join(names) or 'nobody'}. With bios and memories: {', '.join(c.name for c in described) or 'nobody'}."
                             + (f" Hint: {hint}" if hint else ""))
             text = generate_conversation_event(self.__config, self.__get_npc_event_client(), kind, names, player_name, player_description,
                                                context.location, context.ingame_time, context.weather, bios_and_summaries, hint, history_lines, is_cancelled,
                                                hides_player=hides_player)
             if is_cancelled():
-                logging.log(26, "Event cancelled: the conversation ended")
+                game_master_log.info("Event cancelled: the conversation ended")
                 return nothing
             if not text:
                 return nothing
@@ -843,7 +859,7 @@ class GameStateManager:
             talk.add_event(text, kind, self.__shout_settings(input_json), nearby, nearby_characters)
             return {**nothing, comm_consts.KEY_EVENT_RESULT: True, comm_consts.KEY_EVENT_TEXT: text}
         except Exception as e:
-            logging.error(f"Event failed: {e}")
+            game_master_log.error(f"Event failed: {e}")
             return nothing
 
     def __handle_player_input(self, input_json: dict[str, Any]) -> dict[str, Any]:
@@ -893,7 +909,7 @@ class GameStateManager:
     def quest_check_list(self) -> dict[str, Any]:
         """The quest tag checks the game should answer. Requested once when a save loads"""
         payload = self.__quest_tags.get_check_list_payload(self.__game)
-        logging.debug(f"Quest tags: sent {len(payload[comm_consts.KEY_QUESTCHECKS_FUNCTIONS])} checks (version {payload[comm_consts.KEY_QUESTCHECKS_VERSION]})")
+        quest_tags_log.debug(f"Quest tags: sent {len(payload[comm_consts.KEY_QUESTCHECKS_FUNCTIONS])} checks (version {payload[comm_consts.KEY_QUESTCHECKS_VERSION]})")
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_QUESTCHECKLIST, comm_consts.KEY_QUESTCHECKS_LIST: payload}
 
     def interrupt_conversation(self, input_json: dict[str, Any] | None = None) -> bool:
@@ -930,6 +946,38 @@ class GameStateManager:
         """How often the game has ended a conversation so far. A start request takes this when it arrives (see start_conversation)"""
         return self.__ends_requested
 
+    @property
+    def player_speaks_first(self) -> bool:
+        """A conversation the player starts gives them the first turn: Automatic Greeting is off. The game then lets the player type or
+        speak while it is still gathering the details for the start"""
+        return not self.__automatic_greeting
+
+    def listen_before_start(self, input_json: dict[str, Any], ends_before: int | None = None) -> dict[str, Any]:
+        """The player's turn came before the conversation started. The microphone starts listening now, so nothing the player says is
+        missed. The player's input request after the start picks up what they said
+
+        Args:
+            ends_before (int | None): ends_requested when the request arrived. A conversation ended since then doesn't listen
+        """
+        reply = {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_LISTENINGBEFORESTART}
+        if ends_before is not None and self.__ends_requested > ends_before:
+            return reply
+        self.process_stt_setup(input_json)
+        if not self.__mic_input or not self.__stt:
+            return reply
+        names = stt_names.build(
+            getattr(self.__config, "stt_names_prompt", PromptDefinitions.STT_NAMES_PROMPT),
+            [name for name in input_json.get(comm_consts.KEY_LISTEN_NAMES, []) if name],
+            [],
+            "",
+            input_json.get(comm_consts.KEY_LISTEN_PLAYERNAME, ""),
+            first_names=bool(getattr(self.__config, "stt_first_names", False)),
+        )
+        self.__stt.stop_listening() # A fresh recording: nothing from before this conversation
+        self.__stt.start_listening(names.hint, names.names)
+        microphone_log.info("Listening before the conversation has started")
+        return reply
+
     def stop_conversation_now(self):
         """The game ended the conversation. Called while another request may still be running: whatever it waits for stops,
         so it is done right away. The conversation itself ends after it, in end_requested_conversation"""
@@ -961,10 +1009,12 @@ class GameStateManager:
         if(self.__talk):
             self.__talk.end()
             self.__talk = None
+        elif self.__stt:
+            self.__stt.stop_listening() # Listening since before a start that was ended before it started (listen_before_start)
 
-        logging.log(24, '\nConversations not starting when you select an NPC? See here:')
-        logging.log(25, 'https://art-from-the-machine.github.io/Mantella/pages/issues_qna')
-        logging.log(24, '\nWaiting for player to select an NPC...')
+        startup_log.info('Conversations not starting when you select an NPC? See here:')
+        startup_log.info('https://art-from-the-machine.github.io/Mantella/pages/issues_qna')
+        startup_log.info('Waiting for player to select an NPC...')
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_ENDCONVERSATION}
 
     def npc_initiative_check(self, input_json: dict[str, Any]) -> dict[str, Any]:
@@ -1000,7 +1050,7 @@ class GameStateManager:
             context_json: dict[str, Any] = input_json.get(comm_consts.KEY_CONTEXT, {})
             location = str(context_json.get(comm_consts.KEY_CONTEXT_LOCATION, "Skyrim"))
             hour = int(context_json.get(comm_consts.KEY_CONTEXT_TIME, 12))
-            logging.log(26, f"NPC Initiative check in {location}: {', '.join(c.name for c in candidates) or 'no candidates'}")
+            game_master_log.info(f"NPC Initiative check in {location}: {', '.join(c.name for c in candidates) or 'no candidates'}")
             if not is_cancelled():
                 chosen = choose_initiator(self.__config, self.__get_npc_initiative_client(), candidates, player_name, location, hour,
                                           bios_and_summaries, is_cancelled,
@@ -1008,10 +1058,10 @@ class GameStateManager:
                 if chosen:
                     chosen_refid = chosen.refid
             if is_cancelled():
-                logging.log(26, "NPC Initiative check cancelled: a conversation was started")
+                game_master_log.info("NPC Initiative check cancelled: a conversation was started")
                 chosen_refid = 0
         except Exception as e:
-            logging.error(f"NPC Initiative check failed: {e}")
+            game_master_log.error(f"NPC Initiative check failed: {e}")
         return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCINITIATIVE, comm_consts.KEY_NPCINITIATIVE_CHOSEN_REFID: chosen_refid}
 
     def __get_npc_initiative_client(self) -> "ClientBase | None":
@@ -1020,7 +1070,7 @@ class GameStateManager:
             try:
                 self.__npc_initiative_client = GameStateManager.__create_game_master_settings_client(self.__config, self.__api_file, "NPC Initiative: ")
             except Exception as e:
-                logging.error(f"Could not create the NPC Initiative client from the Game Master settings: {e}")
+                game_master_log.error(f"Could not create the NPC Initiative client from the Game Master settings: {e}")
         return self.__npc_initiative_client
 
     def __ensure_game_master_client(self) -> bool:
@@ -1058,7 +1108,7 @@ class GameStateManager:
         if bool(input_json[comm_consts.KEY_SHOUT_ENABLED]):
             if not context.shout:
                 if not self.__ensure_game_master_client():
-                    logging.error("Shout needs the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
+                    game_master_log.error("Shout needs the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
                     return False
                 self.__talk.start_shout(settings)
         elif context.shout:
@@ -1075,7 +1125,7 @@ class GameStateManager:
                 shout_state.characters[int(actor_json[comm_consts.KEY_ACTOR_REFID])] = character
                 loaded_names.append(character.name)
         if loaded_names:
-            logging.log(26, f"Shout: new nearby, the game sent the bios and memories of {', '.join(loaded_names)}. Kept until Shout is switched off, so they are not sent again")
+            game_master_log.info(f"Shout: new nearby, the game sent the bios and memories of {', '.join(loaded_names)}. Kept until Shout is switched off, so they are not sent again")
         # The game starts both lists with a 0 and an empty name, so they are never empty and "nobody nearby" still arrives
         shout_state.update_nearby(self.__label_nearby(input_json.get(comm_consts.KEY_SHOUT_NEARBY_REFIDS, []), input_json.get(comm_consts.KEY_SHOUT_NEARBY_NAMES, [])))
         failed_refids = input_json.get(comm_consts.KEY_SHOUT_ADDFAILED_REFIDS, [])
@@ -1116,7 +1166,7 @@ class GameStateManager:
             from src.conversation.npc_event import EventPerson, NpcEvent, generate_event
             if not (self.__chat_manager.game_master_client or self.__get_npc_initiative_client()):
                 # The scene runs in Shout, which needs a Game Master, so it could not start. No event is generated for nothing
-                logging.error("NPC Events need the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
+                game_master_log.error("NPC Events need the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
                 return no_event
             world_id = self.__get_world_id(input_json)
             player: EventPerson | None = None
@@ -1141,17 +1191,17 @@ class GameStateManager:
             location = str(context_json.get(comm_consts.KEY_CONTEXT_LOCATION, "Skyrim"))
             hour = int(context_json.get(comm_consts.KEY_CONTEXT_TIME, 12))
             weather = self.__game.get_weather_description(context_json[comm_consts.KEY_CONTEXT_WEATHER]) if comm_consts.KEY_CONTEXT_WEATHER in context_json else ""
-            logging.log(26, f"NPC Event check in {location}: {', '.join(p.name for p in people) or 'no candidates'}. "
+            game_master_log.info(f"NPC Event check in {location}: {', '.join(p.name for p in people) or 'no candidates'}. "
                             f"With bios and memories: {', '.join(c.name for c in described.values()) or 'nobody'}")
             result = None
             hint = str(input_json.get(comm_consts.KEY_EVENT_HINT, "")).strip()
             if hint:
-                logging.log(26, f"NPC Event hint: {hint}")
+                game_master_log.info(f"NPC Event hint: {hint}")
             if not is_cancelled():
                 result = generate_event(self.__config, self.__get_npc_event_client(), people, player.name if player else "", location, hour,
                                         weather, bios_and_summaries, is_cancelled, hint)
             if is_cancelled():
-                logging.log(26, "NPC Event check cancelled: a conversation was started")
+                game_master_log.info("NPC Event check cancelled: a conversation was started")
                 return no_event
             if not result:
                 return no_event
@@ -1161,7 +1211,7 @@ class GameStateManager:
             return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCEVENT, comm_consts.KEY_NPCEVENT_ID: self.__npc_event_count,
                     comm_consts.KEY_NPCEVENT_PARTICIPANT_REFIDS: [person.refid for person in participants], comm_consts.KEY_EVENT_TEXT: text}
         except Exception as e:
-            logging.error(f"NPC Event check failed: {e}")
+            game_master_log.error(f"NPC Event check failed: {e}")
             return no_event
 
     def __get_npc_event_client(self) -> "AIClient | None":
@@ -1174,14 +1224,14 @@ class GameStateManager:
                 from src.model_profile_manager import ModelProfileManager
                 profile = ModelProfileManager().select_profile(config.npc_event_llm_api, config.npc_event_llm, random_enabled=True)
             except Exception as e:
-                logging.error(f"Error applying profile for NPC Event Generator: {e}")
+                game_master_log.error(f"Error applying profile for NPC Event Generator: {e}")
         slot = profile.slot if profile else 0
         if slot not in self.__npc_event_clients:
             try:
                 from src.llm.client_base import ClientBase
                 from src.llm.key_file_resolver import key_file_resolver
                 params = profile.parameters.copy() if profile else config.npc_event_llm_params
-                logging.info(f"NPC Events: NPC Event Generator Parameters ({f'profile {slot}' if profile else 'manual'}): {params}")
+                models_and_profiles_log.debug(f"NPC Events: NPC Event Generator Parameters ({f'profile {slot}' if profile else 'manual'}): {params}")
                 self.__npc_event_clients[slot] = ClientBase(
                     config.npc_event_llm_api,
                     config.npc_event_llm,
@@ -1191,7 +1241,7 @@ class GameStateManager:
                     response_timeout=config.llm_response_timeout,
                 )
             except Exception as e:
-                logging.error(f"Could not create the NPC Event generator client: {e}")
+                game_master_log.error(f"Could not create the NPC Event generator client: {e}")
         return self.__npc_event_clients.get(slot)
 
     def __get_world_id(self, input_json: dict[str, Any]) -> str:
@@ -1226,16 +1276,16 @@ class GameStateManager:
 
                     has_profile = profile_manager.has_profile(config.summary_llm_api, config.summary_llm)
                     if has_profile:
-                        logging.info(f"{log_prefix}Applied profile for summaries: {config.summary_llm_api}/{config.summary_llm}")
-                        logging.info(f"{log_prefix}Summary Profile Parameters: {summary_llm_params}")
+                        models_and_profiles_log.info(f"{log_prefix}Applied profile for summaries: {config.summary_llm_api}/{config.summary_llm}")
+                        models_and_profiles_log.debug(f"{log_prefix}Summary Profile Parameters: {summary_llm_params}")
                     else:
-                        logging.info(f"{log_prefix}No profile found for summaries {config.summary_llm_api}/{config.summary_llm}, using manual parameters: {summary_llm_params}")
+                        models_and_profiles_log.info(f"{log_prefix}No profile found for summaries {config.summary_llm_api}/{config.summary_llm}, using manual parameters: {summary_llm_params}")
 
                 except Exception as e:
-                    logging.error(f"Error applying profile for summaries: {e}")
+                    models_and_profiles_log.error(f"Error applying profile for summaries: {e}")
                     summary_llm_params = config.summary_llm_params
             else:
-                logging.info(f"{log_prefix}Summary Parameters (manual): {summary_llm_params}")
+                models_and_profiles_log.debug(f"{log_prefix}Summary Parameters (manual): {summary_llm_params}")
 
             return ClientBase(
                 config.summary_llm_api,
@@ -1261,13 +1311,13 @@ class GameStateManager:
 
                 has_profile = profile_manager.has_profile(config.llm_api, config.llm)
                 if has_profile:
-                    logging.info(f"{log_prefix}Applied profile for summaries (same model as main): {config.llm_api}/{config.llm}")
-                    logging.info(f"{log_prefix}Summary Profile Parameters (same model): {summary_llm_params}")
+                    models_and_profiles_log.info(f"{log_prefix}Applied profile for summaries (same model as main): {config.llm_api}/{config.llm}")
+                    models_and_profiles_log.debug(f"{log_prefix}Summary Profile Parameters (same model): {summary_llm_params}")
                 else:
-                    logging.info(f"{log_prefix}No profile found for summaries {config.llm_api}/{config.llm}, using manual parameters: {summary_llm_params}")
+                    models_and_profiles_log.info(f"{log_prefix}No profile found for summaries {config.llm_api}/{config.llm}, using manual parameters: {summary_llm_params}")
 
             except Exception as e:
-                logging.error(f"Error applying profile for summaries: {e}")
+                models_and_profiles_log.error(f"Error applying profile for summaries: {e}")
                 summary_llm_params = config.llm_params
 
             return ClientBase(
@@ -1307,7 +1357,7 @@ class GameStateManager:
         try:
             return GameStateManager.__create_game_master_settings_client(config, api_file, log_prefix)
         except Exception as e:
-            logging.error(f"{log_prefix}Could not create the Game Master LLM client. Multi-NPC conversations will run without the Game Master: {e}")
+            game_master_log.error(f"{log_prefix}Could not create the Game Master LLM client. Multi-NPC conversations will run without the Game Master: {e}")
             return None
 
     @staticmethod
@@ -1317,7 +1367,7 @@ class GameStateManager:
             from src.llm.client_base import ClientBase
             from src.llm.key_file_resolver import key_file_resolver
             service = config.game_master_decision_service
-            logging.info(f"{log_prefix}Game Master: using decision model {config.game_master_decision_model} on {service}")
+            game_master_log.info(f"{log_prefix}Game Master: using decision model {config.game_master_decision_model} on {service}")
             # Loads the context sizes of the decision models, used as the client's token limit
             ClientBase.get_decision_model_list(service, api_file)
             # Decision models are called through the service's Decisions API, so no LLM parameters or profiles apply
@@ -1347,15 +1397,15 @@ class GameStateManager:
                 profile_manager = ModelProfileManager()
                 params = profile_manager.apply_profile_to_params(service=llm_api, model=llm, fallback_params=llm_params)
                 if profile_manager.has_profile(llm_api, llm):
-                    logging.info(f"{log_prefix}Applied profile for {task_name}: {llm_api}/{llm}")
-                    logging.info(f"{log_prefix}{task_name} Profile Parameters: {params}")
+                    models_and_profiles_log.info(f"{log_prefix}Applied profile for {task_name}: {llm_api}/{llm}")
+                    models_and_profiles_log.debug(f"{log_prefix}{task_name} Profile Parameters: {params}")
                 else:
-                    logging.info(f"{log_prefix}No profile found for {task_name} {llm_api}/{llm}, using manual parameters: {params}")
+                    models_and_profiles_log.info(f"{log_prefix}No profile found for {task_name} {llm_api}/{llm}, using manual parameters: {params}")
             except Exception as e:
-                logging.error(f"Error applying profile for {task_name}: {e}")
+                models_and_profiles_log.error(f"Error applying profile for {task_name}: {e}")
                 params = llm_params
         else:
-            logging.info(f"{log_prefix}{task_name} Parameters (manual): {params}")
+            models_and_profiles_log.debug(f"{log_prefix}{task_name} Parameters (manual): {params}")
 
         return ClientBase(
             llm_api,
@@ -1375,7 +1425,7 @@ class GameStateManager:
         summary_client = GameStateManager.create_summary_client(self.__config, self.__api_file)
         thoughts_client = GameStateManager.create_thoughts_client(self.__config, self.__api_file, summary_client)
         reflection_client = GameStateManager.create_reflection_client(self.__config, self.__api_file, summary_client)
-        logging.info(
+        memories_log.debug(
             f"Refreshing summary client for manual save: "
             f"{self.__config.summary_llm_api}/{self.__config.summary_llm}"
         )
@@ -1400,7 +1450,7 @@ class GameStateManager:
         try:
             self.refresh_summary_client_from_ui_config()
         except Exception as e:
-            logging.error(f"Failed to refresh summary client before manual save: {e}", exc_info=True)
+            memories_log.error(f"Failed to refresh summary client before manual save: {e}", exc_info=True)
         self.__talk.save_summary_only()
         return True
 
@@ -1416,7 +1466,7 @@ class GameStateManager:
         try:
             self.refresh_summary_client_from_ui_config()
         except Exception as e:
-            logging.error(f"Failed to refresh summary client before manual inner-thoughts save: {e}", exc_info=True)
+            memories_log.error(f"Failed to refresh summary client before manual inner-thoughts save: {e}", exc_info=True)
         self.__talk.save_inner_thoughts_only()
         return True
 
@@ -1432,7 +1482,7 @@ class GameStateManager:
         try:
             self.refresh_summary_client_from_ui_config()
         except Exception as e:
-            logging.error(f"Failed to refresh summary client before manual personal-reflection save: {e}", exc_info=True)
+            memories_log.error(f"Failed to refresh summary client before manual personal-reflection save: {e}", exc_info=True)
         self.__talk.save_personal_reflection_only()
         return True
 
@@ -1539,7 +1589,7 @@ class GameStateManager:
         kept = []
         for event in ingame_events:
             if any(re.search(pattern, str(event), re.IGNORECASE) for pattern in patterns):
-                logging.log(26, f"Director Mode: left out an event about the player: {event}")
+                ingame_events_log.debug(f"Director Mode: left out an event about the player: {event}")
             else:
                 kept.append(event)
         return kept
@@ -1606,14 +1656,14 @@ class GameStateManager:
         try:
             talk.output_manager.get_voices_ready(joined, one_on_one=not talk.context.npcs_in_conversation.contains_multiple_npcs())
         except Exception as e: # their first line still gets their voice ready, as before
-            logging.warning(f"Could not get the voices of {', '.join(a.name for a in joined)} ready: {e}")
+            log.warning(f"Could not get the voices of {', '.join(a.name for a in joined)} ready: {e}")
 
     @utils.time_it
     def load_character(self, json: dict[str, Any], world_id: str | None = None) -> Character | None:
         """Loads a character from the game's actor JSON. *world_id* is the playthrough, for its quest tag outcomes. None for an empty one"""
         if not json.get(comm_consts.KEY_ACTOR_REFID) and not json.get(comm_consts.KEY_ACTOR_NAME):
             # The game sent nobody in this place (no reference, no name), as once when a save made while a conversation started was loaded
-            logging.warning("The game sent an empty person, who is left out")
+            log.warning("The game sent an empty person, who is left out")
             return None
         try:
             base_id: str = utils.convert_to_skyrim_hex_format(str(json[comm_consts.KEY_ACTOR_BASEID]))
@@ -1723,7 +1773,7 @@ class GameStateManager:
                             is_ghost,
                             voice_effect)
         except CharacterDoesNotExist:                 
-            logging.log(23, 'Restarting...')
+            log.info('Restarting...')
             return None 
         
     def error_message(self, message: str) -> dict[str, Any]:
@@ -1789,13 +1839,13 @@ class GameStateManager:
         try:
             # End any active conversation first
             if self.__talk:
-                logging.info("Ending active conversation for character data reload...")
+                log.info("Ending active conversation for character data reload...")
                 self.__talk.end()
                 self.__talk = None
-                logging.info("Active conversation ended.")
+                log.info("Active conversation ended.")
             
             # Create a new game instance to reload character data
-            logging.info("Reloading character data from disk...")
+            characters_log.info("Reloading character data from disk...")
             if self.__config.game.base_game == GameEnum.FALLOUT4:
                 self.__game = Fallout4(self.__config)
             else:
@@ -1807,9 +1857,9 @@ class GameStateManager:
             reflection_client = GameStateManager.create_reflection_client(self.__config, self.__api_file, summary_client)
             self.__rememberer = self._create_rememberer(self.__game, self.__config, self.__client, summary_client, thoughts_client, reflection_client)
             
-            logging.info("Character data reload completed successfully.")
+            characters_log.info("Character data reload completed successfully.")
             return True
             
         except Exception as e:
-            logging.error(f"Error during character data reload: {e}")
+            log.error(f"Error during character data reload: {e}")
             return False

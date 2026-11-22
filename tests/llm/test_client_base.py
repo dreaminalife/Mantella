@@ -287,10 +287,31 @@ def test_request_call_logs_request_and_response(caplog):
     sync_client.chat.completions.create.return_value.choices[0].message.content = "Hello there."
     message = MagicMock(spec=UserMessage)
     message.get_openai_message.return_value = {"role": "user", "content": "Hi Lydia."}
-    with patch.object(client, "generate_sync_client", return_value=sync_client), caplog.at_level(15): # The full request and response are only logged in debug mode
+    with patch.object(client, "generate_sync_client", return_value=sync_client), caplog.at_level(logging.DEBUG): # The full request and response are only logged at Full
         assert client.request_call(message) == "Hello there."
-    assert "LLM request to local-model:\n===== user =====\nHi Lydia." in caplog.text
-    assert "LLM response from local-model:\nHello there." in caplog.text
+    assert "Request to local-model:\n===== user =====\nHi Lydia." in caplog.text
+    assert "Reply from local-model:\nHello there." in caplog.text
+
+
+def test_request_call_at_short_logs_the_model_and_settings_only(caplog):
+    '''Short shows one line per request with the model, address and settings, as the log did by default before the topics.
+    The whole request waits for Full'''
+    from unittest.mock import MagicMock
+    from src.llm.messages import UserMessage
+    from src.logs.log_topic import LogTopic
+    from src.logs.topic_logger import get_topic_logger
+    client = ClientBase("http://127.0.0.1:5001/v1", "local-model", {"max_tokens": 10}, 4096, ["missing.txt"])
+    sync_client = MagicMock()
+    sync_client.chat.completions.create.return_value.choices = [MagicMock()]
+    sync_client.chat.completions.create.return_value.choices[0].message.content = "Hello there."
+    message = MagicMock(spec=UserMessage)
+    message.get_openai_message.return_value = {"role": "user", "content": "Hi Lydia."}
+    with patch.object(client, "generate_sync_client", return_value=sync_client), \
+            caplog.at_level(logging.INFO, logger=get_topic_logger(LogTopic.AI_REPLIES).name):
+        client.request_call(message)
+    assert "model='local-model', base_url='http://127.0.0.1:5001/v1', params={" in caplog.text
+    assert "'max_tokens': 10" in caplog.text
+    assert "Request to local-model" not in caplog.text
 
 
 def _stream_client_with_error(chunks_before_error: list[str]):

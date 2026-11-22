@@ -1,11 +1,14 @@
 import os
 import json
-import logging
 import re
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
 import src.utils as utils
 from src.config.definitions.llm_definitions import AutoQuestTagOutcomesEnum
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CHARACTERS)
 
 # Number of quest outcome columns (`potential_paste_N` / `code_N`) a bio template CSV can have
 OUTCOME_SLOTS = 5
@@ -210,14 +213,14 @@ class BioTemplateManager:
                                 elif outcome_mode == OUTCOME_MODE_DEFAULT:
                                     self.outcome_modes.pop(tag, None)
                                 elif outcome_mode:
-                                    logging.warning(f"Tag '{tag}' in {filename}: outcome_mode '{outcome_mode}' is not static, dynamic, off or default - ignoring it")
-                            logging.info(f"Loaded {templates_loaded} bio templates from {folder_type} file: {filename}")
+                                    log.warning(f"Tag '{tag}' in {filename}: outcome_mode '{outcome_mode}' is not static, dynamic, off or default - ignoring it")
+                            log.debug(f"Loaded {templates_loaded} bio templates from {folder_type} file: {filename}")
                         else:
-                            logging.warning(f"CSV file {filename} in {folder_type} folder missing required columns 'tag' and 'description'")
+                            log.warning(f"CSV file {filename} in {folder_type} folder missing required columns 'tag' and 'description'")
                     except Exception as e:
-                        logging.warning(f"Could not load bio template file '{filename}' in '{templates_folder}'. Error: {e}")
+                        log.warning(f"Could not load bio template file '{filename}' in '{templates_folder}'. Error: {e}")
         except Exception as e:
-            logging.warning(f"Could not access {folder_type} bio templates folder '{templates_folder}'. Error: {e}")
+            log.warning(f"Could not access {folder_type} bio templates folder '{templates_folder}'. Error: {e}")
     
     def _record_sources(self, row: pd.Series, tag: str, folder_type: str, filepath: str):
         """Remember which file has a row for the tag, and which file filled each of its cells"""
@@ -298,7 +301,7 @@ class BioTemplateManager:
         df = pd.DataFrame(default_templates, columns=['tag', 'description'])
         df.to_csv(filepath, index=False, encoding='utf-8')
         
-        logging.info(f"Created default bio templates CSV at {filepath}")
+        log.info(f"Created default bio templates CSV at {filepath}")
     
     def get_template(self, tag: str) -> Optional[str]:
         """Get bio template for a specific tag"""
@@ -332,7 +335,7 @@ class BioTemplateManager:
         slot = tag_outcomes[tag][0]
         text = self.get_outcome_text(tag, slot)
         if text is None:
-            logging.debug(f"Quest tag {tag}: slot {slot} has no text in the bio templates - ignoring")
+            log.debug(f"Quest tag {tag}: slot {slot} has no text in the bio templates - ignoring")
         return text
 
     def _outcome_goes_to_bio(self, tag: str, tag_outcomes: Optional[Dict[str, Tuple[int, int]]]) -> bool:
@@ -404,7 +407,7 @@ class BioTemplateManager:
                 # One paragraph, each text on its own line
                 tag_expansions.append("\n".join(parts))
             elif template is None and not is_quest_tag:
-                logging.warning(f"Tag '{tag}' not found in bio_templates.csv - ignoring")
+                log.warning(f"Tag '{tag}' not found in bio_templates.csv - ignoring")
 
         # Combine base bio with tag expansions, adding newlines between descriptions
         if tag_expansions:
@@ -457,7 +460,7 @@ class BioTemplateManager:
         self.sources.clear()
         self.files_with_tag.clear()
         self._load_templates()
-        logging.info(f"Reloaded {len(self.templates)} bio templates")
+        log.debug(f"Reloaded {len(self.templates)} bio templates")
     
     def get_template_count(self) -> int:
         """Get the total number of loaded templates"""

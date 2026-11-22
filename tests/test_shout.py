@@ -1,3 +1,4 @@
+import logging
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -194,7 +195,7 @@ def test_only_a_line_aimed_at_several_people_names_the_others():
 
 def test_the_reason_the_game_could_not_add_someone_is_logged(caplog):
     state = shout_state(pending_add=YSOLDA)
-    with caplog.at_level(26):
+    with caplog.at_level(logging.DEBUG):
         assert state.apply_add_failed(YSOLDA.refid, "in a scene")
     assert f"{YSOLDA.name} could not be added to the conversation: in a scene" in caplog.text
 
@@ -700,6 +701,7 @@ def test_a_line_is_only_asked_about_once():
 
 def test_a_service_that_rejects_the_yes_no_questions_is_asked_again_without_them(caplog):
     from src.conversation import game_master as game_master_module
+    caplog.set_level(logging.DEBUG)
     state = shout_state()
     gm = game_master(state, [HULDA_NPC], decision_client(), decision_config())
     rejected = decision_response("", {}, None, status_code=400)
@@ -766,7 +768,7 @@ def test_most_people_answering_keeps_the_people_a_nearby_event_is_about_ahead_of
 
 
 def test_joining_past_most_people_is_logged_only_when_it_happens(caplog):
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     full_conversation_event(True)
     assert "Game Master: Ysolda, Whiterun Guard join past Most People in Conversation (3), as the event is about them" in caplog.text
     caplog.clear()
@@ -910,7 +912,7 @@ def test_the_player_keeps_the_turn_the_game_master_llm_gives_them_after_an_npcs_
 
 
 def test_the_player_keeps_the_turn_the_decision_model_gives_them_after_an_npcs_line(caplog):
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     gm = game_master(shout_state(), [HULDA_NPC, npc("Mikael")], decision_client(), decision_config())
     response = decision_response("Dragonborn", {"Dragonborn": 0.7, "Mikael": 0.2}, [0.98, 0.0, 0.0])
     with patch("src.conversation.game_master.post_decision_with_retry", return_value=response):
@@ -1143,7 +1145,7 @@ def test_whose_bios_the_game_master_uses_is_logged_when_it_changes(caplog):
     state = shout_state(characters={YSOLDA.refid: ysolda, GUARD.refid: guard})
     state.apply_settings({"max_described": 1})
     state.game_master_offer = [YSOLDA, GUARD]
-    caplog.set_level(26)
+    caplog.set_level(logging.DEBUG)
     state.characters_for_game_master(config(), [])
     state.characters_for_game_master(config(), []) # Same people: not logged again
     used = [r.message for r in caplog.records if "the Game Master is using" in r.message]

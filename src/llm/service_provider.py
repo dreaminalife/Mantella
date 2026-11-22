@@ -5,10 +5,14 @@ Provides a clean OOP way to handle different LLM services for per-character over
 
 from abc import ABC, abstractmethod
 from typing import List
-import logging
 from src.llm.client_base import ClientBase
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.config.config_loader import ConfigLoader
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.AI_REPLIES)
+models_and_profiles_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 
 
 class LLMServiceProvider(ABC):
@@ -67,13 +71,13 @@ class OpenRouterServiceProvider(LLMServiceProvider):
             # Log profile application for per-character override
             has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
-                logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
-                logging.info(f"Per-character Profile Parameters: {llm_params}")
+                models_and_profiles_log.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
+                models_and_profiles_log.debug(f"Per-character Profile Parameters: {llm_params}")
             else:
-                logging.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
+                models_and_profiles_log.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
                 
         except Exception as e:
-            logging.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
+            models_and_profiles_log.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
             llm_params = config.llm_params
         
         client = ClientBase(
@@ -87,7 +91,7 @@ class OpenRouterServiceProvider(LLMServiceProvider):
         try:
             client._sonnet_cache_connector = SonnetCacheConnector(getattr(config, 'sonnet_prompt_caching_enabled', False))
         except Exception as e:
-            logging.debug(f"Failed to attach Sonnet cache connector: {e}")
+            log.warning(f"Failed to attach Sonnet cache connector: {e}")
         return client
     
     def get_api_url(self) -> str:
@@ -124,13 +128,13 @@ class NanoGPTServiceProvider(LLMServiceProvider):
             # Log profile application for per-character override
             has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
-                logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
-                logging.info(f"Per-character Profile Parameters: {llm_params}")
+                models_and_profiles_log.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
+                models_and_profiles_log.debug(f"Per-character Profile Parameters: {llm_params}")
             else:
-                logging.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
+                models_and_profiles_log.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
                 
         except Exception as e:
-            logging.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
+            models_and_profiles_log.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
             llm_params = config.llm_params
         
         return ClientBase(
@@ -176,13 +180,13 @@ class OpenAIServiceProvider(LLMServiceProvider):
             # Log profile application for per-character override
             has_profile = config.apply_profile_one_on_one and profile_manager.has_profile(self.get_display_name(), model)
             if has_profile:
-                logging.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
-                logging.info(f"Per-character Profile Parameters: {llm_params}")
+                models_and_profiles_log.info(f"Applied profile for per-character override: {self.get_display_name()}/{model}")
+                models_and_profiles_log.debug(f"Per-character Profile Parameters: {llm_params}")
             else:
-                logging.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
+                models_and_profiles_log.info(f"No profile found for per-character override {self.get_display_name()}/{model}, using global parameters: {llm_params}")
                 
         except Exception as e:
-            logging.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
+            models_and_profiles_log.error(f"Error applying profile for per-character LLM {self.get_display_name()}/{model}: {e}")
             llm_params = config.llm_params
         
         return ClientBase(

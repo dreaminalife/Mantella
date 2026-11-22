@@ -51,7 +51,7 @@ def test_a_voice_setup_can_be_the_tts_service_and_the_backup(tmp_path):
 def test_a_removed_setup_falls_back_to_piper_with_a_warning(tmp_path, caplog):
     load(tmp_path)
     set_in_config_ini(tmp_path, "tts_service", "Gone Setup")
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         config = load(tmp_path)
     assert config.tts_service == TTSEnum.PIPER and config.tts_service_name == "Piper"
     assert "'Gone Setup' chosen as TTS Service no longer exists" in caplog.text

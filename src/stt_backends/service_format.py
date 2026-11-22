@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import logging
 import re
 import time
 from typing import Any
@@ -18,6 +17,10 @@ from src.stt_backends.base import (FAILED, KEY_REFUSED, NO_KEY, SAMPLING_RATE, U
                                    SpeechError)
 from src.stt_backends.cleanup import clean
 from src.stt_backends.presets import DEFAULT_TIMEOUT_SECONDS
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 # A refused key as services repeat it ("sk-proj-****1234")
 _MASKED_KEY = re.compile(r"\S*\*{3,}\S*")
@@ -152,9 +155,9 @@ class ServiceFormat(SpeechBackend):
             return ""
         sound = wav_bytes(audio)
         request = self._request(sound, hint, names, language)
-        logging.debug(f"Speech-to-text request to {self.service}: url={self.url}, model={self.model}, language={language}, names={len(names or [])}, "
+        log.debug(f"Speech-to-text request to {self.service}: url={self.url}, model={self.model}, language={language}, names={len(names or [])}, "
                       f"hint_length={len(hint or '')}, audio_bytes={len(sound)}")
-        logging.debug(f"Speech-to-text names sent to {self.service}: {self._sent_names(request)}")
+        log.debug(f"Speech-to-text names sent to {self.service}: {self._sent_names(request)}")
 
         deadline = time.monotonic() + self.timeout
         response = None

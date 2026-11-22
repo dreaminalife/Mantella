@@ -1,13 +1,16 @@
 """Whisper on this PC (the faster-whisper program). It runs any Whisper model saved in its format: the usual sizes, or a Hugging Face id"""
 from __future__ import annotations
 
-import logging
 
 import numpy as np
 
 from src import utils
 from src.stt_backends.base import FAILED, NOT_DOWNLOADED, SpeechBackend, SpeechError
 from src.stt_backends.cleanup import clean
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MICROPHONE)
 
 # Names newer faster-whisper versions know but Mantella's (1.0.3) doesn't: asked for by their ready-made copy's id instead
 MODEL_IDS = {
@@ -35,7 +38,7 @@ class FasterWhisperProgram(SpeechBackend):
             raise self._load_error
         from faster_whisper import WhisperModel
         if self.device == 'cuda':
-            logging.error('''Depending on your NVIDIA CUDA version, setting the Whisper process device to `cuda` may cause errors! For more information, see here: https://github.com/SYSTRAN/faster-whisper#gpu''')
+            log.error('''Depending on your NVIDIA CUDA version, setting the Whisper process device to `cuda` may cause errors! For more information, see here: https://github.com/SYSTRAN/faster-whisper#gpu''')
         try:
             if self.device == 'cuda':
                 self._whisper = WhisperModel(model_id(self.model), device=self.device)

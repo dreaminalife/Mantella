@@ -1,10 +1,13 @@
-import logging
 import os
 import re
 from typing import Dict, List, Tuple
 
 import pandas as pd
 import src.utils as utils
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.CHARACTERS)
 
 
 class LorebookManager:
@@ -63,7 +66,7 @@ class LorebookManager:
                     encoding = utils.get_file_encoding(filepath)
                     df = pd.read_csv(filepath, engine="python", encoding=encoding)
                     if "key" not in df.columns or "description" not in df.columns:
-                        logging.warning(
+                        log.warning(
                             f"CSV file {filename} in {folder_type} folder missing required "
                             "columns 'key' and 'description'"
                         )
@@ -78,15 +81,15 @@ class LorebookManager:
                             self._entries_by_normalized_key[normalized] = (key, description)
                             loaded_count += 1
 
-                    logging.info(
+                    log.debug(
                         f"Loaded {loaded_count} lorebook entries from {folder_type} file: {filename}"
                     )
                 except Exception as e:
-                    logging.warning(
+                    log.warning(
                         f"Could not load lorebook file '{filename}' in '{lorebook_folder}'. Error: {e}"
                     )
         except Exception as e:
-            logging.warning(
+            log.warning(
                 f"Could not access {folder_type} lorebook folder '{lorebook_folder}'. Error: {e}"
             )
 

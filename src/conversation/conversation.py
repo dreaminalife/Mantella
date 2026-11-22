@@ -1,5 +1,4 @@
 from enum import Enum
-import logging
 from threading import Thread, Lock
 import time
 from typing import Any
@@ -19,7 +18,7 @@ from src.remember.summaries import Summaries
 from src.llm.client_base import ClientBase
 from src.llm.image_client import VisionCapture
 from src.llm.llm_client import LLMClient
-from src.output_manager import ChatManager
+from src.output_manager import ChatManager, log_raw_reply
 from src.llm.messages import AssistantMessage, join_message, leave_message, nearby_join_message, overheard_message, SystemMessage, UserMessage
 from src.conversation.context import add_or_update_result, context as Context
 from src.llm.message_thread import message_thread
@@ -38,6 +37,14 @@ import src.utils as utils
 from src.config.config_loader import ConfigLoader
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.prompt_profile_manager import PromptSectionError
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger, spoken_line
+
+log = get_topic_logger(LogTopic.CONVERSATION)
+game_master_log = get_topic_logger(LogTopic.GAME_MASTER)
+ingame_events_log = get_topic_logger(LogTopic.INGAME_EVENTS)
+vanilla_dialogues_log = get_topic_logger(LogTopic.VANILLA_DIALOGUES)
+actions_log = get_topic_logger(LogTopic.ACTIONS)
 
 class conversation_continue_type(Enum):
     NPC_TALK = 1
@@ -166,7 +173,7 @@ class Conversation:
         seconds = FunctionManager.get_action_pause_seconds(LISTEN)
         if self.__stt:
             self.__stt.set_temporary_pause(seconds)
-        logging.log(23, f"Listen: the player's next turn waits {seconds} seconds of silence before it ends")
+        log.info(f"Listen: the player's next turn waits {seconds} seconds of silence before it ends")
 
     @utils.time_it
     def hot_swap_settings(self, config: ConfigLoader, llm_client: AIClient, chat_manager: ChatManager, rememberer: Remembering, stt: Transcriber | None = None) -> bool:
@@ -218,7 +225,7 @@ class Conversation:
                 try:
                     new_prompt = self.__conversation_type.generate_prompt(self.__context)
                 except PromptSectionError as e:
-                    logging.error(str(e))
+                    log.error(str(e))
                     if isinstance(self.__conversation_type, radiant):
                         self.__conversation_type.mark_prompt_unusable()
                 else:
@@ -228,11 +235,11 @@ class Conversation:
             if self.__messages:
                 self.__messages.hot_swap_settings(config)
             
-            logging.info("Conversation hot-swap completed successfully")
+            log.debug("Conversation hot-swap completed successfully")
             return True
             
         except Exception as e:
-            logging.error(f"Conversation hot-swap failed: {e}")
+            log.error(f"Conversation hot-swap failed: {e}")
             return False
 
     @utils.time_it
@@ -243,6 +250,10 @@ class Conversation:
             new_character (Character): the character to add or update
         """
         update_result = self.__context.add_or_update_characters(new_character)
+        if update_result.added_npcs:
+            log.info(f"Joined the conversation: {', '.join(npc.name for npc in update_result.added_npcs)}")
+        if update_result.removed_npcs:
+            log.info(f"Left the conversation: {', '.join(npc.name for npc in update_result.removed_npcs)}")
         if self.__context.npc_event and any(npc.is_player_character for npc in update_result.added_npcs):
             self.__context.npc_event.on_player_joined()
         overheard_npcs: list[Character] = []
@@ -297,7 +308,7 @@ class Conversation:
         shout_state.apply_settings(settings)
         self.__context.shout = shout_state
         self.__context.have_actors_changed = True # Selects the conversation type again
-        logging.log(26, "Shout: the player is shouting. Anyone nearby can answer or join in")
+        game_master_log.info("Shout: the player is shouting. Anyone nearby can answer or join in")
 
     def __add_private_event(self):
         """Shout was switched off: an in-game event telling who is still in the now private conversation"""
@@ -316,7 +327,7 @@ class Conversation:
         self.__context.shout = None
         self.__context.have_actors_changed = True
         self.__announce_private = True # Says who the conversation is with, after the actor update of the same request
-        logging.log(26, "Shout: private again. Nobody new joins")
+        game_master_log.info("Shout: private again. Nobody new joins")
 
     def is_directed(self) -> bool:
         """The player directs the conversation (Director Mode) and is not part of the scene. Read from the current conversation type,
@@ -430,6 +441,7 @@ class Conversation:
         Returns:
             tuple[str, sentence | None]: Returns a tuple consisting of a reply type and an optional sentence
         """
+        log.info(f"The conversation starts with: {', '.join(self.__context.npcs_in_conversation.get_all_names())}")
         if isinstance(self.__conversation_type, npc_event):
             # The scene starts as an in-game event, which the first speaker reacts to
             if self.__context.npc_event:
@@ -462,6 +474,10 @@ class Conversation:
 
         # interrupt response if player has spoken
         if self.__stt and self.__stt.has_player_spoken:
+            if len(self.__messages) == 1:
+                # Nothing has been said yet: the microphone listened before the conversation started (listen_before_start), so this is
+                # the player's first line, not an interruption. The player's input request picks it up
+                return comm_consts.KEY_REPLYTYPE_PLAYERTALK, None
             self.__cancel_game_master_turn()
             self.__stop_generation()
             self.__sentences.clear()
@@ -505,7 +521,7 @@ class Conversation:
                 self.__context.remove_character(next_sentence.speaker)
             #if there is a next sentence and it actually has content, return it as something for an NPC to say
             if self.last_sentence_audio_length > 0:
-                logging.debug(f'Waiting {round(self.last_sentence_audio_length, 1)} seconds for last voiceline to play')
+                log.debug(f'Waiting {round(self.last_sentence_audio_length, 1)} seconds for last voiceline to play')
             # before immediately sending the next voiceline, give the player the chance to interrupt
             while time.time() - self.last_sentence_start_time < self.last_sentence_audio_length:
                 if self.__is_stopping:
@@ -579,7 +595,7 @@ class Conversation:
         if event.has_failed or event.has_reached_limit(self.__context.config):
             return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
         if self.__game_master_turns.nobody_left_to_speak(self.__conversation_type):
-            logging.log(26, "NPC Event: everyone in the scene has reached Most Replies per Person. The scene ends.")
+            game_master_log.info("NPC Event: everyone in the scene has reached Most Replies per Person. The scene ends.")
             return comm_consts.KEY_REPLYTYPE_ENDCONVERSATION, None
         # The Game Master gave no valid choice, or the turn was thrown away. The scene goes on
         self.__start_generating_npc_sentences()
@@ -611,7 +627,7 @@ class Conversation:
 
     def __end_unanswered(self) -> tuple[str, Sentence | None]:
         """Just saying something: nobody nearby answered what the player said to the room, so the conversation ends"""
-        logging.log(26, "Nobody answers. The conversation ends")
+        log.info("Nobody answers. The conversation ends")
         self.__has_already_ended = True
         self.__ended_unanswered = True
         if self.__stt:
@@ -694,7 +710,7 @@ class Conversation:
                 if details_follow or time.time() - input_wait_start_time >= self.__events_refresh_time:
                     # The game sent no events, or too much time has passed: the game sends the text again with its events
                     events_need_updating = True
-                    logging.debug('Updating game events...')
+                    log.debug('Updating game events...')
                     return player_text, events_need_updating, None
             
             self.__is_interrupt_requested = False # Pressing the interrupt hotkey during the player's turn has nothing to interrupt
@@ -724,7 +740,8 @@ class Conversation:
                 self.__messages.add_message(new_message)
             player_voiceline = None if is_director or is_continue else self.__get_player_voiceline(player_character, player_text)
             text = "" if is_continue else new_message.text
-            logging.log(23, f"Text passed to NPC: {text}")
+            if text.strip() and not is_director:
+                spoken_line(log, player_character.name, text.strip(), by_player=True)
             is_said_to_room = isinstance(self.__conversation_type, shout) and shout.is_said_to_room(self.__context)
 
         if is_said_to_room:
@@ -765,7 +782,7 @@ class Conversation:
                 first_names=bool(getattr(self.__context.config, "stt_first_names", False)),
             )
         except Exception as e:
-            logging.warning(f"Could not make the speech-to-text names: {e}")
+            log.warning(f"Could not make the speech-to-text names: {e}")
     
     @utils.time_it
     def __get_player_voiceline(self, player_character: Character | None, player_text: str) -> Sentence | None:
@@ -824,10 +841,10 @@ class Conversation:
                     remove_system_flagged_messages=False
                 )
         except PromptSectionError as e:
-            logging.error(str(e))
-            logging.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
+            log.error(str(e))
+            log.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
         except Exception as e:
-            logging.debug(f"Failed to refresh system prompt after context update: {e}")
+            log.warning(f"Failed to refresh system prompt after context update: {e}")
 
         if self.__context.have_actors_changed:
             self.__update_conversation_type()
@@ -855,13 +872,13 @@ class Conversation:
             try:
                 new_prompt = self.__conversation_type.generate_prompt(self.__context, should_log=should_log_prompt)
             except PromptSectionError as e:
-                logging.error(str(e))
+                log.error(str(e))
                 self.__log_prompt_on_next_regen = False
                 if isinstance(self.__conversation_type, radiant):
                     self.__conversation_type.mark_prompt_unusable()
-                    logging.error("Radiant conversation will end because the prompt could not be built.")
+                    log.error("Radiant conversation will end because the prompt could not be built.")
                 else:
-                    logging.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
+                    log.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
                 return
             # Reset after use so we only log once per join event.
             self.__log_prompt_on_next_regen = False
@@ -901,7 +918,7 @@ class Conversation:
         self.__context.clear_context_ingame_events()        
 
         if message.count_ingame_events() > 0:
-            logging.log(28, f'In-game events since previous exchange:\n{message.get_ingame_events_text()}')
+            ingame_events_log.info(f'In-game events since previous exchange:\n{message.get_ingame_events_text()}')
 
         self.__add_heard_dialogue_to(message)
         return message
@@ -916,10 +933,13 @@ class Conversation:
         if not self.__heard_lines_text:
             return
         hide_player = self.hides_player()
-        texts = [text for text in (self.__heard_lines_text.nearby_now(line, hide_player) for line in sorted(lines, key=lambda l: l.time)) if text]
+        # A line someone in the conversation said, or that was said to them, isn't "nearby". The player only counts while part of it
+        in_conversation = {person.ref_id for person in self.__context.npcs_in_conversation.get_all_characters()
+                           if not (hide_player and person.is_player_character)}
+        texts = [text for text in (self.__heard_lines_text.nearby_now(line, hide_player, in_conversation) for line in sorted(lines, key=lambda l: l.time)) if text]
         message.add_heard_dialogue(texts[-max(1, self.__context.config.heard_lines_most_per_npc):])
         if message.get_heard_dialogue():
-            logging.log(28, f'Heard nearby since previous exchange:\n{message.get_heard_dialogue_text()}')
+            vanilla_dialogues_log.debug(f'Heard nearby since previous exchange:\n{message.get_heard_dialogue_text()}')
 
     def __store_heard_dialogue(self):
         """Vanilla Dialogues: when the conversation ends, every line heard during it is kept as a heard line by the people in it who heard it,
@@ -938,7 +958,7 @@ class Conversation:
             try: # One NPC that can't be written loses no one else's lines
                 self.__heard_lines_store.add(self.__context.world_id, person, person_lines)
             except Exception as e:
-                logging.error(f"Vanilla Dialogues: could not keep the lines {person.name} heard during the conversation: {e}")
+                vanilla_dialogues_log.error(f"Vanilla Dialogues: could not keep the lines {person.name} heard during the conversation: {e}")
 
     @utils.time_it
     def retrieve_sentence_from_queue(self, add_to_history: bool = True) -> Sentence | None:
@@ -955,6 +975,9 @@ class Conversation:
         # The interrupt hotkey stops the wait, e.g. while the LLM has not answered yet. So does the end of the conversation
         is_interrupted = lambda: (self.__is_interrupt_requested and not self.__is_ending) or self.__is_stopping
         next_sentence: Sentence | None = self.__sentences.get_next_sentence(is_interrupted) #This is a blocking call. Execution will wait here until queue is filled again
+        if next_sentence and next_sentence.raw_reply_log:
+            # The end of a reply: its lines have all been sent to the game, so the raw reply comes after them, as it always did
+            log_raw_reply(next_sentence.raw_reply_log)
         if next_sentence and add_to_history:
             self.add_sentence_to_history(next_sentence)
         return next_sentence
@@ -1008,6 +1031,7 @@ class Conversation:
     def end(self):
         """Ends a conversation
         """
+        log.info("The conversation ends")
         self.__has_already_ended = True
         self.__cancel_game_master_turn()
         self.__stop_generation()
@@ -1025,7 +1049,7 @@ class Conversation:
         if not self.can_be_shown():
             return False
         self.__shown_picture = picture
-        logging.log(23, "The player shows the NPCs what they see. The picture goes with their next line")
+        log.info("The player shows the NPCs what they see. The picture goes with their next line")
         return True
 
     def request_interrupt(self):
@@ -1068,7 +1092,7 @@ class Conversation:
         if not self.__is_interrupt_requested or self.__is_ending:
             return False
         self.__is_interrupt_requested = False
-        logging.log(23, "Player interrupted. The player gets the turn.")
+        log.info("Player interrupted. The player gets the turn.")
         self.__cancel_game_master_turn()
         self.__stop_generation()
         self.__sentences.clear()
@@ -1130,7 +1154,7 @@ class Conversation:
         message = self.update_game_events(message)
         if message.count_ingame_events() == 0:
             message.add_event(["Nothing came of it."]) # The game sent no answer in time
-        logging.log(23, f"The game answered the action: {message.get_ingame_events_text().strip()}")
+        actions_log.info(f"The game answered the action: {message.get_ingame_events_text().strip()}")
         asker = self.__action_asker
         if asker and message.is_multi_npc_message and not isinstance(self.__conversation_type, multi_npc_game_master):
             # One reply speaks for every NPC here: the one who found it out speaks first
@@ -1140,7 +1164,7 @@ class Conversation:
             if not self.__game_master_turns.answer_arrived(message):
                 # The reply that picked the action was stopped as the conversation changed while the game worked out its answer, e.g.
                 # ReportCrime called a guard over: a new NPC turn goes on with the answer
-                logging.log(23, "The reply that picked the action was stopped. The NPCs go on with the game's answer in a new turn")
+                actions_log.info("The reply that picked the action was stopped. The NPCs go on with the game's answer in a new turn")
                 self.__start_generating_npc_sentences(allow_tools=False)
         else:
             self.__start_generating_npc_sentences(allow_tools=False)
@@ -1177,11 +1201,11 @@ class Conversation:
                         remove_system_flagged_messages=False
                     )
                 except PromptSectionError as e:
-                    logging.error(str(e))
-                    logging.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
+                    log.error(str(e))
+                    log.error("NPC reply was not generated. The conversation is waiting. Fix the active prompt profile, or end the conversation.")
                     return
                 except Exception as e:
-                    logging.debug(f"Could not refresh system prompt before generation: {e}")
+                    log.warning(f"Could not refresh system prompt before generation: {e}")
                 self.__sentences.is_more_to_come = True
                 # Without Game Master Mode, one reply speaks for every NPC in the conversation
                 tool_request = tool_request_for(self.__conversation_type, self.__context, self.__output_manager.game,
@@ -1226,7 +1250,7 @@ class Conversation:
                 self.__rememberer.share_conversation(self.__messages, npcs, self.__context.world_id, pending_shares, saved_summaries or {},
                                                      self.__conversation_start_ts, self.__was_directed)
             except Exception as e:
-                logging.error(f"Could not share the conversation: {e}")
+                log.error(f"Could not share the conversation: {e}")
 
     @utils.time_it
     def save_summary_only(self, is_reload: bool = False) -> None:
@@ -1248,7 +1272,7 @@ class Conversation:
                 save_reflections=bool(getattr(self.__context.config, "save_summary_now_also_save_personal_reflection", True)),
             )
         except Exception as e:
-            logging.error(f"save_summary_only failed: {e}", exc_info=True)
+            log.error(f"save_summary_only failed: {e}", exc_info=True)
 
     @utils.time_it
     def save_inner_thoughts_only(self) -> None:
@@ -1272,7 +1296,7 @@ class Conversation:
                 conversation_start_ts=self.__conversation_start_ts,
             )
         except Exception as e:
-            logging.error(f"save_inner_thoughts_only failed: {e}", exc_info=True)
+            log.error(f"save_inner_thoughts_only failed: {e}", exc_info=True)
 
     @utils.time_it
     def save_personal_reflection_only(self) -> None:
@@ -1296,7 +1320,7 @@ class Conversation:
                 conversation_start_ts=self.__conversation_start_ts,
             )
         except Exception as e:
-            logging.error(f"save_personal_reflection_only failed: {e}", exc_info=True)
+            log.error(f"save_personal_reflection_only failed: {e}", exc_info=True)
 
     @utils.time_it
     def get_conversation_as_json(self) -> str | None:
@@ -1333,7 +1357,7 @@ class Conversation:
                 self.__stop_generation() # The reply generated ahead may be on the chat manager from before a settings change
             return True
         except Exception as e:
-            logging.error(f"apply_conversation_from_json failed: {e}", exc_info=True)
+            log.error(f"apply_conversation_from_json failed: {e}", exc_info=True)
             return False
 
     @utils.time_it
@@ -1485,7 +1509,7 @@ class Conversation:
         try:
             new_prompt = self.__conversation_type.generate_prompt(self.__context)
         except PromptSectionError as e:
-            logging.error(str(e))
+            log.error(str(e))
             if isinstance(self.__conversation_type, radiant):
                 self.__conversation_type.mark_prompt_unusable()
             return

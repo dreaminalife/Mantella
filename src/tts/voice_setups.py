@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import copy
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,10 @@ from src import utils
 from src.tts.registry import CLIP, VoiceServiceInfo, normalize_service_name, voice_services
 from src.tts.voice_folders import voice_setups_file
 from src.tts.voice_style import SPEED_DEFAULT, SPEED_HIGH, SPEED_LOW
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 OPENAI = "openai"
 XTTS = "xtts"
@@ -155,7 +158,7 @@ def read_key_file(key_file: str) -> str:
                 return place.read_text(encoding="utf-8").strip()
         except OSError:
             continue
-    logging.warning(f"Could not find the key file '{key_file}'. Put it in Mantella's folder.")
+    log.warning(f"Could not find the key file '{key_file}'. Put it in Mantella's folder.")
     return ""
 
 
@@ -212,11 +215,11 @@ class VoiceSetups:
                 try:
                     result.append(normalized(raw))
                 except (ValueError, TypeError, json.JSONDecodeError) as e:
-                    logging.warning(f"A voice setup in {self.__file} could not be read and is left out: {e}")
+                    log.warning(f"A voice setup in {self.__file} could not be read and is left out: {e}")
             return result
         except (OSError, json.JSONDecodeError) as e:
             utils.play_error_sound()
-            logging.error(f"Could not read the voice setups in {self.__file}: {e}")
+            log.error(f"Could not read the voice setups in {self.__file}: {e}")
             return []
 
     def __write(self) -> None:
@@ -276,7 +279,7 @@ def ready_made_setups() -> list[dict[str, Any]]:
         with open(path, encoding="utf-8") as f:
             return [{**normalized(s), "about": str(s.get("about", ""))} for s in json.load(f).get("setups", [])]
     except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
-        logging.warning(f"Could not read the ready-made voice setups in {path}: {e}")
+        log.warning(f"Could not read the ready-made voice setups in {path}: {e}")
         return []
 
 

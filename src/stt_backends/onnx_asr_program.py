@@ -1,14 +1,16 @@
 """Parakeet on this PC (the onnx-asr program): fast on a normal processor, 25 European languages, works out the language itself. It can't take names"""
 from __future__ import annotations
 
-import logging
 
 import numpy as np
 
 from src.stt_backends.base import FAILED, NOT_DOWNLOADED, SAMPLING_RATE, SpeechBackend, SpeechError
 from src.stt_backends.cleanup import clean, ensure_sentence_ending
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
 
-LOGLEVEL = 27
+log = get_topic_logger(LogTopic.MICROPHONE)
+
 QUANTIZATION = "int8" # Parakeet's int8 copy is about 670 MB instead of 2.5 GB, with nearly the same accuracy
 
 
@@ -23,7 +25,7 @@ class OnnxAsrProgram(SpeechBackend):
     def load(self) -> None:
         if self._load_error is not None: # failed before: not again on every line (slow, and the error each time)
             raise self._load_error
-        logging.log(LOGLEVEL, f"Loading {self.model} (the first time, it downloads about 670 MB)...")
+        log.debug( f"Loading {self.model} (the first time, it downloads about 670 MB)...")
         try:
             import onnx_asr
             from onnx_asr.utils import ModelFileNotFoundError

@@ -91,7 +91,7 @@ class FakeModel:
     def is_too_long(self, messages, token_limit_percent) -> bool:
         return False
 
-    def request_call(self, messages: message_thread) -> str:
+    def request_call(self, messages: message_thread, topic_log=None) -> str:
         request = messages.get_messages_of_type(UserMessage)[-1].text
         if request.endswith(EVENT_REPLY_FORMAT):
             return self.__write_event(messages)
@@ -884,6 +884,68 @@ def test_the_microphone_switched_off_during_a_conversation_takes_typed_lines(man
 
     assert manager._GameStateManager__talk.stt is None
     assert "Where is the market?" in model.npc_requests[-1]
+    assert not microphone.is_listening
+
+
+# The player's turn before the conversation starts: Automatic Greeting off, so the game lets the player speak while it gathers the details
+
+class SpokenMicrophone(FakeMicrophone):
+    """Remembers that the player spoke until it stops listening, as speech recognition does"""
+    def stop_listening(self):
+        super().stop_listening()
+        self.has_player_spoken = False
+
+
+def listen_before_start_request() -> dict[str, Any]:
+    """SendListenBeforeStart"""
+    return {comm_consts.KEY_REQUESTTYPE: comm_consts.KEY_REQUESTTYPE_LISTENBEFORESTART, comm_consts.KEY_INPUTTYPE: comm_consts.KEY_INPUTTYPE_MIC,
+            comm_consts.KEY_LISTEN_NAMES: [HULDA.name, ""], comm_consts.KEY_LISTEN_PLAYERNAME: PLAYER.name}
+
+
+def test_the_player_speaks_first_without_automatic_greeting(manager: GameStateManager):
+    manager._GameStateManager__automatic_greeting = False
+    assert manager.player_speaks_first
+    manager._GameStateManager__automatic_greeting = True
+    assert not manager.player_speaks_first
+
+
+def test_what_the_player_said_before_the_start_is_their_first_line(manager: GameStateManager, model: FakeModel):
+    manager._GameStateManager__automatic_greeting = False
+    manager._GameStateManager__config.automatic_greeting = False
+    microphone = SpokenMicrophone()
+    manager._GameStateManager__stt = microphone
+    reply = manager.listen_before_start(listen_before_start_request())
+    assert reply[comm_consts.KEY_REPLYTYPE] == comm_consts.KEY_REPLYTYPE_LISTENINGBEFORESTART
+    assert microphone.is_listening
+
+    microphone.has_player_spoken = True # While the game gathered the details for the start
+    microphone.speak("Hello, Hulda.")
+    game = FakeGame(manager)
+    game.input_type = comm_consts.KEY_INPUTTYPE_MIC
+    game.start(HULDA)
+    assert game.is_player_turn # Not an interruption: nobody was talking
+    assert not model.npc_requests
+
+    game.listen()
+
+    assert "Hello, Hulda." in model.npc_requests[-1]
+    assert "Interrupting..." not in model.npc_requests[-1]
+
+
+def test_listening_before_the_start_stops_when_the_conversation_is_ended_before_it_starts(manager: GameStateManager):
+    microphone = FakeMicrophone()
+    manager._GameStateManager__stt = microphone
+    manager.listen_before_start(listen_before_start_request())
+    manager.end_conversation({})
+    assert not microphone.is_listening
+
+
+def test_no_listening_for_a_start_ended_before_the_request_was_handled(manager: GameStateManager):
+    microphone = FakeMicrophone()
+    manager._GameStateManager__stt = microphone
+    ends_before = manager.ends_requested
+    manager.stop_conversation_now()
+    manager.listen_before_start(listen_before_start_request(), ends_before)
     assert not microphone.is_listening
 
 

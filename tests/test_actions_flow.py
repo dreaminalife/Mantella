@@ -4,6 +4,7 @@ the test checks what Mantella sends the game. The models answer with set lines a
 does with an action is checked in the game (tests/ingame/actions/actions_ingame.py)"""
 import glob
 import json
+import logging
 import os
 import re
 import threading
@@ -64,7 +65,7 @@ class ScriptedModel(FakeModel):
         finally:
             self.reply_lock.release()
 
-    def request_tool_calls(self, messages, tools: list[dict]) -> ToolCalls:
+    def request_tool_calls(self, messages, tools: list[dict], topic_log=None) -> ToolCalls:
         self.own_model_requests.append((str(messages.get_openai_messages()), tools))
         return self.own_model_picks.pop(0) if self.own_model_picks else ToolCalls()
 
@@ -216,7 +217,7 @@ def test_after_stepping_into_an_npc_event_the_shout_switches_apply(game: ActionG
 def test_an_npcs_listen_isnt_sent_to_the_game(game: ActionGame, model: ScriptedModel, caplog):
     game.start(HULDA)
     model.lines = ["Listen: Take your time."]
-    with caplog.at_level(23):
+    with caplog.at_level(logging.DEBUG):
         game.say("Let me think about it.")
     assert game.sent[-1] == (HULDA.name, "Take your time.", [])
     assert "Listen: the player's next turn waits" in caplog.text
@@ -224,7 +225,7 @@ def test_an_npcs_listen_isnt_sent_to_the_game(game: ActionGame, model: ScriptedM
 
 def test_saying_listen_gives_more_time_and_the_npc_still_hears_it(game: ActionGame, model: ScriptedModel, caplog):
     game.start(HULDA)
-    with caplog.at_level(23):
+    with caplog.at_level(logging.DEBUG):
         game.say("Listen.")
     assert "Listen: the player's next turn waits" in caplog.text
     assert game.typed_actions == [] and game.lines_of(HULDA.name) == [NPC_LINE]
@@ -325,7 +326,7 @@ def test_asking_for_someone_already_in_the_conversation_is_no_mistake(caplog):
     characters.get_player_name.return_value = PLAYER.name
     characters.get_all_names_w_nearby.side_effect = lambda include_player=True, include_nearby=False, nearby_only=False: \
         ["Sven"] if nearby_only else [HULDA.name, PLAYER.name]
-    caplog.set_level("INFO")
+    caplog.set_level(logging.DEBUG)
     assert FunctionManager._validate_npc_names([HULDA.name], characters, nearby_only=True) == []
     FunctionManager._log_skipped("mantella_npc_addtoconversation", "source", [HULDA.name], characters, True)
     assert "not found" not in caplog.text and "Skipping action" not in caplog.text

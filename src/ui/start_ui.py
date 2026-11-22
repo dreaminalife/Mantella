@@ -5,7 +5,6 @@ import gradio as gr
 from src.config.config_loader import ConfigLoader
 from src.http.routes.routeable import routeable
 from src.ui.settings_ui_constructor import SettingsUIConstructor
-import logging
 import os
 import sys
 import time
@@ -40,11 +39,17 @@ from src.ui.bio_editor_memory_files import (
     thoughts_base_dir,
 )
 from src.llm.client_base import ClientBase
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.SETTINGS_PAGE)
+memories_log = get_topic_logger(LogTopic.MEMORIES)
+startup_log = get_topic_logger(LogTopic.STARTUP)
 
 class StartUI(routeable):
     BANNER = "docs/_static/img/mantella_banner.png"
     def __init__(self, config: ConfigLoader) -> None:
-        super().__init__(config, False)
+        super().__init__(config)
         self.__constructor = SettingsUIConstructor(config)
 
     def create_main_block(self) -> gr.Blocks:
@@ -116,6 +121,7 @@ class StartUI(routeable):
             "Edit the active conversation in real time. When the model returns gibberish, click **Reload** to fetch the current history, fix the bad line in the **Text** column, then click **Save** to apply. "
             "**💭 Thought** rows are an NPC's private thoughts: they are never spoken aloud. "
             "**Event** rows are the in-game events sent with the player message below them, numbered after it (e.g. 4.e1). Deleting a player message also deletes its events. "
+            "**Vanilla Dialogue** rows are Skyrim's own voiced lines said during the conversation, sent with the player message below them (e.g. 4.v1). Deleting a player message also deletes them. "
             "To delete rows, click their **#** to select them, then click **Delete selected**. This also saves your text edits. Click outside the table to clear the selection. "
             "Use **Undo last round** to remove the last player turn and everything after it, **Undo NPC reply** to keep the player line and drop only the reply (in Game Master Mode, only the last NPC's turn), or **Remove last user message** to drop the last player line when it is the most recent message."
         )
@@ -157,7 +163,7 @@ class StartUI(routeable):
                     return "", " No active conversation, or conversation has no messages yet."
                 return json_str, " Reloaded current conversation."
             except Exception as e:
-                logging.error(f"Live conversation reload failed: {e}", exc_info=True)
+                log.error(f"Live conversation reload failed: {e}", exc_info=True)
                 return "", f" Reload failed: {e}"
 
         def with_rows(handler):
@@ -181,7 +187,7 @@ class StartUI(routeable):
                 rows, json_str, _ = with_rows(on_live_reload)()
                 return rows, json_str, " Conversation updated successfully."
             except Exception as e:
-                logging.error(f"Live conversation save failed: {e}", exc_info=True)
+                log.error(f"Live conversation save failed: {e}", exc_info=True)
                 return *unchanged, f" Save failed: {e}"
 
         def on_live_save_table(rows, json_str: str):
@@ -219,7 +225,7 @@ class StartUI(routeable):
                     return json_str, " Undid last round of talk."
                 return json_str, " No player turn to undo."
             except Exception as e:
-                logging.error(f"Live conversation undo failed: {e}", exc_info=True)
+                log.error(f"Live conversation undo failed: {e}", exc_info=True)
                 return "", f" Undo failed: {e}"
 
         def on_live_undo_npc_reply():
@@ -236,7 +242,7 @@ class StartUI(routeable):
                     return json_str, " Undid last NPC reply."
                 return json_str, " No NPC reply to undo."
             except Exception as e:
-                logging.error(f"Live conversation undo NPC reply failed: {e}", exc_info=True)
+                log.error(f"Live conversation undo NPC reply failed: {e}", exc_info=True)
                 return "", f" Undo NPC reply failed: {e}"
 
         def on_live_remove_last_user_message():
@@ -253,7 +259,7 @@ class StartUI(routeable):
                     return json_str, " Removed last user message."
                 return json_str, " Last message is not from the user."
             except Exception as e:
-                logging.error(f"Live conversation remove last user message failed: {e}", exc_info=True)
+                log.error(f"Live conversation remove last user message failed: {e}", exc_info=True)
                 return "", f" Remove last user message failed: {e}"
 
         live_outputs = [live_conversation_table, live_conversation_editor, live_conversation_info]
@@ -288,7 +294,7 @@ class StartUI(routeable):
                     if df is not None:
                         return df.copy()
             except Exception as e:
-                logging.debug(f"Bio Editor: fallback to base CSV (reason: {e})")
+                log.debug(f"Bio Editor: fallback to base CSV (reason: {e})")
 
             # Fallback: base CSV + apply all override files (CSV/JSON) to include override-only NPCs
             base_csv = _get_base_csv_path()
@@ -296,7 +302,7 @@ class StartUI(routeable):
                 encoding = utils.get_file_encoding(base_csv)
                 base_df = pd.read_csv(base_csv, engine='python', encoding=encoding)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to read base CSV '{base_csv}': {e}")
+                log.error(f"Bio Editor: failed to read base CSV '{base_csv}': {e}")
                 return pd.DataFrame(columns=['name','base_id','race','bio'])
 
             # Ensure required columns exist and normalize keys
@@ -352,7 +358,7 @@ class StartUI(routeable):
                                     }
                                     base_df = pd.concat([base_df, pd.DataFrame([new_row])], ignore_index=True)
                         except Exception as e:
-                            logging.debug(f"Bio Editor: failed reading override CSV {full_path}: {e}")
+                            log.warning(f"Bio Editor: failed reading override CSV {full_path}: {e}")
                     elif ext == '.json':
                         try:
                             # Skip empty JSON files
@@ -381,9 +387,9 @@ class StartUI(routeable):
                                     }
                                     base_df = pd.concat([base_df, pd.DataFrame([new_row])], ignore_index=True)
                         except Exception as e:
-                            logging.debug(f"Bio Editor: failed reading override JSON {full_path}: {e}")
+                            log.warning(f"Bio Editor: failed reading override JSON {full_path}: {e}")
             except Exception as e:
-                logging.debug(f"Bio Editor: failed applying overrides in fallback: {e}")
+                log.warning(f"Bio Editor: failed applying overrides in fallback: {e}")
 
             return base_df
 
@@ -473,7 +479,7 @@ class StartUI(routeable):
                             base_df = pd.concat([base_df, pd.DataFrame([new_row])], ignore_index=True)
                 return base_df
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to apply override file '{full_path}': {e}")
+                log.warning(f"Bio Editor: failed to apply override file '{full_path}': {e}")
                 return base_df
 
         def _build_provenance() -> dict[str, dict[str, dict]]:
@@ -518,7 +524,7 @@ class StartUI(routeable):
                             if bio_val is not None and str(bio_val) != '':
                                 provenance[key]['bio'] = {'file': full_path, 'type': 'json', 'index': int(idx), 'is_single_json': isinstance(obj, dict)}
                 except Exception as e:
-                    logging.debug(f"Bio Editor: provenance scan failed for {full_path}: {e}")
+                    log.warning(f"Bio Editor: provenance scan failed for {full_path}: {e}")
             return provenance
 
         def _choose_default_personal_csv(user_csv_path: str | None) -> str:
@@ -735,7 +741,7 @@ class StartUI(routeable):
                     return target_path
                     
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save to user-defined path '{target_path}': {e}")
+                log.error(f"Bio Editor: failed to save to user-defined path '{target_path}': {e}")
                 return ''
 
         def _build_labels_and_map(df: pd.DataFrame):
@@ -755,7 +761,7 @@ class StartUI(routeable):
                     label_to_key[label] = key
                     key_to_label[key] = label
             except Exception as e:
-                logging.error(f"Bio Editor: failed to build labels: {e}")
+                log.error(f"Bio Editor: failed to build labels: {e}")
             return labels, label_to_key, key_to_label
 
         def _filter_labels(query: str, all_labels: list[str], limit: int = 200):
@@ -801,7 +807,7 @@ class StartUI(routeable):
                     return ""
                 return load_latest_text(_get_conversations_base_dir(), world_id, base_name, "summary")
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to load summary: {e}")
+                log.warning(f"Bio Editor: failed to load summary: {e}")
                 return ""
 
         def _save_summary_for_label(label: str, summary_text: str, l2k: dict[str, str], world_id: str) -> str:
@@ -811,7 +817,7 @@ class StartUI(routeable):
                     return ""
                 return save_latest_text(_get_conversations_base_dir(), world_id, base_name, "summary", summary_text)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save summary: {e}")
+                log.error(f"Bio Editor: failed to save summary: {e}")
                 return ""
 
         def _load_thoughts_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
@@ -821,7 +827,7 @@ class StartUI(routeable):
                     return ""
                 return load_latest_text(_get_thoughts_base_dir(), world_id, base_name, "thoughts")
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to load private thoughts: {e}")
+                log.warning(f"Bio Editor: failed to load private thoughts: {e}")
                 return ""
 
         def _save_thoughts_for_label(label: str, thoughts_text: str, l2k: dict[str, str], world_id: str) -> str:
@@ -831,7 +837,7 @@ class StartUI(routeable):
                     return ""
                 return save_latest_text(_get_thoughts_base_dir(), world_id, base_name, "thoughts", thoughts_text)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save private thoughts: {e}")
+                log.error(f"Bio Editor: failed to save private thoughts: {e}")
                 return ""
 
         def _load_reflections_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
@@ -841,7 +847,7 @@ class StartUI(routeable):
                     return ""
                 return load_latest_text(_get_reflections_base_dir(), world_id, base_name, "reflections")
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to load personal reflections: {e}")
+                log.warning(f"Bio Editor: failed to load personal reflections: {e}")
                 return ""
 
         def _save_reflections_for_label(label: str, reflections_text: str, l2k: dict[str, str], world_id: str) -> str:
@@ -851,7 +857,7 @@ class StartUI(routeable):
                     return ""
                 return save_latest_text(_get_reflections_base_dir(), world_id, base_name, "reflections", reflections_text)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save personal reflections: {e}")
+                log.error(f"Bio Editor: failed to save personal reflections: {e}")
                 return ""
 
         def _load_notes_for_label(label: str, l2k: dict[str, str], world_id: str) -> str:
@@ -861,7 +867,7 @@ class StartUI(routeable):
                     return ""
                 return load_latest_text(_get_notes_base_dir(), world_id, base_name, "notes")
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to load notes: {e}")
+                log.warning(f"Bio Editor: failed to load notes: {e}")
                 return ""
 
         def _save_notes_for_label(label: str, notes_text: str, l2k: dict[str, str], world_id: str) -> str:
@@ -871,7 +877,7 @@ class StartUI(routeable):
                     return ""
                 return save_latest_text(_get_notes_base_dir(), world_id, base_name, "notes", notes_text)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save notes: {e}")
+                log.error(f"Bio Editor: failed to save notes: {e}")
                 return ""
 
         def _load_override_tags_for_label(label: str, label_to_key: dict[str, str], user_csv_path: str | None) -> str:
@@ -928,7 +934,7 @@ class StartUI(routeable):
                         return str(val).strip()
                     return ""
             except Exception as e:
-                logging.debug(f"Bio Editor: failed to load override tags: {e}")
+                log.warning(f"Bio Editor: failed to load override tags: {e}")
                 return ""
 
         def _compute_runtime_tags_for_label(label: str, label_to_key: dict[str, str]) -> str:
@@ -1040,7 +1046,7 @@ class StartUI(routeable):
                 effective_tags = merged_tags_overwrite if merged_tags_overwrite else merged_tags
                 return effective_tags
             except Exception as e:
-                logging.debug(f"Bio Editor: runtime tags computation failed: {e}")
+                log.warning(f"Bio Editor: runtime tags computation failed: {e}")
                 return ""
 
         def _load_bio_for_label(label: str, df: pd.DataFrame, label_to_key: dict[str, str]) -> str:
@@ -1058,7 +1064,7 @@ class StartUI(routeable):
                 bio = view.iloc[0].get('bio', '')
                 return '' if pd.isna(bio) else str(bio)
             except Exception as e:
-                logging.error(f"Bio Editor: failed to load bio: {e}")
+                log.error(f"Bio Editor: failed to load bio: {e}")
                 return ""
 
         def _save_bio_override_from_label(label: str, new_bio: str, label_to_key: dict[str, str]) -> str:
@@ -1089,7 +1095,7 @@ class StartUI(routeable):
                 df.to_csv(csv_path, index=False, encoding='utf-8')
                 return csv_path
             except Exception as e:
-                logging.error(f"Bio Editor: failed to save bio override: {e}")
+                log.error(f"Bio Editor: failed to save bio override: {e}")
                 return ""
 
         # Initial data
@@ -1319,7 +1325,7 @@ class StartUI(routeable):
                         except Exception:
                             pass
                 except Exception as e:
-                    logging.debug(f"Bio Editor: in-memory update failed: {e}")
+                    log.warning(f"Bio Editor: in-memory update failed: {e}")
                 # Also update runtime bio for active conversation if possible
                 try:
                     key_for_runtime = l2k.get(label, '')
@@ -1327,7 +1333,7 @@ class StartUI(routeable):
                     if rn and rb:
                         _update_runtime_bio_if_possible(rn, rb, rr, bio_text)
                 except Exception as e:
-                    logging.debug(f"Bio Editor: runtime update after manual save failed: {e}")
+                    log.warning(f"Bio Editor: runtime update after manual save failed: {e}")
                 # Update cached game DataFrame (bio + tags) for future conversations
                 try:
                     key_for_cached = l2k.get(label, '')
@@ -1345,7 +1351,7 @@ class StartUI(routeable):
                         if override_tags is not None:
                             _refresh_runtime_tags_for_npc(cn, cb, cr, override_tags)
                 except Exception as e:
-                    logging.debug(f"Bio Editor: cached df update after manual save failed: {e}")
+                    log.warning(f"Bio Editor: cached df update after manual save failed: {e}")
                 new_labels, new_l2k, new_k2l = _build_labels_and_map(new_df)
                 # Preserve selection by key
                 current_key = l2k.get(label, '')
@@ -1597,7 +1603,7 @@ class StartUI(routeable):
                         return "Personal reflection generated and appended.", updated, gr.Button(interactive=True), gr.Button(interactive=True)
                     return "Personal reflection generation failed. Check the log.", updated, gr.Button(interactive=True), gr.Button(interactive=True)
                 except Exception as e:
-                    logging.error(f"Bio Editor: failed to generate personal reflection: {e}", exc_info=True)
+                    memories_log.error(f"Bio Editor: failed to generate personal reflection: {e}", exc_info=True)
                     return f"Personal reflection generation failed: {e}", _load_reflections_for_label(label, l2k, world_id), gr.Button(interactive=True), gr.Button(interactive=True)
 
             # --- LLM helper handlers ---
@@ -1634,7 +1640,7 @@ class StartUI(routeable):
                         sel = ml.default_model
                     return gr.Dropdown(value=sel, choices=ml.available_models, multiselect=False, allow_custom_value=ml.allows_manual_model_input, label="Model")
                 except Exception as e:
-                    logging.error(f"LLM model list update failed: {e}")
+                    log.error(f"LLM model list update failed: {e}")
                     ml = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'google/gemma-2-9b-it:free', False)
                     return gr.Dropdown(value=ml.default_model, choices=ml.available_models, multiselect=False, allow_custom_value=ml.allows_manual_model_input, label="Model")
 
@@ -1662,7 +1668,7 @@ class StartUI(routeable):
                                 from src.llm.message_thread import message_thread
                                 current_conversation_history = message_thread.transform_to_text(talk_messages).strip()
                     except Exception as e:
-                        logging.debug(f"Bio Editor: Could not retrieve conversation history: {e}")
+                        log.warning(f"Bio Editor: Could not retrieve conversation history: {e}")
 
                     final_prompt = _render_prompt_text(raw_prompt or "", current_bio, current_summary, config.player_character_description, current_conversation_history)
                     # Parse per-request params; ignore profile system, use only this
@@ -1672,9 +1678,9 @@ class StartUI(routeable):
                             params_override = json.loads(params_text)
                             if not isinstance(params_override, dict):
                                 params_override = None
-                                logging.error("LLM parameters must be a JSON object.")
+                                log.error("LLM parameters must be a JSON object.")
                         except Exception as e:
-                            logging.error(f"LLM parameters JSON parse error: {e}")
+                            log.error(f"LLM parameters JSON parse error: {e}")
                     # Apply model profile optionally on top of params_override
                     if apply_profile:
                         try:
@@ -1683,7 +1689,7 @@ class StartUI(routeable):
                             profile_params = pm.apply_profile_to_params(srv, mdl, params_override or {})
                             params_override = profile_params
                         except Exception as e:
-                            logging.error(f"Error applying model profile: {e}")
+                            log.error(f"Error applying model profile: {e}")
                     # Apply on-the-fly overrides for temperature and max_tokens
                     if params_override is None:
                         params_override = {}
@@ -1701,15 +1707,10 @@ class StartUI(routeable):
                         params_override.pop("stop", None)
                     requester = BioLLMRequester(config)
                     reply = requester.send(srv, mdl, final_prompt, params_override=params_override)
-                    if reply:
-                        try:
-                            logging.log(23, f"LLM response (Bio Editor): {reply.strip()}")
-                        except Exception:
-                            logging.info("LLM response (Bio Editor) logged")
                     info = "LLM reply received." if reply else "No reply from LLM. Check logs."
                     return info, (reply or ""), gr.Button(interactive=bool(reply))
                 except Exception as e:
-                    logging.error(f"LLM request failed: {e}")
+                    log.error(f"LLM request failed: {e}")
                     return "LLM request failed. Check logs.", "", gr.Button(interactive=False)
 
             def _update_runtime_bio_if_possible(name: str, base_id: str, race: str, new_bio: str):
@@ -1753,7 +1754,7 @@ class StartUI(routeable):
                         except Exception:
                             continue
                 except Exception as e:
-                    logging.debug(f"Bio Editor: runtime bio update skipped: {e}")
+                    log.debug(f"Bio Editor: runtime bio update skipped: {e}")
 
             def _update_cached_game_df_if_possible(name: str, base_id: str, race: str, new_bio: str):
                 try:
@@ -1823,7 +1824,7 @@ class StartUI(routeable):
                         except Exception:
                             pass
                 except Exception as e:
-                    logging.debug(f"Bio Editor: cached game df update skipped: {e}")
+                    log.debug(f"Bio Editor: cached game df update skipped: {e}")
 
             def _refresh_runtime_tags_for_npc(name: str, base_id: str, race: str, new_override_tags: str):
                 """Recompute the merged runtime `tags` column for a single NPC.
@@ -1985,9 +1986,9 @@ class StartUI(routeable):
                                             dyn = bio_tmpl_mgr.extract_dynamic_events(effective_tags, tag_outcomes)
                                             ch.set_custom_character_value('mantella_dynamic_tag_events', dyn)
                     except Exception as e:
-                        logging.debug(f"Bio Editor: in-conversation tag refresh skipped: {e}")
+                        log.debug(f"Bio Editor: in-conversation tag refresh skipped: {e}")
                 except Exception as e:
-                    logging.debug(f"Bio Editor: runtime tags refresh skipped: {e}")
+                    log.debug(f"Bio Editor: runtime tags refresh skipped: {e}")
 
             def on_save_from_llm(label: str, response_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str):
                 # Reuse existing save logic (already updates runtime)
@@ -2136,7 +2137,7 @@ class StartUI(routeable):
                 self._config.save_ui_tab_order(names)
                 return {"ok": True}
             except Exception as e:
-                logging.warning(f"Failed to save tab order: {e}")
+                log.warning(f"Failed to save tab order: {e}")
                 return {"ok": False}
 
         gr.mount_gradio_app(app,
@@ -2144,12 +2145,12 @@ class StartUI(routeable):
                             path="/ui")
         
         link = f'http://localhost:{str(self._config.port)}/ui?__theme=dark'
-        logging.log(24, f'\nMantella settings can be changed via this link:')
-        logging.log(25, link)
+        startup_log.info(f'Mantella settings can be changed via this link:')
+        startup_log.info(link)
         if self._config.auto_launch_ui == True:
             if not webbrowser.open(link, new=2):
-                logging.warning('\nFailed to open Mantella settings UI automatically. To edit settings, see here:')
-                logging.log(25, link)
+                startup_log.warning('Failed to open Mantella settings UI automatically. To edit settings, see here:')
+                startup_log.info(link)
     
     def __load_css(self):
         # Determine CSS path based on whether we are running as an exe or from source
@@ -2165,7 +2166,7 @@ class StartUI(routeable):
                 return css_content
         except FileNotFoundError:
             # Fallback: return empty CSS so the app still runs
-            logging.warning(f"StartUI: Could not find CSS file at {css_path}. UI will load without custom styles.")
+            log.warning(f"StartUI: Could not find CSS file at {css_path}. UI will load without custom styles.")
             return ""
 
     

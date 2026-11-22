@@ -99,8 +99,7 @@ def default_mantella_route(default_config: ConfigLoader, english_language_info: 
         stt_secret_key_file='STT_SECRET_KEY.txt', 
         image_secret_key_file='IMAGE_SECRET_KEY.txt', 
         secret_key_file='GPT_SECRET_KEY.txt', 
-        language_info=english_language_info, 
-        show_debug_messages=False
+        language_info=english_language_info
     )
 
 @pytest.fixture

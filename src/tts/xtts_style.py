@@ -5,7 +5,6 @@ The built-in XTTS option is not touched: this is separate code.
 """
 from __future__ import annotations
 
-import logging
 import os
 import threading
 from typing import Any
@@ -17,6 +16,10 @@ from src.tts.registry import VoiceServiceInfo
 from src.tts.voice_picker import VoicePick
 from src.tts.voice_setups import CLIP_PATH
 from src.voice_clips.clip_store import voice_key
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 
 class XTTSStyleService(ClipVoiceService):
@@ -45,7 +48,7 @@ class XTTSStyleService(ClipVoiceService):
                         data = data.get("speakers", []) if isinstance(data, dict) else data
                     self._program_voices = {voice_key(v) for v in data if isinstance(v, str)}
                 except (requests.RequestException, ValueError) as e:
-                    logging.debug(f"{self._url}: could not list its voices: {e}")
+                    log.warning(f"{self._url}: could not list its voices: {e}")
                     return set()
             return self._program_voices
 

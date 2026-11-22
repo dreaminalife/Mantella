@@ -120,6 +120,14 @@ def test_unsupported_service_returns_none(post):
 
 
 @patch("src.conversation.game_master.requests.post")
+def test_typed_address_is_sent_there_unchanged(post):
+    post.return_value = decision_response({"Hulda": 0.7, "Lydia": 0.2, NOBODY: 0.1})
+    chosen = choose(config(), client("http://localhost:8009/v1/systemone"))
+    assert chosen and chosen.name == "Hulda"
+    assert post.call_args.args[0] == "http://localhost:8009/v1/systemone"
+
+
+@patch("src.conversation.game_master.requests.post")
 def test_http_error_returns_none(post):
     post.return_value = decision_response({}, status=400)
     assert choose(config()) is None

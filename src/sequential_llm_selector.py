@@ -6,11 +6,14 @@ last model. Indices reset when a new conversation starts.
 """
 
 import json
-import logging
 from typing import Any, Dict, List, Optional
 
 from src.model_profile_manager import ModelProfileManager
 from src.random_llm_selector import LLMSelection
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 
 
 class SequentialLLMSelector:
@@ -70,7 +73,7 @@ class SequentialLLMSelector:
     ) -> LLMSelection | None:
         pool = self._normalize_pool(pool, conversation_type)
         if not pool:
-            logging.debug(f"Sequential LLM pool is empty for {conversation_type}; skipping sequential selection")
+            log.debug(f"Sequential LLM pool is empty for {conversation_type}; skipping sequential selection")
             return None
 
         start_index = self._indices.get(conversation_type, 0) % len(pool)
@@ -78,7 +81,7 @@ class SequentialLLMSelector:
             index = (start_index + offset) % len(pool)
             selected_llm = pool[index]
             if not isinstance(selected_llm, dict) or "service" not in selected_llm or "model" not in selected_llm:
-                logging.error(f"Invalid LLM entry in sequential {conversation_type} pool: {selected_llm}")
+                log.error(f"Invalid LLM entry in sequential {conversation_type} pool: {selected_llm}")
                 continue
 
             self._indices[conversation_type] = (index + 1) % len(pool)
@@ -90,7 +93,7 @@ class SequentialLLMSelector:
                 apply_profile,
             )
 
-        logging.warning(f"No valid LLM entries in sequential {conversation_type} pool")
+        log.warning(f"No valid LLM entries in sequential {conversation_type} pool")
         return None
 
     def _normalize_pool(self, pool: Any, conversation_type: str) -> List[Dict[str, Any]]:
@@ -98,10 +101,10 @@ class SequentialLLMSelector:
             try:
                 pool = json.loads(pool)
             except json.JSONDecodeError as e:
-                logging.error(f"Error parsing sequential {conversation_type} LLM pool JSON: {e}")
+                log.error(f"Error parsing sequential {conversation_type} LLM pool JSON: {e}")
                 return []
         if not isinstance(pool, list):
-            logging.warning(f"Invalid sequential {conversation_type} LLM pool")
+            log.warning(f"Invalid sequential {conversation_type} LLM pool")
             return []
         return pool
 
@@ -126,8 +129,8 @@ class SequentialLLMSelector:
 
         has_profile = apply_profile and self.profile_manager.has_profile(service, model)
         profile_status = "with profile" if has_profile else "without profile"
-        logging.info(f"Sequentially selected LLM for {conversation_type}: {service}/{model} ({profile_status})")
-        logging.info(f"Sequential LLM Parameters: {profile_params}")
+        log.info(f"Sequentially selected LLM for {conversation_type}: {service}/{model} ({profile_status})")
+        log.debug(f"Sequential LLM Parameters: {profile_params}")
 
         return LLMSelection(
             service=service,

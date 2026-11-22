@@ -43,7 +43,7 @@ from src.remember.npc_folder import NpcFolder  # noqa: E402
 from tests.ingame.conversation_events.conversation_events_ingame import (  # noqa: E402
     TIME_FORMAT, Exchange, Report, default_mantella_folder, exchanges, read_json, read_log)
 from tests.ingame.silent_voice import start_silent_voice, voice_settings  # noqa: E402
-from tests.ingame.talk_settings.talk_settings_ingame import write_settings  # noqa: E402
+from tests.ingame.talk_settings.talk_settings_ingame import LOG_SETTINGS, write_settings  # noqa: E402
 
 # The same Skyrim.esm forms as MantellaHeardLinesTest.psc
 FEUD_SCENE = 0x0E3DE3  # Vignar and Olfrid argue
@@ -92,7 +92,7 @@ def setup(game_folder: str, mantella_folder: str):
     days = OtherDefinitions.get_heard_lines_days_kept_config_value()
     most = OtherDefinitions.get_heard_lines_most_per_npc_config_value()
     menu_only = OtherDefinitions.get_heard_lines_menu_only_config_value()
-    missing = write_settings(config_path, {**voice_settings(), "show_http_debug_messages": "True", days.identifier: str(days.default_value),
+    missing = write_settings(config_path, {**voice_settings(), **LOG_SETTINGS, days.identifier: str(days.default_value),
                                            most.identifier: str(most.default_value),
                                            menu_only.identifier: f"{menu_only.default_value}, {ROOM_PATTERN}"})
     if missing:

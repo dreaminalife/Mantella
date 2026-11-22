@@ -5,10 +5,13 @@ game waits for it. Every newer service has it (voice_style.SPEEDS, SETUP_SPEED);
 """
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 
 import numpy as np
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.VOICES)
 
 UNCHANGED = 1.0
 CLOSE_ENOUGH = 0.005 # a speed this close to 1 leaves the line as it is
@@ -28,7 +31,7 @@ class SpeedChange(ABC):
         try:
             return self.changed(samples, rate, speed)
         except Exception as e:
-            logging.warning(f"Could not change the line's Talking speed: {e}. It plays at its own speed.")
+            log.warning(f"Could not change the line's Talking speed: {e}. It plays at its own speed.")
             return samples
 
 

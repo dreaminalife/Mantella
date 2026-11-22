@@ -8,7 +8,7 @@ import pytest
 
 from src.game_manager import GameStateManager
 from src.http.communication_constants import communication_constants as comm_consts
-from tests.heard_lines.lines import HULDA, SAADIA, hand_over, menu_line, scene_line
+from tests.heard_lines.lines import CARLOTTA, HULDA, SAADIA, hand_over, menu_line, scene_line
 from tests.test_conversation_events_flow import FakeGame, FakeModel, PLAYER, HULDA as HULDA_PERSON, MIKAEL as MIKAEL_PERSON, manager, model # noqa: F401 (fixtures)
 
 WORLD = PLAYER.name + "Test1" # The world FakeGame starts its conversations in
@@ -85,7 +85,29 @@ def test_game_master_continue_with_only_heard_lines_still_sends_them(game: Heard
     game.heard = hand_over(scene_line(HEARD, time=int(time.time()), heard_by=[HULDA]))
     model.picks = [HULDA_PERSON.name]
     game.say(".") # The NPCs go on, without new player input or in-game events
-    assert any(f'Nearby, Mikael says to Carlotta: "{HEARD}"' in request for request in model.npc_requests)
+    assert any(f'Mikael says to Carlotta: "{HEARD}"' in request for request in model.npc_requests)
+
+
+def test_a_line_said_by_someone_in_the_conversation_is_not_nearby(game: HeardLinesGame, model: FakeModel):
+    game.start(HULDA_PERSON, MIKAEL_PERSON) # Mikael is in it. Carlotta isn't
+    now = int(time.time())
+    game.heard = hand_over(scene_line(HEARD, time=now, heard_by=[HULDA]),
+                           scene_line("Leave me be.", speaker=CARLOTTA, to=SAADIA, time=now + 1, heard_by=[HULDA]))
+    sent_before = len(model.npc_requests)
+    model.picks = [HULDA_PERSON.name]
+    game.say("Did you hear that?")
+    sent = "\n".join(model.npc_requests[sent_before:])
+    assert f'Mikael says to Carlotta: "{HEARD}"' in sent and "Nearby, Mikael" not in sent
+    assert 'Nearby, Carlotta says to Saadia: "Leave me be."' in sent # Neither is in the conversation
+
+
+def test_menu_talk_with_the_player_is_not_nearby(game: HeardLinesGame, model: FakeModel):
+    game.start(HULDA_PERSON)
+    game.heard = hand_over(menu_line("Any rumors?", "Not today.", speaker=SAADIA, heard_by=[SAADIA, HULDA], time=int(time.time())))
+    game.say("Did you hear that?")
+    request = model.npc_requests[-1]
+    assert 'Kit asks Saadia: "Any rumors?" Saadia answers: "Not today."' in request # The player is in the conversation
+    assert "Nearby, Kit" not in request
 
 
 def test_a_line_in_the_conversation_is_not_also_in_memory_while_it_runs(game: HeardLinesGame, model: FakeModel):

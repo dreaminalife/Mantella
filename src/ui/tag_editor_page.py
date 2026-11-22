@@ -3,7 +3,6 @@
 See docs/tag_editor.md. File handling lives in tag_editor_files.py; this module is the UI and applying changes to the running game.
 """
 import functools
-import logging
 import os
 import time
 from typing import Any, Dict, List, Tuple
@@ -19,6 +18,11 @@ from src.config.definitions.game_definitions import GameEnum
 from src.quest_tags import history as quest_tag_history
 from src.quest_tags.conditions import CheckList
 from src.ui import tag_editor_files as files
+from src.logs.log_topic import LogTopic
+from src.logs.topic_logger import get_topic_logger
+
+log = get_topic_logger(LogTopic.SETTINGS_PAGE)
+quest_tags_log = get_topic_logger(LogTopic.QUEST_TAGS)
 
 LAYER_NAMES = {LAYER_BASE: "Base", LAYER_MOD: "Mod", LAYER_PERSONAL: "Personal"}
 EVENT_HEADERS = ["Date", "Timestamp", "Event"]
@@ -411,11 +415,11 @@ def build_tag_editor_page(config: ConfigLoader):
                     lines.append(f"{', '.join(refreshed)}, in the current conversation, use the new version from their next reply.")
                 if old_version != new_version:
                     lines.append("**A conversation is running, so quest progress won't be checked until the next conversation starts.**")
-                    logging.info("Tag Editor: the quest checks changed during a conversation. The game gets the new list at the next conversation start; until then its answers are ignored.")
+                    quest_tags_log.info("Tag Editor: the quest checks changed during a conversation. The game gets the new list at the next conversation start; until then its answers are ignored.")
             elif old_version != new_version:
                 lines.append("Changed conditions reach the game when the next conversation starts.")
         except Exception as e:
-            logging.warning(f"Tag Editor: saved, but could not apply the change to the running game: {e}")
+            log.warning(f"Tag Editor: saved, but could not apply the change to the running game: {e}")
             lines.append(f"Saved, but it couldn't be applied to the running game ({e}). Use **Other → Reload Character Data**.")
         return lines
 
@@ -477,7 +481,7 @@ def build_tag_editor_page(config: ConfigLoader):
         try:
             files.write_cells(target, tag, cells)
         except Exception as e:
-            logging.warning(f"Tag Editor: could not create {tag}: {e}")
+            log.warning(f"Tag Editor: could not create {tag}: {e}")
             return {new_tag_message: f"Couldn't create `{tag}`: {e}"}
 
         lines = [f"Created `{tag}` in `{os.path.basename(target)}`.{'' if created_file else backup_note([target])} "
@@ -659,7 +663,7 @@ def build_tag_editor_page(config: ConfigLoader):
                 if created:
                     new_files.append(target)
         except Exception as e:
-            logging.warning(f"Tag Editor: could not save {tag}: {e}")
+            log.warning(f"Tag Editor: could not save {tag}: {e}")
             return {message_line: f"Couldn't save `{tag}`: {e}"}
 
         lines = []
@@ -752,7 +756,7 @@ def build_tag_editor_page(config: ConfigLoader):
         try:
             changed = files.remove_tag_rows(files.personal_files(files_with_tag, tag), tag)
         except Exception as e:
-            logging.warning(f"Tag Editor: could not delete {tag}: {e}")
+            log.warning(f"Tag Editor: could not delete {tag}: {e}")
             return {message_line: f"Couldn't delete `{tag}`: {e}", confirm_remove_btn: gr.update(visible=False)}
         lines = [f"Deleted `{tag}` from {', '.join(f'`{os.path.basename(path)}`' for path in changed)}.{backup_note(changed)}"]
         lines += apply_to_game(tag)
@@ -767,7 +771,7 @@ def build_tag_editor_page(config: ConfigLoader):
         try:
             changed = files.remove_tag_rows(files.personal_files(files_with_tag, tag), tag)
         except Exception as e:
-            logging.warning(f"Tag Editor: could not undo the changes to {tag}: {e}")
+            log.warning(f"Tag Editor: could not undo the changes to {tag}: {e}")
             return {message_line: f"Couldn't undo your changes to `{tag}`: {e}", confirm_remove_btn: gr.update(visible=False)}
         lines = [f"`{tag}` is back to the original. Removed its row from {', '.join(f'`{os.path.basename(path)}`' for path in changed)}.{backup_note(changed)}"]
         lines += apply_to_game(tag)
