@@ -38,7 +38,7 @@ from src.config.config_loader import ConfigLoader
 from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.prompt_profile_manager import PromptSectionError
 from src.logs.log_topic import LogTopic
-from src.logs.topic_logger import get_topic_logger, spoken_line
+from src.logs.topic_logger import get_topic_logger, hold_players_line, show_players_line
 
 log = get_topic_logger(LogTopic.CONVERSATION)
 game_master_log = get_topic_logger(LogTopic.GAME_MASTER)
@@ -627,6 +627,7 @@ class Conversation:
 
     def __end_unanswered(self) -> tuple[str, Sentence | None]:
         """Just saying something: nobody nearby answered what the player said to the room, so the conversation ends"""
+        show_players_line()
         log.info("Nobody answers. The conversation ends")
         self.__has_already_ended = True
         self.__ended_unanswered = True
@@ -741,7 +742,7 @@ class Conversation:
             player_voiceline = None if is_director or is_continue else self.__get_player_voiceline(player_character, player_text)
             text = "" if is_continue else new_message.text
             if text.strip() and not is_director:
-                spoken_line(log, player_character.name, text.strip(), by_player=True)
+                hold_players_line(log, player_character.name, text.strip()) # shown right above the reply, after the lines about asking the LLM
             is_said_to_room = isinstance(self.__conversation_type, shout) and shout.is_said_to_room(self.__context)
 
         if is_said_to_room:
@@ -1031,6 +1032,7 @@ class Conversation:
     def end(self):
         """Ends a conversation
         """
+        show_players_line() # a goodbye, or a line nobody got to answer
         log.info("The conversation ends")
         self.__has_already_ended = True
         self.__cancel_game_master_turn()

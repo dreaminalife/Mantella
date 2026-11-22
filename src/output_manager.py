@@ -2,8 +2,7 @@ import asyncio
 from threading import Lock
 import logging
 from src.logs.log_topic import LogTopic
-from src.logs.topic_logger import get_prompt_logger, get_topic_logger, in_colour
-from src.logs.log_topic import LINE_GREY
+from src.logs.topic_logger import get_prompt_logger, get_topic_logger
 import os
 import time
 import unicodedata
@@ -63,8 +62,8 @@ raw_reply_log = get_prompt_logger(LogTopic.AI_REPLIES) # Shown at Prompt and rep
 
 
 def log_raw_reply(text: str):
-    """The reply exactly as the LLM wrote it, in grey so it stands apart from the lines spoken"""
-    raw_reply_log.info(text, extra=in_colour(LINE_GREY))
+    """The reply exactly as the LLM wrote it, deep grey in the window (see WindowFormatter) so it stands apart from the lines spoken"""
+    raw_reply_log.info(text)
 models_and_profiles_log = get_topic_logger(LogTopic.MODELS_AND_PROFILES)
 voices_log = get_topic_logger(LogTopic.VOICES)
 actions_log = get_topic_logger(LogTopic.ACTIONS)

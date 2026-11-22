@@ -1,8 +1,8 @@
 import logging
 
-from src.logs.log_formatters import DIM, ERROR_STYLE, PLAYERS_LINE_STYLE, SPOKEN_STYLE, FileFormatter, WARNING_STYLE, WindowFormatter
-from src.logs.log_topic import LINE_GREY, LogTopic
-from src.logs.topic_logger import LINE_COLOUR, PLAYERS_LINE, SPOKEN_LINE, get_topic_logger
+from src.logs.log_formatters import DIM, ERROR_STYLE, PLAYERS_LINE_STYLE, PROMPT_STYLE, SPOKEN_STYLE, FileFormatter, WARNING_STYLE, WindowFormatter
+from src.logs.log_topic import LINE_WHITE, LogTopic
+from src.logs.topic_logger import LINE_COLOUR, PLAYERS_LINE, SPOKEN_LINE, get_prompt_logger, get_topic_logger
 
 
 def record(logger_name: str, level: int, message: str, **extra) -> logging.LogRecord:
@@ -21,14 +21,28 @@ def test_window_line_has_the_topic_tag_in_its_colour():
 
 
 def test_window_line_with_its_own_colour():
-    '''The raw reply is grey, whatever its topic's colour'''
+    '''The request line is white, whatever its topic's colour'''
     name = get_topic_logger(LogTopic.AI_REPLIES).name
-    text = WindowFormatter().format(record(name, logging.INFO, "Full raw response (12 tokens): Lydia: Hm.", **{LINE_COLOUR: LINE_GREY}))
-    assert text.startswith(LINE_GREY + f"[{LogTopic.AI_REPLIES.label}] Full raw response")
+    text = WindowFormatter().format(record(name, logging.INFO, "LLM request for Skyrim Prompt", **{LINE_COLOUR: LINE_WHITE}))
+    assert text.startswith(LINE_WHITE + f"[{LogTopic.AI_REPLIES.label}] LLM request")
+
+
+def test_window_prompt_and_raw_reply_are_deep_grey():
+    '''Not the topic's cyan: the long prompt and raw reply stay out of the way'''
+    name = get_prompt_logger(LogTopic.AI_REPLIES).name
+    for message in ("Prompt sent to LLM (5854 tokens): ## CORE GOAL", "Full raw response (12 tokens): Lydia: Hm."):
+        text = WindowFormatter().format(record(name, logging.INFO, message))
+        assert text.startswith(PROMPT_STYLE + f"[{LogTopic.AI_REPLIES.label}] {message}")
+        assert LogTopic.AI_REPLIES.colour not in text
+
+
+def test_window_prompt_problems_keep_their_colour():
+    text = WindowFormatter().format(record(get_prompt_logger(LogTopic.AI_REPLIES).name, logging.WARNING, "Prompt too long"))
+    assert text.startswith(WARNING_STYLE)
 
 
 def test_window_warning_keeps_its_colour_over_a_lines_own():
-    text = WindowFormatter().format(record(VOICES, logging.WARNING, "Clip missing", **{LINE_COLOUR: LINE_GREY}))
+    text = WindowFormatter().format(record(VOICES, logging.WARNING, "Clip missing", **{LINE_COLOUR: LINE_WHITE}))
     assert text.startswith(WARNING_STYLE)
 
 

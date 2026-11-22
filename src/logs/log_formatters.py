@@ -1,6 +1,6 @@
 import logging
 
-from src.logs.topic_logger import colour_of, is_players_line, is_spoken_line, topic_of
+from src.logs.topic_logger import colour_of, is_players_line, is_prompt_line, is_spoken_line, topic_of
 
 RESET = "\x1b[0m"
 BRIGHT = "\x1b[1m"
@@ -10,6 +10,7 @@ ERROR_STYLE = BRIGHT + "\x1b[91m"
 CRITICAL_STYLE = BRIGHT + "\x1b[97m\x1b[41m"
 SPOKEN_STYLE = "\x1b[92m" # Green, as the conversation always was
 PLAYERS_LINE_STYLE = "\x1b[95m" # Magenta: what the player said
+PROMPT_STYLE = DIM # Deep grey: the prompt sent to the LLM and each raw reply, long and kept out of the way, as they always were
 
 FILE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -26,7 +27,7 @@ def _tag(record: logging.LogRecord) -> str:
 
 class WindowFormatter(logging.Formatter):
     """Mantella.exe's window: a coloured topic tag before each line. Spoken lines have no tag: the NPCs' green, the player's magenta, so the conversation reads like
-    a script. Full lines are dimmed, warnings are yellow and errors red"""
+    a script. Full lines are dimmed, the prompt and raw replies deep grey, warnings are yellow and errors red"""
 
     def __init__(self) -> None:
         super().__init__("%(message)s")
@@ -41,6 +42,8 @@ class WindowFormatter(logging.Formatter):
             style = ERROR_STYLE
         elif record.levelno >= logging.WARNING:
             style = WARNING_STYLE
+        elif is_prompt_line(record):
+            style = PROMPT_STYLE
         else:
             topic = topic_of(record)
             style = colour_of(record) or (topic.colour if topic else "")

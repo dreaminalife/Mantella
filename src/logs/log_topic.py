@@ -13,7 +13,6 @@ _YELLOW = "\x1b[93m"
 _MAGENTA = "\x1b[95m"
 _DIM = "\x1b[2m"
 LINE_WHITE = _WHITE # For a line with its own colour, see topic_logger.in_colour
-LINE_GREY = _GREY
 
 
 class LogTopic(Enum):

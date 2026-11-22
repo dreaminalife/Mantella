@@ -35,7 +35,7 @@ from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver, HeardLi
 from src.heard_lines.heard_lines_store import HeardLinesStore, JsonHeardLinesStore
 from src.heard_lines.heard_lines_text import HeardLinesText, PlainHeardLinesText
 from src.logs.log_topic import LogTopic
-from src.logs.topic_logger import get_topic_logger, spoken_line
+from src.logs.topic_logger import get_topic_logger, show_players_line, spoken_line
 
 log = get_topic_logger(LogTopic.CONVERSATION)
 game_master_log = get_topic_logger(LogTopic.GAME_MASTER)
@@ -738,6 +738,7 @@ class GameStateManager:
 
         if replyType == comm_consts.KEY_REPLYTYPE_NPCACTION and sentence_to_play:
             # Actions without a line. The game does them for the speaker, then asks to continue: with its answer if one of them answers back
+            show_players_line()
             reply[comm_consts.KEY_REPLYTYPE_NPCACTION] = {
                 comm_consts.KEY_ACTOR_SPEAKER: sentence_to_play.speaker.name,
                 comm_consts.KEY_ACTOR_ACTIONS: sentence_to_play.actions,
@@ -1777,6 +1778,7 @@ class GameStateManager:
             return None 
         
     def error_message(self, message: str) -> dict[str, Any]:
+        show_players_line() # the line the error answers, if it wasn't shown yet
         return {
                 comm_consts.KEY_REPLYTYPE: "error",
                 "mantella_message": message
