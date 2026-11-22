@@ -25,4 +25,4 @@ sounddevice==0.5.1
 av==12.3.0
 silero_vad==5.1.2
 onnx-asr[cpu,hub]==0.12.0
-git+https://github.com/usefulsensors/moonshine.git@2f6282347950c8d711bd7319287babb87ec5a92d#subdirectory=moonshine-onnx
+useful-moonshine-onnx @ https://github.com/moonshine-ai/moonshine/archive/2f6282347950c8d711bd7319287babb87ec5a92d.zip#subdirectory=moonshine-onnx
