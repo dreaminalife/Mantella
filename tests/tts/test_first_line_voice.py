@@ -72,6 +72,18 @@ def test_clips_that_dont_come_in_time_hold_up_one_line_only(service, monkeypatch
     assert time.monotonic() - started < 0.2 # the next line doesn't wait again
 
 
+def test_stopping_the_reply_ends_the_wait_at_once(service):
+    """The player interrupts or the conversation ends: Mantella waits for the line being made, so the line mustn't sit out the wait"""
+    service.get_ready_for(LYDIA, make_ahead=False)
+    handed_to_game(service)
+    stopped = threading.Event()
+    service.stop_waiting = stopped.is_set
+    threading.Timer(0.2, stopped.set).start()
+    started = time.monotonic()
+    assert wait_for_own_voice(service).kind == BUILT_IN
+    assert time.monotonic() - started < clip_service.LOOK_SECONDS + 0.5
+
+
 def test_a_line_doesnt_wait_for_clips_not_handed_to_the_game_yet(service):
     """An NPC who joins with the request this line answers: the clips go out with this line's reply, so waiting can't help"""
     service.get_ready_for(LYDIA, make_ahead=False)

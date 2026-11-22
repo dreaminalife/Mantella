@@ -251,6 +251,19 @@ def test_an_npc_who_joins_gets_their_voice_made_as_soon_as_their_clips_arrive(pr
     assert not make_soon(preparation) # done
 
 
+def test_in_a_group_an_npcs_voice_is_made_at_the_lower_priority(preparation, requests, store):
+    """Everyone nearby joins a group conversation: making all their voices at once mustn't slow the lines being spoken"""
+    service = FakeService(store)
+    preparation.add_service(service)
+    requests.ask_for("MaleNord")
+    deliver(sent_requests(requests)[0], voice_type="MaleNord")
+    requests.collect()
+    preparation.make_soon(service, VoiceSpeaker(voice_type="MaleNord"), background=True)
+    assert make_soon(preparation)
+    assert service.made == ["malenord"] and service.in_background == [True]
+    assert not preparing.in_background() # the thread goes back to normal afterwards
+
+
 def test_an_npc_whose_clips_never_come_is_left_to_their_first_line(preparation, requests, store, monkeypatch):
     service = FakeService(store)
     preparation.add_service(service)

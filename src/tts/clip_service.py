@@ -13,7 +13,7 @@ import os
 import threading
 import time
 from abc import abstractmethod
-from typing import Any
+from typing import Any, Callable
 
 from src import utils
 from src.config.config_loader import ConfigLoader
@@ -116,6 +116,7 @@ class ClipVoiceService(TTSable):
         self._pitch: float = 0.0
         self._style: ServiceStyle = style_for(config, info) # Talking speed, and an online service's other settings (voice_style.py)
         self.spoke_in_game = False # a line in game, not only a button on the page
+        self.stop_waiting: Callable[[], bool] | None = None # true once Mantella stops the reply (the player interrupts, the conversation ends): a line waiting for its clips stops waiting
         if not info.speaks(config.language) and (info.name, config.language) not in _warned_languages:
             _warned_languages.add((info.name, config.language)) # once, not on every settings change
             utils.play_error_sound()
@@ -280,16 +281,17 @@ class ClipVoiceService(TTSable):
                       + (f", voice effect {self._effect.name}" if self._effect else ""))
         return super().synthesize(self._pick.label, voiceline, in_game_voice, csv_in_game_voice, voice_accent, synth_options, advanced_voice_model)
 
-    def get_ready_for(self, speaker: VoiceSpeaker, advanced_voice_model: str | None = None, make_ahead: bool = True) -> None:
+    def get_ready_for(self, speaker: VoiceSpeaker, advanced_voice_model: str | None = None, make_ahead: bool = True,
+                      in_background: bool = False) -> None:
         """An NPC joined the conversation: clips they have none of yet are asked for now, so the request goes with this reply to the game
         and the clips arrive while the AI writes. *make_ahead*: their voice is made as soon as the clips arrive, so their first line
-        needn't wait for it"""
+        needn't wait for it. *in_background*: made at the lower priority of Prepare all voices, for an NPC who may not speak soon"""
         if not self.clones_voices:
             return
         self._clip_requests.collect()
         self.__ask_for_clips(speaker, advanced_voice_model, self.pick_voice(speaker, advanced_voice_model))
         if make_ahead:
-            self._preparation.make_soon(self, speaker, advanced_voice_model)
+            self._preparation.make_soon(self, speaker, advanced_voice_model, in_background)
 
     def __ask_for_clips(self, speaker: VoiceSpeaker, advanced_voice_model: str | None, pick: VoicePick) -> None:
         """No clip yet: asked for, and a line before it comes uses a stand-in. Also notices a changed game line, once per run, and asks for
@@ -305,18 +307,19 @@ class ClipVoiceService(TTSable):
     def __wait_for_own_voice(self, speaker: VoiceSpeaker, advanced_voice_model: str | None, pick: VoicePick) -> VoicePick:
         """A stand-in while the NPC's own clips are on their way from the game: the line waits for them, up to FIRST_LINE_WAIT_SECONDS.
         Only for clips already handed to the game (asked for when the NPC joined), and each request is waited for once, so a voice
-        whose clips don't come holds up one line at most"""
+        whose clips don't come holds up one line at most. Ends at once when Mantella stops the reply (stop_waiting)"""
         if pick.kind not in STAND_INS or not self.clones_voices or not getattr(self, "can_copy_voices", True):
             return pick
         if not (speaker.plugin and speaker.local_id):
             return pick # the game sends where an NPC comes from only with MantellaVoiceClips.dll installed: without it no clips come
         started = time.monotonic()
         waited: list[str] = []
+        stopped = getattr(self, "stop_waiting", None) or (lambda: False)
         try:
             while pick.kind in STAND_INS:
                 on_the_way = self._clip_requests.on_the_way(self.__better_voices(speaker, advanced_voice_model, pick))
                 left = started + FIRST_LINE_WAIT_SECONDS - time.monotonic()
-                if not on_the_way or left <= 0:
+                if not on_the_way or left <= 0 or stopped():
                     break
                 waited += [r for r in on_the_way if r not in waited]
                 self._clip_requests.wait_for_delivery(min(left, LOOK_SECONDS))
@@ -324,7 +327,8 @@ class ClipVoiceService(TTSable):
         finally:
             self._clip_requests.waited_for(waited)
         if waited:
-            outcome = "a stand-in speaks it, as they didn't come in time" if pick.kind in STAND_INS else f"it uses {pick.kind} '{pick.label}'"
+            outcome = (f"it uses {pick.kind} '{pick.label}'" if pick.kind not in STAND_INS
+                       else "the reply was stopped" if stopped() else "a stand-in speaks it, as they didn't come in time")
             logging.info(f"{self._info.name}: {speaker.name or 'the narrator'}'s line waited {time.monotonic() - started:.1f} s for their clips "
                          f"from the game, and {outcome}")
         return pick

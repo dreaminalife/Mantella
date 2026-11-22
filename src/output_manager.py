@@ -518,9 +518,9 @@ class ChatManager:
     def get_voices_ready(self, characters: list[Character], one_on_one: bool) -> None:
         """NPCs joined the conversation: the voice service that speaks for each asks the game for clips they have none of yet, so the
         clips arrive while the AI writes and their first line is in their own voice. A service on this PC makes their voices as soon as
-        the clips arrive; an online one only in a one-on-one conversation (*one_on_one*), where the NPC is sure to speak: in a group,
-        cloning everyone ahead would use up voice slots on NPCs who may never speak. An NPC whose own voice service hasn't started yet
-        is left to their first line"""
+        the clips arrive, in a group at a lower priority so it doesn't slow the lines being spoken; an online one only in a one-on-one
+        conversation (*one_on_one*), where the NPC is sure to speak: in a group, cloning everyone ahead would use up voice slots on NPCs
+        who may never speak. An NPC whose own voice service hasn't started yet is left to their first line"""
         for character in characters:
             if character.is_player_character:
                 continue
@@ -529,7 +529,7 @@ class ChatManager:
                 instance = self.__running_tts(service) if service is not None else self.__tts
                 if isinstance(instance, ClipVoiceService):
                     instance.get_ready_for(VoiceSpeaker.from_character(character), character.advanced_voice_model,
-                                           make_ahead=one_on_one or not instance.info.runs_online)
+                                           make_ahead=one_on_one or not instance.info.runs_online, in_background=not one_on_one)
             except Exception as e:
                 logging.warning(f"Could not get {character.name}'s voice ready: {e}")
 
@@ -571,6 +571,8 @@ class ChatManager:
         error: Exception | None = None
         for i, entry in enumerate(chain):
             instance = self._get_or_create_tts(entry) if isinstance(entry, VoiceServiceInfo) else entry # the backup starts here, the first time a line needs it
+            if isinstance(instance, ClipVoiceService):
+                instance.stop_waiting = self.__stop_generation.is_set # a line waiting for its clips stops when the reply is stopped
             if any(instance is c for c in chain[:i]) and error is not None: # the backup couldn't start, so the TTS Service it fell back to failed already
                 raise error
             try:

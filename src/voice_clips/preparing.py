@@ -56,6 +56,7 @@ class Soon:
     speaker: VoiceSpeaker
     named_voice: str | None
     since: float
+    background: bool = False # made at the lower priority, as in a group the NPC may not speak soon
 
 
 @dataclass
@@ -161,11 +162,12 @@ class VoicePreparation:
 
     # ---- the NPCs in the conversation ----
 
-    def make_soon(self, service: Any, speaker: VoiceSpeaker, named_voice: str | None = None) -> None:
-        """An NPC joined the conversation: their voice is made as soon as the game delivers their clips. At once if they have them already"""
+    def make_soon(self, service: Any, speaker: VoiceSpeaker, named_voice: str | None = None, background: bool = False) -> None:
+        """An NPC joined the conversation: their voice is made as soon as the game delivers their clips. At once if they have them already.
+        *background*: at the lower priority of Prepare all voices, for an NPC in a group who may not speak soon"""
         with self.__lock:
             self.__soon = [s for s in self.__soon if not (s.service is service and s.speaker == speaker)]
-            self.__soon.append(Soon(service, speaker, named_voice, time.time()))
+            self.__soon.append(Soon(service, speaker, named_voice, time.time(), background))
         self.__start()
 
     def __make_soon(self) -> bool:
@@ -191,10 +193,13 @@ class VoicePreparation:
                     self.__soon.remove(item)
             if done:
                 continue
+            _background.on = item.background
             try:
                 service.prepared_voice(pick)
             except Exception as e:
                 logging.debug(f"{service.info.name}: could not make the voice '{pick.label}' ahead: {e}. Their first line makes it")
+            finally:
+                _background.on = False
             return True
         return False
 

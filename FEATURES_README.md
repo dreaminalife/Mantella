@@ -3427,7 +3427,7 @@ The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per
 
 When an NPC of a new voice type joins a conversation, the game hands Mantella a few of their real lines (5–10 seconds each, never a bard song) while the AI writes what they say, and the service clones the voice from them. Every NPC with that voice type then shares it.
 
-Their first line waits up to 10 seconds for those lines, so it's in their own voice. Lines that haven't come by then don't hold it up any longer: that line uses a stand-in voice, and the next one uses theirs. Online services clone a voice ahead like this only in a one-on-one conversation. In a group, each NPC's voice is cloned when they first speak, so no voice slots go to people who never say a word.
+Their first line waits up to 10 seconds for those lines, so it's in their own voice. Lines that haven't come by then don't hold it up any longer: that line uses a stand-in voice, and the next one uses theirs. Online services clone a voice ahead like this only in a one-on-one conversation. In a group, each NPC's voice is cloned when they first speak, so no voice slots go to people who never say a word. Pocket TTS and voice setups on your PC do make everyone's voice ahead in a group, but at low priority, so the lines being spoken aren't slowed down.
 
 | Service | Lines a new voice gets | Cloned from |
 |---|---|---|
