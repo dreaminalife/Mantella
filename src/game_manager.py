@@ -1591,7 +1591,11 @@ class GameStateManager:
     
     @utils.time_it
     def load_character(self, json: dict[str, Any], world_id: str | None = None) -> Character | None:
-        """Loads a character from the game's actor JSON. *world_id* is the playthrough, for its quest tag outcomes"""
+        """Loads a character from the game's actor JSON. *world_id* is the playthrough, for its quest tag outcomes. None for an empty one"""
+        if not json.get(comm_consts.KEY_ACTOR_REFID) and not json.get(comm_consts.KEY_ACTOR_NAME):
+            # The game sent nobody in this place (no reference, no name), as once when a save made while a conversation started was loaded
+            logging.warning("The game sent an empty person, who is left out")
+            return None
         try:
             base_id: str = utils.convert_to_skyrim_hex_format(str(json[comm_consts.KEY_ACTOR_BASEID]))
             ref_id: str = utils.convert_to_skyrim_hex_format(str(json[comm_consts.KEY_ACTOR_REFID]))
