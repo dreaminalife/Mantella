@@ -1,0 +1,19 @@
+{
+  "setups": [
+    {
+      "name": "Pocket TTS (graphics card)",
+      "about": "llama.cpp's server running a Pocket TTS model file, on the graphics card. Start llama.cpp yourself; Mantella only sends it lines.",
+      "style": "openai",
+      "url": "http://127.0.0.1:8080",
+      "key_file": "",
+      "model": "tts",
+      "male_voice": "",
+      "female_voice": "",
+      "clip_field": "speaker_ref_b64",
+      "clip_mode": "base64",
+      "languages": [],
+      "extra_fields": {},
+      "runs_online": false
+    }
+  ]
+}
