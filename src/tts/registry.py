@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
-from src.config.definitions.tts_definitions import TTSEnum
+from src.config.definitions.tts_definitions import POCKET_TTS_GROUP, TTSEnum
 from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 CLIP = "clip"       # copies a voice from a clip taken from the game
 TRAINED = "trained" # has trained voices named after Skyrim's voice types
 
-FALLBACK_SERVICE = TTSEnum.PIPER.display_name
+FALLBACK_SERVICE = POCKET_TTS_GROUP # speaks when the picked service is gone (a removed voice setup). Ships with Mantella, unlike Piper's voices
 
 
 def normalize_service_name(value: str | None) -> str:
@@ -204,7 +204,7 @@ def _legacy_services() -> list[VoiceServiceInfo]:
 
 def _new_services() -> list[VoiceServiceInfo]:
     return [
-        VoiceServiceInfo("Pocket TTS", _pocket_tts, CLIP, aliases=["pockettts", "pocket"], languages=["en", "fr", "de", "it", "pt", "es", "nl"],
+        VoiceServiceInfo(POCKET_TTS_GROUP, _pocket_tts, CLIP, aliases=["pockettts", "pocket"], languages=["en", "fr", "de", "it", "pt", "es", "nl"],
                          volume_setting="pocket_tts_volume"),
         # The online services' models and prices are on Mantella's list of models (model_catalog.py).
         # ElevenLabs works best with 1-2 minutes of speech; Inworld with 10-30 seconds, and cuts the rest
@@ -274,7 +274,7 @@ voice_services = VoiceServiceRegistry()
 
 
 def create_voice_service(name: str, config: "ConfigLoader", game: "Gameable | None") -> "TTSable":
-    """Starts the voice service of that name. Piper when the name is not in the list (a voice setup that was removed)"""
+    """Starts the voice service of that name. Pocket TTS when the name is not in the list (a voice setup that was removed)"""
     info = voice_services.find(name)
     if info is None:
         log.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")

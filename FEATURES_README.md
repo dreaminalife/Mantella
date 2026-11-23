@@ -3416,7 +3416,7 @@ Prices are the ones each service lists on its website, per million characters of
 | Iodine | | Online | $8 | Cloning works on the free plan. The most ways to set how a line is said: moods, directions, and styles on a few words, such as a whisper |
 | ElevenLabs | | Online | $40 | Sounds the best, costs the most |
 | Qwen | | Online | $30 | **Directions** in English only |
-| Piper | | Your PC | Free | Doesn't clone voices. The usual **Backup Voice Service** |
+| Piper | | Your PC | Free | Doesn't clone voices. Comes with the original Mantella mod: keep it turned on, with Mantella Remake loading after it |
 
 ### Speech-to-text
 
@@ -3466,7 +3466,7 @@ Not sure which service to use? See [Which Voice and Speech Service to Pick](#whi
 2. **Text-to-Speech** tab → **Settings for** → **Pocket TTS** → **Global settings for Pocket TTS** → **Turn on voice cloning**: paste the token and press **Save token**. It should say your sign-in works.
 3. Pick **Pocket TTS** as the **TTS Service** and talk to someone.
 
-The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per language); until then the Backup Voice Service speaks. It speaks English, French, German, Portuguese, Italian, Spanish and Dutch (your **Language** setting), and needs a processor with AVX2 (most from 2013 on). Without the sign-in it still speaks, but every NPC gets one of its built-in voices.
+The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per language); until then the Backup Voice Service speaks. With no backup, NPCs wait silently until it's done. Mantella's window says when the download starts and shows **Pocket TTS: ready** when it's done. It speaks English, French, German, Portuguese, Italian, Spanish and Dutch (your **Language** setting), and needs a processor with AVX2 (most from 2013 on). Without the sign-in it still speaks, but every NPC gets one of its built-in voices.
 
 **An online service (ElevenLabs, Inworld, HeyGen, Qwen, Boson AI or Iodine):**
 
@@ -3599,7 +3599,7 @@ Setups are saved in `Documents\My Games\Mantella\voice_setups.json`, so you can 
 
 ### Backup voice and volume
 
-- **Backup Voice Service:** when a line fails (the program stopped, your internet dropped), Mantella tries once more, then the backup speaks it, so the NPC isn't silent. Piper at first. With one of the newer services as your TTS Service, the backup starts with the game, so it's ready.
+- **Backup Voice Service:** when a line fails (the program stopped, your internet dropped), Mantella tries once more, then the backup speaks it, so the NPC isn't silent. **None** at first: no backup, so a line that still fails is skipped. With one of the newer services as your TTS Service, the backup starts with the game, so it's ready.
 - **Talking speed:** Pocket TTS (next to its Volume), each online service (for each model) and each voice setup has its own, and each voice can have its own under **Pitch**. NPCs talk faster or slower at the same pitch, and their lips follow.
 - **Volume:** Pocket TTS, each online service and each voice setup has its own. Every line is first made as loud as Skyrim's own lines; 100% is as loud as the game, 150% louder, 50% quieter.
 - **Cleaner sound:** silence at the start and end of each line is cut, so replies start sooner and lips match better.

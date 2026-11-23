@@ -21,7 +21,7 @@ from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_visitor import ConfigValueVisitor
 from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, EXTRA_ROUNDS, REPLIES_IN_BETWEEN, SHARED, TALK_KINDS, WHO_MUST_SPEAK,
                                                              greyed_choices, talk_key, who_still_speaks_now)
-from src.config.definitions.tts_definitions import (HEAR_IT_PART, NPC_VOICES_PART, ONLINE_SERVICE_GROUPS, PIPER_PART, POCKET_TTS_GROUP,
+from src.config.definitions.tts_definitions import (HEAR_IT_PART, NPC_VOICES_PART, ONLINE_SERVICE_GROUPS, POCKET_TTS_GROUP,
                                                     SERVICE_PARTS, SERVICE_VOLUMES, SPEED_PART, VOICE_EFFECTS_GROUP, VOICE_SETUPS_PART,
                                                     WORD_LISTS_GROUP, TTSDefinitions, every_npc_part, service_part_id, sound_part_id)
 from src.tts.model_catalog import ServiceModel, ServiceModels
@@ -53,11 +53,12 @@ def set_game_manager_reference(game_manager):
     _game_manager_ref = game_manager
 
 def part_of_service(value: str | None) -> str:
-    """The choice under Settings for that shows this TTS Service's settings: Your voice setups for a setup, Piper for one that's gone"""
+    """The choice under Settings for that shows this TTS Service's settings: Your voice setups for a setup, Pocket TTS (which speaks
+    instead) for one that's gone"""
     info = voice_services.find(value)
     if info is not None and info.is_setup:
         return VOICE_SETUPS_PART
-    return info.name if info is not None and info.name in SERVICE_PARTS else PIPER_PART
+    return info.name if info is not None and info.name in SERVICE_PARTS else POCKET_TTS_GROUP
 
 def two_by_two(settings: list[ConfigValue]) -> list[list[ConfigValue]]:
     """Settings in rows of two, kept in their order: tick boxes side by side, the others side by side, and a tick box and another

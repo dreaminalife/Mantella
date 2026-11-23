@@ -9,9 +9,9 @@ from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, DIR
                                                              AtReplyLimitEnum, NewcomersRememberEnum, WhoAnswersFirstEnum, WhoMustSpeakEnum,
                                                              max_npc_turns_identifier, most_replies_identifier, talk_key, use_own_key)
 from src.config.definitions.game_definitions import GameEnum
-from src.config.definitions.tts_definitions import TTSEnum
+from src.config.definitions.tts_definitions import NO_BACKUP, TTSEnum
 from src.tts.model_catalog import ServiceModels
-from src.tts.registry import FALLBACK_SERVICE, voice_services
+from src.tts.registry import FALLBACK_SERVICE, normalize_service_name, voice_services
 from src.tts.voice_setups import voice_setups_for
 from src.conversation.action import Action
 from src.actions.function_manager import FunctionManager
@@ -129,15 +129,48 @@ class ConfigLoader:
             create_back_up_configini = True # Written again without the old settings, once
 
         moved_models = self.__carry_over_models() # also on a start that writes a backup, often the first after an update
+        moved_from_piper = self.__carry_over_missing_piper()
         if create_back_up_configini:
             self.__write_config_state(self.__definitions, True)
-        elif moved_models or has_retired_log_keys or has_retired_models:
+        elif moved_models or has_retired_log_keys or has_retired_models or moved_from_piper:
             self.__write_config_state(self.__definitions)
 
         self.__is_initial_load = False
         self.__update_config_values_from_current_state()
         self.__has_any_value_changed = False
     
+    def __carry_over_missing_piper(self) -> bool:
+        """Piper picked but not on this PC. Piper and its voices come with the original Mantella mod, not with this one: a player who
+        removed the original Mantella gets Pocket TTS as the TTS Service and no backup in place of Piper, instead of NPCs that stay silent.
+        A player who kept it (its piper folder is still there) keeps Piper. True when something changed"""
+        if self.__piper_is_installed():
+            return False
+        changed = False
+        for identifier, replacement in (("tts_service", FALLBACK_SERVICE), ("tts_backup_service", NO_BACKUP)):
+            setting = self.__definitions.get_config_value_definition(identifier)
+            service = voice_services.find(str(setting.value))
+            if service is None or service.legacy_enum != TTSEnum.PIPER:
+                continue
+            setting.value = replacement
+            changed = True
+            log.warning(f"Piper isn't on this PC (it comes with the original Mantella mod), so your {setting.name} is now {replacement}. "
+                        "To use Piper again, turn the original Mantella mod back on, then pick Piper on the Text-to-Speech page.")
+        return changed
+
+    def __piper_is_installed(self) -> bool:
+        """Piper's program and at least one of its voices are where Mantella looks for them"""
+        if self.is_run_integrated:
+            folder = Path(utils.resolve_path()) / "piper" # where the original Mantella mod puts it
+        else:
+            text = self.__definitions.get_string_value("piper_folder", False).strip()
+            if not text:
+                return False
+            folder = Path(text)
+        try:
+            return (folder / "piper.exe").is_file() and any((folder / "models").rglob("*.onnx"))
+        except OSError:
+            return False
+
     def __carry_over_models(self) -> bool:
         """The online services' Model settings (src/tts/model_catalog.py): a model saved by its name (Turbo) is kept by its ID from now on,
         and the Global settings values on the page belong to the picked model (src/tts/voice_style.py). True when something changed"""
@@ -388,8 +421,11 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             return 100
 
     def __voice_service_name(self, identifier: str) -> str:
-        """The chosen voice service, by its name in the list of voice services. Piper when it is no longer in the list"""
+        """The chosen voice service, by its name in the list of voice services. Pocket TTS when it is no longer in the list.
+        NO_BACKUP for a Backup Voice Service of None, which voice_services.find turns into no service"""
         name = self.__definitions.get_string_value(identifier, False)
+        if identifier == "tts_backup_service" and not normalize_service_name(name):
+            return NO_BACKUP
         service = voice_services.find(name)
         if service is None:
             log.warning(f"The voice service '{name}' is not in the list of voice services. {FALLBACK_SERVICE} is used instead.")

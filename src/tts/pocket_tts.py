@@ -19,7 +19,7 @@ import subprocess
 import threading
 import time
 import zipfile
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -225,6 +225,52 @@ def _clean_download_cache(days: int = 30) -> None:
             pass
 
 
+def _model_on_pc(language: str, with_cloning: bool) -> bool:
+    """Whether Kyutai's program already downloaded its model for this language. It keeps it in Hugging Face's download folder:
+    the model that copies voices with a sign-in, the one with built-in voices only without"""
+    hub = os.environ.get("HF_HUB_CACHE") or (os.path.join(os.environ["HF_HOME"], "hub") if os.environ.get("HF_HOME")
+                                             else os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"))
+    repository = "models--kyutai--pocket-tts" if with_cloning else "models--kyutai--pocket-tts-without-voice-cloning"
+    snapshots = os.path.join(hub, repository, "snapshots")
+    try:
+        return any(os.path.isfile(os.path.join(snapshots, snapshot, "languages", language, "model.safetensors"))
+                   for snapshot in os.listdir(snapshots))
+    except OSError:
+        return False
+
+
+READY_LINE = b"Server running" # what Kyutai's program prints once its model is loaded and it answers
+
+
+def _follow_output(process: subprocess.Popen, log_path: str, started: float, downloading: bool) -> None:
+    """Copies the program's output into pocket-tts.log, and says in Mantella's log when it can speak. Reads each line as the
+    program writes it, so nothing is checked on a timer"""
+    said_ready = False
+    log = None
+    try:
+        log = open(log_path, "ab")
+    except OSError as e:
+        voices_log.debug(f"Pocket TTS: can't write the program's output into {log_path}: {e}")
+    try:
+        # Read to the end even when the log file can't be written: a program whose output isn't read stops once the pipe is full
+        for line in iter(process.stdout.readline, b""):
+            if log is not None:
+                try:
+                    log.write(line)
+                    log.flush()
+                except OSError:
+                    pass
+            if not said_ready and READY_LINE in line:
+                said_ready = True
+                took = f"{time.monotonic() - started:.0f} s" + (", with the download" if downloading else "")
+                voices_log.info(f"Pocket TTS: ready, NPCs can speak with it (took {took})")
+    except (OSError, ValueError):
+        pass # the program stopped
+    finally:
+        if log is not None:
+            log.close()
+
+
 def _answers() -> bool:
     try:
         return requests.get(f"http://127.0.0.1:{PORT}/health", timeout=1).status_code == 200
@@ -282,10 +328,15 @@ class _Program:
                 return
             command = [exe, "serve", "--host", "127.0.0.1", "--port", str(PORT), "--language", language]
             voices_log.info( f"Pocket TTS: starting ({language})")
+            downloading = not _model_on_pc(language, with_cloning=bool(token))
+            if downloading:
+                voices_log.warning(f"Pocket TTS: downloading Kyutai's voice model for {language} (about 220 MB). This happens once. "
+                                   "Don't talk to NPCs until 'Pocket TTS: ready' shows here, or their lines fail.")
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            with open(log_path, "ab") as log:
-                self.process = subprocess.Popen(command, cwd=os.path.dirname(exe), env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                                creationflags=subprocess.CREATE_NO_WINDOW)
+            self.process = subprocess.Popen(command, cwd=os.path.dirname(exe), env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                            creationflags=subprocess.CREATE_NO_WINDOW)
+            threading.Thread(target=_follow_output, args=(self.process, log_path, time.monotonic(), downloading),
+                             name="Pocket TTS output", daemon=True).start()
             self.external, self.settings = False, settings
             self.__tie_to_mantella(self.process)
 
@@ -313,6 +364,8 @@ class PocketTTS(ClipVoiceService):
     request_timeout = 60.0 # a long line on a slow processor
     SETUP_WAIT_SECONDS = 5.0 # for the first line, while the setup checks the sign-in. Longer, and the backup service speaks
     START_WAIT_SECONDS = 20.0 # for the program to answer after it is started again (its model is downloaded by then)
+    DOWNLOAD_WAIT_SECONDS = 600.0 # with no Backup Voice Service: how long a line waits for the first download at most
+    WAIT_STEP_SECONDS = 1.0 # how often a waiting line checks whether Pocket TTS is ready
 
     def __init__(self, config: ConfigLoader, info: VoiceServiceInfo) -> None:
         self.__hashes: dict[tuple, str] = {} # set first: the shared part may ask whether a voice is ready as soon as it is set up
@@ -323,6 +376,7 @@ class PocketTTS(ClipVoiceService):
         self.__exe: str | None = None
         self.__stopped = False
         self.__setup_error: str | None = None
+        self.__said_waiting = False # a line waited for the first download, and the log said why
         self.__access = ACCESS_UNKNOWN
         self.__token = ""
         self.__token_saves = key_saves(KEY_FILE) # set again when the setup reads the token
@@ -360,31 +414,60 @@ class PocketTTS(ClipVoiceService):
         return (_program.external or _program.is_running()) and self.__answers()
 
     def start(self) -> None:
-        if not self.__ready.wait(self.SETUP_WAIT_SECONDS):
-            raise RuntimeError("Pocket TTS is still being set up")
+        """With a Backup Voice Service, a line that comes while Pocket TTS gets ready (the first start downloads Kyutai's model) goes to
+        the backup at once. With none, the line waits for it instead, up to DOWNLOAD_WAIT_SECONDS: failing would end the conversation"""
+        waits = self.__waits_for_download()
+        if not self.__ready.is_set():
+            self.__say_line_waits(waits)
+            if not self.__wait_until(self.__ready.is_set, self.DOWNLOAD_WAIT_SECONDS if waits else self.SETUP_WAIT_SECONDS):
+                raise RuntimeError("Pocket TTS is still being set up")
         if self.__setup_error:
             raise RuntimeError(self.__setup_error)
         with _program.lock:
             if self.is_ready():
                 return
             if _program.is_running() and _program.settings == self.__settings():
-                # Started and not answering yet: the first start downloads Kyutai's model. Not waited for, so the backup speaks
-                raise RuntimeError("Pocket TTS is still getting ready (the first start downloads Kyutai's model, about 220 MB)")
-            if _program.process is not None and not _program.is_running():
-                voices_log.warning(f"Pocket TTS stopped (exit code {_program.process.returncode}), starting it again. See {self.__log_path()}")
-            _program.external = False
-            self.__launch()
-            if _program.external or _program.process is None:
-                return
+                # Started and not answering yet: the first start downloads Kyutai's model
+                if not waits:
+                    raise RuntimeError("Pocket TTS is still getting ready (the first start downloads Kyutai's model, about 220 MB)")
+            else:
+                if _program.process is not None and not _program.is_running():
+                    voices_log.warning(f"Pocket TTS stopped (exit code {_program.process.returncode}), starting it again. See {self.__log_path()}")
+                _program.external = False
+                self.__launch()
+                if _program.external or _program.process is None:
+                    return
             process = _program.process
-        deadline = time.time() + self.START_WAIT_SECONDS
-        while time.time() < deadline:
+        self.__say_line_waits(waits)
+        if self.__wait_until(lambda: process.poll() is not None or self.__answers(), self.DOWNLOAD_WAIT_SECONDS if waits else self.START_WAIT_SECONDS):
             if process.poll() is not None:
                 raise RuntimeError(f"Pocket TTS stopped while starting. See {self.__log_path()}")
-            if self.__answers():
-                return
-            time.sleep(0.25)
+            return
         raise RuntimeError("Pocket TTS is still starting (the first start downloads Kyutai's model, about 220 MB)")
+
+    def __waits_for_download(self) -> bool:
+        """No Backup Voice Service picked: nobody else can speak the line"""
+        from src.tts.registry import voice_services
+        return voice_services.find(getattr(self._config, "tts_backup_service_name", None)) is None
+
+    def __say_line_waits(self, waits: bool) -> None:
+        """Once per service, in Mantella's log: why the NPC is silent for now"""
+        if waits and not self.__said_waiting:
+            self.__said_waiting = True
+            voices_log.warning("Pocket TTS isn't ready yet (the first start downloads Kyutai's voice model, about 220 MB), and no Backup Voice "
+                               "Service is picked, so the NPC's line waits for it. 'Pocket TTS: ready' shows here when it can speak.")
+
+    def __wait_until(self, done: Callable[[], bool], seconds: float) -> bool:
+        """Waits for *done*, checking about once a second. Gives up when the time is up or Mantella stops the reply (the player
+        interrupts, the conversation ends). True when *done*"""
+        deadline = time.monotonic() + seconds
+        stopped = getattr(self, "stop_waiting", None) or (lambda: False)
+        while True:
+            if done():
+                return True
+            if time.monotonic() >= deadline or stopped():
+                return False
+            time.sleep(min(self.WAIT_STEP_SECONDS, max(0.0, deadline - time.monotonic())))
 
     def stop(self) -> None:
         """This service is done. The program stops once no Pocket TTS service uses it"""

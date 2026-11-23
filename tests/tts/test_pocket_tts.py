@@ -1,6 +1,7 @@
 """Pocket TTS: the sign-in check, the program download, falling back to built-in voices, saved voices handed over through Mantella's web address"""
 import hashlib
 import io
+import logging
 import os
 import zipfile
 from types import SimpleNamespace
@@ -249,6 +250,46 @@ def test_while_the_model_downloads_the_backup_speaks_at_once(monkeypatch, voice_
         service.prepare_voice(VoicePick(VOICE_TYPE_CLIP, "femaleeventoned", GAME_LINE))
 
 
+def downloading_with_no_backup(monkeypatch, voice_config, answers_after: int):
+    """A service whose program runs and answers after *answers_after* checks, with None as the Backup Voice Service"""
+    voice_config.tts_backup_service_name = "None"
+    service = make_service(monkeypatch, voice_config, pocket_tts.ACCESS_OK)
+    pocket_tts._program.process = SimpleNamespace(poll=lambda: None)
+    pocket_tts._program.settings = service._PocketTTS__settings()
+    checks = []
+    def answers(self):
+        checks.append(1)
+        return len(checks) > answers_after
+    monkeypatch.setattr(pocket_tts.PocketTTS, "_PocketTTS__answers", answers)
+    monkeypatch.setattr(pocket_tts.PocketTTS, "WAIT_STEP_SECONDS", 0.01)
+    return service, checks
+
+
+def test_with_no_backup_a_line_waits_for_the_download(monkeypatch, voice_config, caplog):
+    service, checks = downloading_with_no_backup(monkeypatch, voice_config, answers_after=5)
+    launched = len(service.launches) # the setup starts it
+    with caplog.at_level(logging.DEBUG):
+        service.start() # doesn't fail: the line is spoken once the model is in
+        service.start()
+    assert len(checks) > 5 and service.is_ready()
+    assert caplog.text.count("no Backup Voice Service is picked, so the NPC's line waits for it") == 1
+    assert len(service.launches) == launched # the running program is waited for, not started again
+
+
+def test_a_waiting_line_stops_with_the_reply(monkeypatch, voice_config):
+    service, _ = downloading_with_no_backup(monkeypatch, voice_config, answers_after=10**9)
+    service.stop_waiting = lambda: True # the player ended the conversation
+    with pytest.raises(RuntimeError, match="still starting"):
+        service.start()
+
+
+def test_a_waiting_line_gives_up_after_the_longest_wait(monkeypatch, voice_config):
+    service, _ = downloading_with_no_backup(monkeypatch, voice_config, answers_after=10**9)
+    monkeypatch.setattr(pocket_tts.PocketTTS, "DOWNLOAD_WAIT_SECONDS", 0.05)
+    with pytest.raises(RuntimeError, match="still starting"):
+        service.start()
+
+
 def test_a_copy_already_running_is_used(monkeypatch, voice_config):
     monkeypatch.setattr(pocket_tts, "has_avx2", lambda: True)
     monkeypatch.setattr(pocket_tts, "read_key_file", lambda name: "")
@@ -268,6 +309,7 @@ class FakeProcess:
         self.command = command
         self.stopped = False
         self.pid = 0
+        self.stdout = io.BytesIO(b"") # what the program prints
     def poll(self):
         return 0 if self.stopped else None
     def terminate(self):
@@ -297,6 +339,61 @@ def new_service(voice_config, language="en"):
     service = pocket_tts.PocketTTS(voice_config, voice_services.find("Pocket TTS"))
     assert service._PocketTTS__ready.wait(5)
     return service
+
+
+def downloaded_model(hub, repository: str, language: str):
+    folder = hub / repository / "snapshots" / "db04f0e653473e5c7333c69686ac92b7460b0c1d" / "languages" / language
+    folder.mkdir(parents=True)
+    (folder / "model.safetensors").write_bytes(b"")
+
+
+def test_whether_the_model_is_on_this_pc(monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    assert not pocket_tts._model_on_pc("english", with_cloning=True)
+    downloaded_model(tmp_path, "models--kyutai--pocket-tts-without-voice-cloning", "english")
+    assert pocket_tts._model_on_pc("english", with_cloning=False)
+    assert not pocket_tts._model_on_pc("english", with_cloning=True) # the sign-in gets the model that copies voices, not there yet
+    downloaded_model(tmp_path, "models--kyutai--pocket-tts", "english")
+    assert pocket_tts._model_on_pc("english", with_cloning=True)
+    assert not pocket_tts._model_on_pc("german", with_cloning=True)
+
+
+def test_the_first_start_says_the_model_downloads(monkeypatch, voice_config, tmp_path, caplog):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "empty"))
+    started = real_launches(monkeypatch, voice_config)
+    with caplog.at_level(logging.DEBUG):
+        service = new_service(voice_config)
+    assert len(started) == 1
+    assert "Pocket TTS: downloading Kyutai's voice model for english (about 220 MB)" in caplog.text
+    service.stop()
+
+
+def test_a_later_start_doesnt(monkeypatch, voice_config, tmp_path, caplog):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    downloaded_model(tmp_path, "models--kyutai--pocket-tts", "english")
+    real_launches(monkeypatch, voice_config)
+    with caplog.at_level(logging.DEBUG):
+        service = new_service(voice_config)
+    assert "Pocket TTS: starting (english)" in caplog.text and "downloading Kyutai's voice model" not in caplog.text
+    service.stop()
+
+
+def test_the_log_says_when_it_is_ready(tmp_path, caplog):
+    output = b"INFO: Loading model from config at english.yaml...\nINFO: Started server process [1]\n" \
+             b"INFO: Server running on http://127.0.0.1:8030 (Press CTRL+C to quit)\n"
+    log_path = tmp_path / "pocket-tts.log"
+    with caplog.at_level(logging.DEBUG):
+        pocket_tts._follow_output(SimpleNamespace(stdout=io.BytesIO(output)), str(log_path), 0.0, True)
+    assert log_path.read_bytes() == output # the program's own lines are still in its log file
+    assert caplog.text.count("Pocket TTS: ready, NPCs can speak with it") == 1 and "with the download" in caplog.text
+
+
+def test_its_output_is_read_to_the_end_when_the_log_file_cant_be_written(tmp_path, caplog):
+    stdout = io.BytesIO(b"INFO: Server running on http://127.0.0.1:8030\nmore\n")
+    with caplog.at_level(logging.DEBUG):
+        pocket_tts._follow_output(SimpleNamespace(stdout=stdout), str(tmp_path / "missing folder" / "pocket-tts.log"), 0.0, False)
+    assert stdout.read() == b"" # nothing left in the pipe for the program to wait on
+    assert "Pocket TTS: ready" in caplog.text and "with the download" not in caplog.text
 
 
 def test_a_settings_change_keeps_the_running_program(monkeypatch, voice_config):

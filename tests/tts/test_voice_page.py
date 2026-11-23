@@ -597,4 +597,4 @@ def test_settings_for_shows_one_service_and_follows_the_tts_service(tmp_path):
 
     follow = next(f for f in blocks.fns if f.fn is part_of_service)
     assert follow.outputs == [picker] # picking another TTS Service shows its settings
-    assert part_of_service("Pocket TTS") == "Pocket TTS" and part_of_service("xva") == "xVASynth" and part_of_service("a setup that's gone") == "Piper"
+    assert part_of_service("Pocket TTS") == "Pocket TTS" and part_of_service("xva") == "xVASynth" and part_of_service("a setup that's gone") == "Pocket TTS"

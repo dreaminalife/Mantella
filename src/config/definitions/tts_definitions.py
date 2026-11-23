@@ -32,6 +32,7 @@ HEAR_IT_PART = "Hear it"
 WORD_LISTS_GROUP = "Fix Pronunciation"
 VOICE_EFFECTS_GROUP = "Voice Effects"
 POCKET_TTS_GROUP = "Pocket TTS"
+NO_BACKUP = "None" # the Backup Voice Service's choice for no backup. Not a voice service: voice_services.find gives None for it
 ELEVENLABS_GROUP = "ElevenLabs"
 INWORLD_GROUP = "Inworld"
 HEYGEN_GROUP = "HeyGen"
@@ -84,16 +85,20 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
                 return ConfigValueConstraintResult()
         
     @staticmethod
-    def voice_service_options() -> tuple[list[str], list]:
-        """Every voice service and voice setup, with the old TTS Service value for Piper, XTTS and xVASynth (None for the others)"""
+    def voice_service_options(with_no_backup: bool = False) -> tuple[list[str], list]:
+        """Every voice service and voice setup, with the old TTS Service value for Piper, XTTS and xVASynth (None for the others).
+        *with_no_backup*: the Backup Voice Service's list, which starts with None"""
         from src.tts.registry import voice_services
         services = voice_services.all()
-        return [s.name for s in services], [s.legacy_enum for s in services]
+        names, enums = [s.name for s in services], [s.legacy_enum for s in services]
+        if with_no_backup:
+            return [NO_BACKUP, *names], [None, *enums]
+        return names, enums
 
     @staticmethod
     def refresh_voice_service_options(selection: ConfigValueSelection) -> None:
         """After a voice setup is added or removed, the TTS Service and Backup Voice Service lists show it"""
-        options, enums = TTSDefinitions.voice_service_options()
+        options, enums = TTSDefinitions.voice_service_options(selection.identifier == "tts_backup_service")
         selection.set_options(options, enums)
 
     @staticmethod
@@ -106,16 +111,17 @@ Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva
 
 Your own voice setups are in this list too. The picked service's settings show below."""
         options, enums = TTSDefinitions.voice_service_options()
-        return ConfigValueSelection("tts_service", "TTS Service", description, TTSEnum.PIPER.display_name, options, enums, tags=[ConfigValueTag.share_row])
+        return ConfigValueSelection("tts_service", "TTS Service", description, POCKET_TTS_GROUP, options, enums, tags=[ConfigValueTag.share_row])
 
     @staticmethod
     def get_tts_backup_service_config_value() -> ConfigValue:
         description = """Speaks a line when Pocket TTS or one of your voice setups fails, for example when your internet drops or the program stops.
 The line is tried twice first. The NPC's voice changes for that one line instead of going silent.
 Piper, XTTS and xVASynth work as before: when one of them fails for an NPC, the TTS Service speaks the line."""
-        options, enums = TTSDefinitions.voice_service_options()
-        return ConfigValueSelection("tts_backup_service", "Backup Voice Service", description, TTSEnum.PIPER.display_name, options, enums,
-                                    tags=[ConfigValueTag.share_row])
+        options, enums = TTSDefinitions.voice_service_options(with_no_backup=True)
+        return ConfigValueSelection("tts_backup_service", "Backup Voice Service", description, NO_BACKUP, options, enums,
+                                    tags=[ConfigValueTag.share_row],
+                                    option_descriptions={NO_BACKUP: "No backup: a line that still fails after the two tries is skipped."})
 
     @staticmethod
     def get_service_volume_config_value(service: str) -> ConfigValue:
