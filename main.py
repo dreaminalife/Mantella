@@ -10,7 +10,7 @@ from src.logs.topic_logger import get_topic_logger
 from src.ui.start_ui import StartUI
 from src.ui.ui_files_folder import use_own_ui_files_folder
 
-MANTELLA_VERSION = '0.13.1'
+MANTELLA_VERSION = '1.0'
 
 def main():
     try:

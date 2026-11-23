@@ -352,7 +352,8 @@ class PromptDefinitions:
                                 voice_moods = the moods the NPCs' voices can take, such as [angry], [scared] (HeyGen, Boson AI or Iodine with Audio tags on). Use it inside {if moods}
                                 voice_styles = the word styles the NPCs' voices can take, such as [whisper], [emphasis] (Iodine with Audio tags on). Use it inside {if word_styles}"""
     
-    BASE_RADIANT_DESCRIPTION = """The starting prompt sent to the LLM when a radiant conversation is started.
+    BASE_RADIANT_DESCRIPTION = """Deprecated: NPC Event is the new radiant conversation. Turn it on in the MCM, Events page.
+                                The starting prompt sent to the LLM when a radiant conversation is started.
                                 The following are dynamic variables that need to be contained in curly brackets {}:
                                 name = the NPC's name
                                 names = the names of all NPCs in the conversation
@@ -1092,7 +1093,7 @@ Always use the most recent memory to determine the current relationship
 """ + PromptDefinitions.voice_tag_rules("                                    ") + PromptDefinitions.voice_tag_example("                                    ", "Ysolda: ") + """                                    {actions}
                                     Remember, you can only respond as {names}. Ensure to use their full name when responding.
                                     The conversation takes place in {language}."""
-        return ConfigValueString("skyrim_radiant_prompt","Skyrim Radiant Conversation Prompt",PromptDefinitions.BASE_RADIANT_DESCRIPTION,skyrim_radiant_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT, "skyrim_radiant_prompt")])
+        return ConfigValueString("skyrim_radiant_prompt","Skyrim Radiant Conversation Prompt (deprecated)",PromptDefinitions.BASE_RADIANT_DESCRIPTION,skyrim_radiant_prompt,[PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT, "skyrim_radiant_prompt")])
 
     @staticmethod
     def get_fallout4_prompt_config_value() -> ConfigValue:
@@ -1369,20 +1370,22 @@ If {name} does nothing, do not call any functions."""
 
     @staticmethod
     def get_radiant_start_prompt_config_value() -> ConfigValue:
-        radiant_start_prompt_description = """Once a radiant conversation has started and the radiant prompt has been passed to the LLM, the below text is passed in replace of the player response.
+        radiant_start_prompt_description = """Deprecated: NPC Event is the new radiant conversation. Turn it on in the MCM, Events page.
+                                        Once a radiant conversation has started and the radiant prompt has been passed to the LLM, the below text is passed in replace of the player response.
                                         This prompt is used to steer the radiant conversation.
                                         Variables are not supported.""" 
         radiant_start_prompt = """Please begin / continue a conversation topic (greetings are not needed). Ensure to change the topic if the current one is losing steam. 
                             The conversation should steer towards topics which reveal information about the characters and who they are, or instead drive forward previous conversations in their memory."""
-        return ConfigValueString("radiant_start_prompt","Radiant Start Prompt",radiant_start_prompt_description,radiant_start_prompt,[PromptDefinitions.PromptChecker([])])
+        return ConfigValueString("radiant_start_prompt","Radiant Start Prompt (deprecated)",radiant_start_prompt_description,radiant_start_prompt,[PromptDefinitions.PromptChecker([])])
 
     @staticmethod
     def get_radiant_end_prompt_config_value() -> ConfigValue:
-        radiant_end_prompt_description = """The final prompt sent to the LLM before ending a radiant conversation.
+        radiant_end_prompt_description = """Deprecated: NPC Event is the new radiant conversation. Turn it on in the MCM, Events page.
+                                            The final prompt sent to the LLM before ending a radiant conversation.
                                             This prompt is used to guide the LLM to end the conversation naturally.
                                             Variables are not supported.""" 
         radiant_end_prompt = """Please wrap up the current topic between the NPCs in a natural way. Nobody is leaving, so there is no need for formal goodbyes."""
-        return ConfigValueString("radiant_end_prompt","Radiant End Prompt",radiant_end_prompt_description,radiant_end_prompt,[PromptDefinitions.PromptChecker([])])
+        return ConfigValueString("radiant_end_prompt","Radiant End Prompt (deprecated)",radiant_end_prompt_description,radiant_end_prompt,[PromptDefinitions.PromptChecker([])])
 
     @staticmethod
     def get_prompt_profile_types() -> list[tuple[str, str, list[str] | None]]:
@@ -1395,7 +1398,7 @@ If {name} does nothing, do not call any functions."""
             ("skyrim_prompt", "Skyrim Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES),
             ("skyrim_multi_npc_prompt", "Skyrim Multi-NPC Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI),
             ("skyrim_multi_npc_director_prompt", "Skyrim Multi-NPC Director Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MULTI),
-            ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
+            ("skyrim_radiant_prompt", "Skyrim Radiant Conversation Prompt (deprecated)", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_RADIANT),
             ("memory_prompt", "Memory Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_MEMORY),
             ("inner_monologue_prompt", "Inner Monologue Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_INNER_MONOLOGUE),
             ("personal_reflection_prompt", "Personal Reflection Prompt", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_PERSONAL_REFLECTION),
@@ -1423,8 +1426,8 @@ If {name} does nothing, do not call any functions."""
             ("vision_prompt", "Vision Prompt", ["game"]),
             ("advanced_actions_prompt", "Advanced Actions Prompt", ["game", "name"]),
             ("stt_names_prompt", "Speech-to-Text Names", PromptDefinitions.ALLOWED_PROMPT_VARIABLES_STT_NAMES),
-            ("radiant_start_prompt", "Radiant Start Prompt", []),
-            ("radiant_end_prompt", "Radiant End Prompt", []),
+            ("radiant_start_prompt", "Radiant Start Prompt (deprecated)", []),
+            ("radiant_end_prompt", "Radiant End Prompt (deprecated)", []),
             ("decensor_handshake_prompt", "Decensor Handshake Prompt", []),
             ("decensor_assistant_prompt", "Decensor Assistant Prompt", []),
         ]
@@ -1448,15 +1451,15 @@ If {name} does nothing, do not call any functions."""
         "skyrim_radiant_prompt": (
             "Tells two NPCs who they are and how to talk to each other.",
             "When two NPCs near you start a short chat with each other on their own. You only overhear it.",
-            "Radiant conversations enabled in the MCM."),
+            "Radiant conversations enabled in the MCM (deprecated: NPC Event is the new radiant conversation)."),
         "radiant_start_prompt": (
             "Asks the two NPCs to pick a topic and start talking about it.",
             "Once, at the start of every overheard chat between two NPCs (radiant conversation).",
-            "Radiant conversations enabled in the MCM."),
+            "Radiant conversations enabled in the MCM (deprecated: NPC Event is the new radiant conversation)."),
         "radiant_end_prompt": (
             "Asks the two NPCs to wrap up what they are talking about.",
             "Once, after the first exchange of an overheard chat between two NPCs (radiant conversation), so it ends naturally.",
-            "Radiant conversations enabled in the MCM."),
+            "Radiant conversations enabled in the MCM (deprecated: NPC Event is the new radiant conversation)."),
 
         # Game Master
         "skyrim_game_master_prompt": (

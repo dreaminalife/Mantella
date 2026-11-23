@@ -28,7 +28,7 @@ class MantellaSetup:
         self.config.use_log_setup(self.log_setup)
         self.config.log_loaded_settings()
 
-        log.info(f'Mantella v{version}')
+        log.info(f'Mantella Remake v{version}')
         log.info(f'''Mantella.exe running in: 
     {os.getcwd()}
     config.ini, logging.log, and conversation histories available in:

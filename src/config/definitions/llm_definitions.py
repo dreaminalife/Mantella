@@ -81,7 +81,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("model","Single NPC Model",model_description,"google/gemma-2-9b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("model","Single NPC Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     
     @staticmethod
@@ -327,7 +327,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("summary_model","Summary Model",model_description,"google/gemma-2-9b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("summary_model","Summary Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     @staticmethod
     def get_summary_custom_token_count_config_value() -> ConfigValue:
@@ -364,7 +364,7 @@ class LLMDefinitions:
         return ConfigValueSelection(f"{key}_llm_api",f"{label} LLM Service",description, "OpenRouter", ["OpenRouter", "OpenAI", "NanoGPT", "KoboldCpp", "textgenwebui"], allows_free_edit=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
 
     @staticmethod
-    def get_memory_task_model_config_value(key: str, label: str, has_summary_option: bool = True, default_model: str = "google/gemma-2-9b-it:free") -> ConfigValue:
+    def get_memory_task_model_config_value(key: str, label: str, has_summary_option: bool = True, default_model: str = "google/gemma-4-26b-a4b-it:free") -> ConfigValue:
         when_own_model = f" when 'Use Summary Model for {label}' is disabled" if has_summary_option else ""
         model_description = f"""Select the model to use for {label}{when_own_model}. Press the *Update* button to load a list of models available from the service selected above.
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
@@ -424,7 +424,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("multi_npc_model","Multi-NPC & Radiant Model",model_description,"google/gemma-2-9b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("multi_npc_model","Multi-NPC & Radiant Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     @staticmethod
     def get_multi_npc_custom_token_count_config_value() -> ConfigValue:

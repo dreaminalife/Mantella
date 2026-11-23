@@ -84,7 +84,7 @@ class MantellaLogSetup(ILogSetup):
         root.setLevel(self.__other_programs_level)
 
         self.__set_levels(choices)
-        self.__write_to_file_only(f"Mantella v{version}. Log: {describe_choices(choices)}")
+        self.__write_to_file_only(f"Mantella Remake v{version}. Log: {describe_choices(choices)}")
         for record in early_records: # already shown in the window
             file_handler.handle(record)
 

@@ -25,7 +25,7 @@ class ModelProfileDefinitions:
             "profile_selected_model",
             "Model",
             description,
-            "google/gemma-2-9b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
             ["Select a service first"],
             allows_values_not_in_options=True
         )

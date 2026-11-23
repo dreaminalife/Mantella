@@ -37,6 +37,7 @@ from src.config.definitions.stt_definitions import (GREYED_UNLESS_ON, SERVICE_DE
 from src.stt_backends.model_lists import speech_models
 from src.stt_backends.presets import ONLINE_PRESETS, takes_name_list
 from src.ui.stt_ui import render_key_box, render_stt_test
+from src.ui.chat_keys_ui import render_chat_keys
 from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
 
@@ -304,7 +305,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             # Use the first (primary) key file from the resolver
             key_files = key_file_resolver.get_key_files_for_service(service, 'GPT_SECRET_KEY.txt')
             secret_key_file = key_files[0] if key_files else 'GPT_SECRET_KEY.txt'
-        default_model = 'meta-llama/llama-3.2-11b-vision-instruct:free' if model_config.identifier == 'vision_model' else 'google/gemma-2-9b-it:free'
+        default_model = 'google/gemma-4-26b-a4b-it:free'
         is_vision = True if model_config.identifier == 'vision_model' else False
         model_list = handler["model_list_getter"](service, secret_key_file, default_model, is_vision)
         selected_model = model_config.value
@@ -649,7 +650,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             model_list = ClientBase.get_model_list(
                 service,
                 secret_key_file,
-                "google/gemma-2-9b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
                 False
             )
             model = preferred_model if preferred_model and model_list.is_model_in_list(preferred_model) else model_list.default_model
@@ -1422,6 +1423,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
     def __render_group_settings(self, config_value: ConfigValueGroup):
         if config_value.description:
             gr.Markdown(config_value.description)
+        if config_value.identifier == "Game" and self.__config_loader is not None: # Your keys, at the top of the Game page
+            render_chat_keys(self.__config_loader)
 
         has_advanced_values = False
         has_basic_values = False
@@ -2183,7 +2186,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     # Use the first (primary) key file from the resolver
                     key_files = key_file_resolver.get_key_files_for_service(service, 'GPT_SECRET_KEY.txt')
                     secret_key_file = key_files[0] if key_files else 'GPT_SECRET_KEY.txt'
-                default_model = 'meta-llama/llama-3.2-11b-vision-instruct:free' if config_value.identifier == 'vision_model' else 'google/gemma-2-9b-it:free'
+                default_model = 'google/gemma-4-26b-a4b-it:free'
                 is_vision = True if config_value.identifier == 'vision_model' else False
                 model_list = handler["model_list_getter"](service, secret_key_file, default_model, is_vision)
                 selected_model = config_value.value

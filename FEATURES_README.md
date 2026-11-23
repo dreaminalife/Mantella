@@ -1,6 +1,6 @@
 # Feature Documentation
 
-Trying my best to explain why I added these features and how to make the most of them. Currently it only works with Mantella below v 0.14.
+Trying my best to explain why I added these features and how to make the most of them.
 
 ## Directory
 
@@ -1192,7 +1192,7 @@ Only the text for the situation at hand is sent. In Shout, the LLM reads the fir
 | Skyrim Decision Nearby Criteria | `shout`, `say_to_room`, `npc_event` |
 | Skyrim Say To Room Decision Nobody Criteria | `director` |
 | Memory Prompt | `director` |
-| Skyrim Prompt, Skyrim Multi-NPC Prompt, Skyrim Multi-NPC Director Prompt, Skyrim NPC Initiative Prompt, Skyrim Radiant Conversation Prompt | `audio_tags`, `moods`, `directions`, `word_styles` |
+| Skyrim Prompt, Skyrim Multi-NPC Prompt, Skyrim Multi-NPC Director Prompt, Skyrim NPC Initiative Prompt, Skyrim Radiant Conversation Prompt (deprecated) | `audio_tags`, `moods`, `directions`, `word_styles` |
 
 The first six used to be 18 separate prompts: the Director, Shout, Say To Room and NPC Event versions of the Game Master and Game Master NPC prompts, the Conversation, Nearby and Random Event Generator prompts (now the Talk/Nearby/Random Event Generator Prompt, not to be confused with the NPC Event Generator Prompt, which writes the scenes of NPC Events), the Decision Event Instructions and Event Player Criteria, and the Shout and NPC Event Decision Nearby Criteria. The built-in text of each situation is exactly what the old prompt said.
 
@@ -2884,7 +2884,7 @@ When the scene ends, the conversation ends like any other: with **Enable Convers
 
 | Setting                                | Default                     | What it does                                                                                                                      |
 | -------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **NPC Event Generator Model**          | `google/gemma-2-9b-it:free` | The model that invents the scenes. Always its own model, never the summary model                                                 |
+| **NPC Event Generator Model**          | `google/gemma-4-26b-a4b-it:free` | The model that invents the scenes. Always its own model, never the summary model                                                 |
 | **Max Participants**         | 3                           | The most NPCs the generator may put in a scene when it starts                                                                    |
 | **Player Notice Delay**      | 3                           | How many NPC lines the scene runs before the NPCs can notice you                                                                 |
 | **Max Lines Without Player** | 10                          | The scene ends after this many NPC lines while you have not joined                                                               |
@@ -3094,7 +3094,7 @@ How actions fit the kinds of conversation:
 
 ### Where to find it
 
-**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
+**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations (deprecated)**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
 
 **Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
 

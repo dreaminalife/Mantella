@@ -17,6 +17,7 @@ from src.conversation.action import Action
 from src.actions.function_manager import FunctionManager
 from src.config.definitions.action_definitions import ACTION_KINDS, NOT_OFFERED, OLD_KEYWORDS, actions_key, carried_over_ticks
 from src.config.stt_carry_over import OLD_STT_KEYS, carried_over_stt
+from src.config.retired_models import CURRENT_FREE_MODEL, replace_retired_models
 from src.config.definitions.log_definitions import RETIRED_LOG_KEYS
 from src.stt_backends.presets import PRESETS as STT_PRESETS
 from src.stt_backends.keys import STT_KEY_FILE, copy_old_key
@@ -75,6 +76,7 @@ class ConfigLoader:
         old_stt: dict[str, str] = {} # The old External Whisper Service settings, which Online Service and Custom Service replace
         has_action_switches = False
         has_retired_log_keys = False
+        has_retired_models = False # A setting named an AI model that's no longer offered
         action_keys = {actions_key(kind) for kind in ACTION_KINDS}
         for section_name in config.sections():
             for (each_key, each_value) in config.items(section_name):
@@ -90,6 +92,10 @@ class ConfigLoader:
                 has_action_switches = has_action_switches or each_key in action_keys
                 try:
                     config_value = self.__definitions.get_config_value_definition(each_key)
+                    each_value, retired = replace_retired_models(each_value)
+                    if retired:
+                        has_retired_models = True
+                        log.warning(f"{', '.join(retired)} is no longer offered. {config_value.name} now uses {CURRENT_FREE_MODEL}.")
                     # Unescape hash symbols that were escaped for INI file storage
                     unescaped_value = ConfigFileWriter.unescape_hash_symbols(each_value)
                     # Attempt to JSON-decode string values first if they were encoded to preserve whitespace
@@ -125,7 +131,7 @@ class ConfigLoader:
         moved_models = self.__carry_over_models() # also on a start that writes a backup, often the first after an update
         if create_back_up_configini:
             self.__write_config_state(self.__definitions, True)
-        elif moved_models or has_retired_log_keys:
+        elif moved_models or has_retired_log_keys or has_retired_models:
             self.__write_config_state(self.__definitions)
 
         self.__is_initial_load = False
@@ -212,6 +218,10 @@ class ConfigLoader:
 
     def notify_voice_services_changed(self) -> None:
         """A voice setup was saved or removed: the next request starts the voice services again with it"""
+        self.__has_any_value_changed = True
+
+    def notify_keys_changed(self) -> None:
+        """A key was saved on the settings page: the next request reloads the AI services, which read the key again"""
         self.__has_any_value_changed = True
 
     def consume_log_next_system_prompt(self) -> bool:

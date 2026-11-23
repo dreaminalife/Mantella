@@ -14,7 +14,7 @@ NPC_EVENT = "npc_event" # Only while the player watches. Once they step in, it i
 DIRECTOR = "director"
 RADIANT = "radiant" # Skyrim's own small talk between two NPCs
 ACTION_KINDS = [ONE_ON_ONE, GROUP, SHOUT, NPC_EVENT, DIRECTOR, RADIANT]
-KIND_NAMES = {ONE_ON_ONE: "One-on-one and NPC Initiative",GROUP: "Group", SHOUT: "Shout", NPC_EVENT: "NPC Events", DIRECTOR: "Director Mode", RADIANT: "Radiant Conversations"}
+KIND_NAMES = {ONE_ON_ONE: "One-on-one and NPC Initiative",GROUP: "Group", SHOUT: "Shout", NPC_EVENT: "NPC Events", DIRECTOR: "Director Mode", RADIANT: "Radiant Conversations (deprecated)"}
 WITHOUT_PLAYER = {NPC_EVENT, DIRECTOR, RADIANT} # The NPCs don't know the player is there
 
 # Off by default in every kind of conversation, as in the original Mantella
@@ -129,7 +129,7 @@ class ActionDefinitions:
         SHOUT: "A conversation while shouting, also with one NPC, and Say Something to the Room. Also an NPC Event you stepped into.",
         NPC_EVENT: "An NPC Event while you watch.",
         DIRECTOR: "A conversation you direct (Director Mode), with one NPC or several.",
-        RADIANT: "Skyrim's own small talk between two NPCs.",
+        RADIANT: "Small talk between two NPCs near you. Deprecated: NPC Events are the new radiant conversations.",
     }
     WITHOUT_PLAYER_NOTE = (" The NPCs don't know you're there, so actions that would involve you are left out, whatever is ticked: Attack, Brawl, Flee, "
                            "Teleport, Inventory, Barter, Follow, Unfollow and MoveTo. With Advanced Actions on, Attack, Flee, Teleport and MoveTo stay, "

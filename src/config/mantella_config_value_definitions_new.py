@@ -77,7 +77,7 @@ class MantellaConfigValueDefinitionsNew:
             "bio_llm_model",
             "Bio LLM Model",
             "Model used by Bio Editor LLM requests.",
-            "google/gemma-2-9b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
             []
         ))
         hidden_category.add_config_value(ConfigValueBool(
@@ -231,7 +231,7 @@ class MantellaConfigValueDefinitionsNew:
               for key, label, has_summary_option in memory_tasks),
         ]
         for part, settings in ((QUALITY_OF_LIFE_PART, quality_of_life), (FEATURE_TOGGLES_PART, feature_toggles), (THOUGHTS_PART, thoughts),
-                               (ADVANCED_PART, advanced), (NARRATIONS_PART, narrations)):
+                               (NARRATIONS_PART, narrations), (ADVANCED_PART, advanced)):
             for setting in settings:
                 llm_category.add_config_value(setting.in_folded_part(part))
 

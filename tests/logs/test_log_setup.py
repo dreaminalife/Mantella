@@ -129,7 +129,7 @@ def test_other_programs_only_show_warnings_and_errors(log_setup):
 def test_the_file_starts_with_the_version_and_the_choices(log_setup):
     setup, path = log_setup
     text = file_text(path)
-    assert "Mantella v1.2.3. Log: Conversation Short," in text
+    assert "Mantella Remake v1.2.3. Log: Conversation Short," in text
     assert "Game connection Off" in text
 
     choices = default_log_choices()
@@ -148,7 +148,7 @@ def test_the_header_is_written_even_with_startup_off(tmp_path):
         choices[LogTopic.STARTUP] = LogDetail.OFF
         path = tmp_path / "logging.log"
         MantellaLogSetup().start(str(path), "1.2.3", choices)
-        assert "Mantella v1.2.3" in file_text(path)
+        assert "Mantella Remake v1.2.3" in file_text(path)
     finally:
         for handler in list(root.handlers):
             if handler not in root_handlers:
