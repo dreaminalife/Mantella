@@ -1367,6 +1367,7 @@ For example, Mikael flirts with Carlotta in the Bannered Mare and she turns him 
 - **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
 - **Older saves:** load a save from before a scene and NPCs forget it, once you next talk to someone.
 - Greetings, remarks as you walk past, combat shouts and grunts are never kept. Neither are Mantella's own lines.
+- **NPCs who start talking by themselves:** when an NPC walks up and talks to you, like Brynjolf in the Riften market, or carries on talking without you picking anything, their words are kept as said to you: *Brynjolf says to Kit: "..."*. Your side is left empty, since you didn't pick anything.
 
 It needs the MantellaHeardLines plugin and the updated game add-on. It replaces the separate Mantella Vanilla Dialogue add-on: remove that one.
 
@@ -1374,7 +1375,7 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 
 - **Mantella MCM** -> **Vanilla Dialogues** page: **Enabled** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
 - **Conversation Wheel** -> **Vanilla Dialogues** turns it on or off without opening the MCM.
-- **Conversation** page -> **Vanilla Dialogues** section: **Vanilla Dialogue Memory (Days)** (how many in-game days NPCs remember a line, 3 at first), **Most Vanilla Dialogue Lines per NPC** and **Ignored Dialogue Menu Choices**.
+- **Conversation** page -> **Vanilla Dialogues** section: **Vanilla Dialogue Memory (Days)** (how many in-game days NPCs remember a line, 3 at first), **Most Vanilla Dialogue Lines per NPC**, **Remember Dialogue Menu Talk**, **Remember Scenes**, **Ignored Dialogue Menu Choices** and **Ignored NPCs**.
 
 ### Quick start
 
@@ -1392,6 +1393,10 @@ To add a choice, for example a mod's menu line that keeps showing up in the Vani
 1. Open the **Conversation** page -> **Vanilla Dialogues** section -> **Ignored Dialogue Menu Choices**.
 2. Type a comma at the end of the list, then the choice exactly as it shows in the dialogue menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
 3. Use `*` for any text, so you only need part of a choice: `*orders for you*` catches every choice with "orders for you" in it, and `Rent a room*` catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
+
+**Remember Dialogue Menu Talk** and **Remember Scenes** (both on at first) choose which kind of lines NPCs remember. Turn off **Remember Dialogue Menu Talk** and NPCs forget your talk in the dialogue menu, and what NPCs say when they walk up to you, but still remember scenes. Turn off **Remember Scenes** and they forget the scenes NPCs play out, and the lines NPCs say to you outside the dialogue menu (like Ralof on the cart to Helgen), but still remember the dialogue menu talk. Lines NPCs already remember stay until they are forgotten.
+
+**Ignored NPCs** is a list of NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them, by anyone. It's empty at first. It helps with followers that have a lot of their own dialogue, like Serana. They still remember other people's scenes they overhear. Type each name as it shows in game, with a comma between names. Capital letters don't matter, and `*` stands for any text: `Serana*` catches every NPC whose name starts with Serana.
 
 ## Bio Sections to Exclude
 
@@ -2102,7 +2107,7 @@ Warnings and errors always show, whatever you pick, except Quest tags' warnings 
 | Memories | Summaries, private thoughts and personal reflections being saved | Their whole text, and the prompt that wrote them | Short |
 | Quest tags | A quest outcome changing (like who holds Whiterun), and whether NPCs were told | Quest conditions the game couldn't check, and other details | Short |
 | In-game events | What NPCs are told happened each turn, like combat starting, an item picked up or a new location | Repeated events that were merged or left out | Short |
-| Vanilla Dialogues | How many of Skyrim's own lines NPCs heard, how many reached the conversation, and lines forgotten after loading an older save | Each line heard, and lines that couldn't be read | Short |
+| Vanilla Dialogues | How many of Skyrim's own lines NPCs heard, how many reached the conversation, and lines forgotten after loading an older save | Each line heard, which setting left a line out, and lines that couldn't be read | Short |
 | Vision | Screenshots being taken, and what the LLM saw in them | Screen and picture size, and the whole vision prompt | Short |
 | Bios and lorebook | Where each NPC's bio came from, and lorebook entries added | Which bio sections were used, and the bio templates loaded | Short |
 | Game connection | A line for each message the game and Mantella send each other | What each message says | Off |
@@ -2746,7 +2751,7 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 | **NPC Initiative** | **NPC Initiative Threshold**: how sure Mantella must be before a nearby NPC walks up to you and starts a conversation |
 | **Conversation Event**, **Nearby Event**, **Random Event** (one section each) | **Use its own settings** and its talk settings, **Send the Conversation So Far**, **Include Me** and **Max NPC Turns per Player Turn** |
 | **Watched NPC Event** | **Use its own settings** and its talk settings, **Most Replies per Person**, and the NPC Event scene settings |
-| **Vanilla Dialogues** | How long NPCs remember Skyrim's own lines they heard. See [Vanilla Dialogues](#vanilla-dialogues) |
+| **Vanilla Dialogues** | How long NPCs remember Skyrim's own lines they heard, and which ones. See [Vanilla Dialogues](#vanilla-dialogues) |
 | **Actions** | Which actions NPCs may use in each kind of conversation. See [NPC Actions](#npc-actions) |
 
 ### Quick start

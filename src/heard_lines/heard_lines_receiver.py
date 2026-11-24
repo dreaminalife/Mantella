@@ -1,5 +1,5 @@
 """Vanilla Dialogues: sorts the lines a request brought. A line heard by someone in the running conversation goes into it, once.
-Everyone else who heard it keeps it as a heard line"""
+Everyone else who heard it keeps it as a heard line. Lines the settings leave out go nowhere"""
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import replace
@@ -41,12 +41,15 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
             return
         if hand_over.now:
             self.__store.note_now(world_id, hand_over.now)
-        lines = [line for line in hand_over.lines if not self.__only_opens_menu(line)]
-        is_live = conversation is not None and not conversation.has_already_ended and not conversation.is_stopping and conversation.passes_ingame_events()
         full = log.isEnabledFor(logging.DEBUG) # Each line is written out only at Full
+        lines: list[HeardLine] = []
         for line in hand_over.lines:
-            if full and line not in lines:
-                log.debug(f"Vanilla Dialogues: {self.__describe(line)} Left out: the pick only opens a menu (Ignored Dialogue Menu Choices)")
+            why = self.__left_out_because(line)
+            if not why:
+                lines.append(line)
+            elif full:
+                log.debug(f"Vanilla Dialogues: {self.__describe(line)} Left out: {why}")
+        is_live = conversation is not None and not conversation.has_already_ended and not conversation.is_stopping and conversation.passes_ingame_events()
         to_conversation: list[HeardLine] = []
         to_store: dict[HeardPerson, list[HeardLine]] = {}
         for line in lines:
@@ -75,8 +78,10 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
     @staticmethod
     def __describe(line: HeardLine) -> str:
         """One heard line for the log (Vanilla Dialogues at Full): who said it to whom, the words, and who heard it"""
-        if line.is_menu_talk:
+        if line.is_menu_talk and line.asked:
             said = f'{line.speaker.name}, answering {line.player}\'s "{line.asked}": "{line.words}"'
+        elif line.is_menu_talk: # Unprompted: a forced greeting, or a line that carries on by itself
+            said = f'{line.speaker.name} to {line.player}: "{line.words}"'
         elif line.to:
             said = f'{line.speaker.name} to {line.to.name}: "{line.words}"'
         else:
@@ -97,9 +102,21 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
         into = f"Into the conversation for {', '.join(person.name for person in insiders)}"
         return f"{into}; kept as a heard line by the other {kept}." if kept else f"{into}."
 
-    def __only_opens_menu(self, line: HeardLine) -> bool:
-        """Menu talk whose pick only opens a menu (Ignored Dialogue Menu Choices), matched like Ignored In-Game Events"""
-        if not line.is_menu_talk or not line.asked:
-            return False
-        text = line.asked.strip().lower()
-        return any(fnmatch.fnmatchcase(text, pattern) for pattern in self.__config.heard_lines_menu_only)
+    def __left_out_because(self, line: HeardLine) -> str:
+        """Why a line is left out, for everyone who heard it. Empty when it is kept"""
+        if line.is_menu_talk and not self.__config.heard_lines_menu_talk:
+            return "dialogue menu talk is off (Remember Dialogue Menu Talk)"
+        if not line.is_menu_talk and not self.__config.heard_lines_scenes:
+            return "scenes are off (Remember Scenes)"
+        ignored = next((person.name for person in (line.speaker, line.to) if person and self.__matches(person.name, self.__config.heard_lines_ignored_npcs)), None)
+        if ignored:
+            return f"{ignored} is on Ignored NPCs"
+        if line.is_menu_talk and line.asked and self.__matches(line.asked, self.__config.heard_lines_menu_only):
+            return "the pick only opens a menu (Ignored Dialogue Menu Choices)"
+        return ""
+
+    @staticmethod
+    def __matches(text: str, patterns: list[str]) -> bool:
+        """Matched like Ignored In-Game Events: the whole text, any case, * for any text"""
+        text = text.strip().lower()
+        return any(fnmatch.fnmatchcase(text, pattern) for pattern in patterns)

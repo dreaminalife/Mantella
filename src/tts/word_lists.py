@@ -10,6 +10,8 @@ Only what is spoken changes: never the subtitles, the transcript or what NPCs re
 from __future__ import annotations
 
 import csv
+import io
+import locale
 import os
 import re
 import shutil
@@ -65,6 +67,29 @@ def ensure_files(folder: str, shipped_list: str | None = None) -> None:
             f.write(",".join(COLUMNS) + "\n")
 
 
+def _read_list_text(path: str) -> tuple[str, bool]:
+    """The file's text and whether it was saved as UTF-8.
+    Excel and Notepad often save a .csv in the computer's own text format instead of UTF-8 (a name with an accent then
+    breaks a UTF-8 read), so that format is tried next, and cp1252 with unreadable letters replaced as the last resort"""
+    with open(path, "rb") as f:
+        data = f.read()
+    try:
+        return data.decode("utf-8-sig"), True
+    except UnicodeDecodeError:
+        pass
+    for encoding in (locale.getpreferredencoding(False), "cp1252"):
+        try:
+            return data.decode(encoding), False
+        except (UnicodeDecodeError, LookupError):
+            pass
+    return data.decode("cp1252", errors="replace"), False
+
+
+def _read_rows(path: str) -> tuple[list[dict[str, str]], bool]:
+    text, is_utf8 = _read_list_text(path)
+    return list(csv.DictReader(io.StringIO(text, newline=""))), is_utf8
+
+
 def _file_order(file_names: list[str]) -> list[str]:
     others = sorted((n for n in file_names if n.lower() not in (MANTELLA_LIST, MY_LIST)), key=str.lower)
     first = [n for n in file_names if n.lower() == MANTELLA_LIST]
@@ -112,19 +137,23 @@ class WordLists:
         for name, _ in state:
             path = os.path.join(self.__folder, name)
             try:
-                with open(path, encoding="utf-8-sig", newline="") as f:
-                    for row_number, row in enumerate(csv.DictReader(f), start=2):
-                        row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items() if k is not None}
-                        word, say_as = row.get("word", ""), row.get("say_as", "")
-                        kind = (row.get("kind", "") or SPELLING).lower()
-                        if not word or not say_as or kind not in (SPELLING, IPA):
-                            if (name, row_number) not in self.__warned:
-                                self.__warned.add((name, row_number))
-                                log.warning(f"Word list {name}, row {row_number}: skipped, it needs a word, what to say instead, and a kind of 'spelling' or 'ipa'.")
-                            continue
-                        entries.append(WordEntry(word, say_as, kind, row.get("service", ""), row.get("language", "").lower(), name, len(entries)))
-            except OSError as e:
+                rows, is_utf8 = _read_rows(path)
+            except (OSError, csv.Error) as e:
                 log.warning(f"Could not read the word list {path}: {e}")
+                continue
+            if not is_utf8 and (name, 0) not in self.__warned:
+                self.__warned.add((name, 0))
+                log.warning(f"Word list {name} is not saved as UTF-8, so letters with accents may come out wrong. In Notepad or Excel, use Save As and pick UTF-8.")
+            for row_number, row in enumerate(rows, start=2):
+                row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items() if k is not None}
+                word, say_as = row.get("word", ""), row.get("say_as", "")
+                kind = (row.get("kind", "") or SPELLING).lower()
+                if not word or not say_as or kind not in (SPELLING, IPA):
+                    if (name, row_number) not in self.__warned:
+                        self.__warned.add((name, row_number))
+                        log.warning(f"Word list {name}, row {row_number}: skipped, it needs a word, what to say instead, and a kind of 'spelling' or 'ipa'.")
+                    continue
+                entries.append(WordEntry(word, say_as, kind, row.get("service", ""), row.get("language", "").lower(), name, len(entries)))
         return entries
 
     def replacements(self, service_matches: Callable[[str], bool], language: str, accepts_ipa: bool,
@@ -163,8 +192,7 @@ class WordLists:
         if os.path.exists(path):
             with open(path, "rb") as f:
                 newline = "\r\n" if b"\r\n" in f.read() else "\n"
-            with open(path, encoding="utf-8-sig", newline="") as f:
-                rows = [{k: (v or "") for k, v in row.items() if k is not None} for row in csv.DictReader(f)]
+            rows = [{k: (v or "") for k, v in row.items() if k is not None} for row in _read_rows(path)[0]] # saved back as UTF-8 below
         new_row = {"word": word.strip(), "say_as": say_as.strip(), "kind": kind, "service": service.strip(), "language": language.strip().lower()}
         same = lambda r: (r.get("word", "").lower(), (r.get("kind", "") or SPELLING).lower(), normalize_service_name(r.get("service", "")), r.get("language", "").lower()) == \
                          (new_row["word"].lower(), new_row["kind"], normalize_service_name(new_row["service"]), new_row["language"])

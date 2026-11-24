@@ -7,7 +7,7 @@ import pytest
 from src.heard_lines.heard_line import GameTime, HeardLine, HeardPerson
 from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver
 from src.heard_lines.heard_lines_store import HeardLinesStore
-from tests.heard_lines.lines import CARLOTTA, HULDA, MIKAEL, REF, SAADIA, WORLD, at, hand_over, menu_line, scene_line, settings
+from tests.heard_lines.lines import CARLOTTA, HULDA, MIKAEL, PLAYER, REF, SAADIA, WORLD, at, hand_over, menu_line, scene_line, settings
 
 START = 1000 # When the conversation started
 
@@ -155,6 +155,67 @@ def test_lines_that_only_open_a_menu_are_dropped(store, patterns, asked, dropped
 def test_a_menu_only_pattern_never_drops_scene_lines(store):
     receive(store, hand_over(scene_line("I want you to..")), config=settings(menu_only=["*"]))
     assert store.kept["Saadia"] == ["I want you to.."]
+
+
+def test_menu_talk_off_leaves_out_menu_talk_and_keeps_scenes(store):
+    talk = FakeConversation("Hulda", "Mikael")
+    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty.", time=START + 1), menu_line("", "Never seen you before.", time=START + 1),
+                             scene_line("Hello.", time=START + 1)), talk, config=settings(menu_talk=False))
+    assert [line.words for line in talk.heard] == ["Hello."]
+    assert store.kept == {"Carlotta": ["Hello."], "Saadia": ["Hello."]}
+
+
+def test_scenes_off_leaves_out_scenes_and_keeps_menu_talk(store):
+    talk = FakeConversation("Hulda", "Mikael")
+    receive(store, hand_over(scene_line("Hello.", time=START + 1), scene_line("Hey, you.", to=PLAYER, scene=0, time=START + 1),
+                             menu_line("Heard any rumors?", "Plenty.", time=START + 1)), talk, config=settings(scenes=False))
+    assert [line.words for line in talk.heard] == ["Plenty."]
+    assert store.kept == {}
+
+
+@pytest.mark.parametrize("ignored", [["mikael"], ["MIK*"], ["carlotta"]]) # The speaker, or the one spoken to
+def test_an_ignored_npcs_lines_are_left_out_for_everyone(store, ignored):
+    talk = FakeConversation("Saadia")
+    receive(store, hand_over(scene_line("Hello.", time=START + 1), scene_line("Hi.", speaker=HULDA, to=SAADIA, heard_by=[HULDA, SAADIA], time=START + 1)), talk,
+            config=settings(ignored_npcs=ignored))
+    assert [line.words for line in talk.heard] == ["Hi."]
+    assert store.kept == {"Hulda": ["Hi."]}
+
+
+def test_an_ignored_npc_still_overhears_other_peoples_scenes(store):
+    receive(store, hand_over(scene_line("Hello.")), config=settings(ignored_npcs=["saadia"]))
+    assert store.kept == {"Mikael": ["Hello."], "Carlotta": ["Hello."], "Saadia": ["Hello."]}
+
+
+def test_an_ignored_npcs_menu_talk_is_left_out(store):
+    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty.", heard_by=[HULDA, SAADIA])), config=settings(ignored_npcs=["hulda"]))
+    assert store.kept == {}
+
+
+@pytest.mark.parametrize("config, why", [
+    (settings(menu_talk=False), "Left out: dialogue menu talk is off (Remember Dialogue Menu Talk)"),
+    (settings(ignored_npcs=["hulda"]), "Left out: Hulda is on Ignored NPCs"),
+])
+def test_at_full_a_line_left_out_by_a_setting_says_which(store, caplog, config, why):
+    written = full_log(caplog)
+    receive(store, hand_over(menu_line("Heard any rumors?", "Plenty.")), config=config)
+    [text] = written()
+    assert text.endswith(why)
+
+
+def test_at_full_unprompted_menu_talk_shows_no_empty_question(store, caplog):
+    """A forced greeting, or a line that carries on by itself: no menu choice led to it"""
+    written = full_log(caplog)
+    receive(store, hand_over(menu_line("", "Never done an honest day's work.")))
+    [text] = written()
+    assert 'Hulda to Kit: "Never done an honest day\'s work."' in text and 'answering' not in text
+
+
+def test_at_full_a_scene_left_out_says_scenes_are_off(store, caplog):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("Hello.")), config=settings(scenes=False))
+    [text] = written()
+    assert text.endswith("Left out: scenes are off (Remember Scenes)")
 
 
 def test_the_default_list(default_config):

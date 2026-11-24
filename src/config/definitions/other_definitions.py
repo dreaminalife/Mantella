@@ -80,6 +80,25 @@ class OtherDefinitions:
                                  "I want you to.., Goodbye. (Remove from Mantella conversation)")
 
     @staticmethod
+    def get_heard_lines_menu_talk_config_value() -> ConfigValue:
+        description = """NPCs remember the talk in Skyrim's dialogue menu: the choices you pick and what they answer, and what an NPC says when they walk up and start talking to you.
+                        Turn it off and they only remember scenes. Lines already remembered stay until they are forgotten."""
+        return ConfigValueBool("heard_lines_menu_talk","Remember Dialogue Menu Talk",description,True,tags=[ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_heard_lines_scenes_config_value() -> ConfigValue:
+        description = """NPCs remember the scenes they play out, like Mikael flirting with Carlotta, and the lines NPCs say to you outside the dialogue menu, like Ralof on the cart to Helgen.
+                        Turn it off and they only remember the dialogue menu talk. Lines already remembered stay until they are forgotten."""
+        return ConfigValueBool("heard_lines_scenes","Remember Scenes",description,True,tags=[ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_heard_lines_ignored_npcs_config_value() -> ConfigValue:
+        description = """NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them. Handy for followers with a lot of their own dialogue, like Serana.
+                        They still remember other people's scenes they overhear.
+                        Type each name as it shows in game, with a comma between names. Capital letters don't matter. Use * for any text: Serana* catches every NPC whose name starts with Serana."""
+        return ConfigValueString("heard_lines_ignored_npcs","Ignored NPCs",description,"")
+
+    @staticmethod
     def get_hourly_time_config_value() -> ConfigValue:
         description = """If enabled, NPCs will be made aware of the time every in-game hour. Otherwise, time updates will be less granular (eg 'The conversation now takes place in the morning' / 'at night' etc).
                         To remove mentions of the hour entirely, prompts also need to be edited from 'The time is {time} {time_group}.' to 'The conversation takes place {time_group}.'"""

@@ -781,6 +781,9 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.heard_lines_days_kept: int = self.__definitions.get_int_value("heard_lines_days_kept")
             self.heard_lines_most_per_npc: int = self.__definitions.get_int_value("heard_lines_most_per_npc")
             self.heard_lines_menu_only: list[str] = [p.strip().lower() for p in self.__definitions.get_string_value("heard_lines_menu_only").split(",") if p.strip()]
+            self.heard_lines_menu_talk: bool = self.__definitions.get_bool_value("heard_lines_menu_talk")
+            self.heard_lines_scenes: bool = self.__definitions.get_bool_value("heard_lines_scenes")
+            self.heard_lines_ignored_npcs: list[str] = [p.strip().lower() for p in self.__definitions.get_string_value("heard_lines_ignored_npcs").split(",") if p.strip()]
             self.hourly_time = self.__definitions.get_bool_value("hourly_time")
             self.player_character_description: str = self.__definitions.get_string_value("player_character_description")
             self.voice_player_input: bool = self.__definitions.get_bool_value("voice_player_input")

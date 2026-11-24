@@ -42,6 +42,8 @@ def hand_over(*lines: dict[str, Any], now: dict[str, float] | None = None, playe
     return json.dumps(data)
 
 
-def settings(days_kept: int = 3, most: int = 30, menu_only: list[str] | None = None) -> SimpleNamespace:
-    """The three Mantella settings, as ConfigLoader holds them"""
-    return SimpleNamespace(heard_lines_days_kept=days_kept, heard_lines_most_per_npc=most, heard_lines_menu_only=menu_only or [])
+def settings(days_kept: int = 3, most: int = 30, menu_only: list[str] | None = None, menu_talk: bool = True, scenes: bool = True,
+             ignored_npcs: list[str] | None = None) -> SimpleNamespace:
+    """The Mantella settings, as ConfigLoader holds them"""
+    return SimpleNamespace(heard_lines_days_kept=days_kept, heard_lines_most_per_npc=most, heard_lines_menu_only=menu_only or [],
+                           heard_lines_menu_talk=menu_talk, heard_lines_scenes=scenes, heard_lines_ignored_npcs=ignored_npcs or [])

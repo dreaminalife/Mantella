@@ -97,6 +97,22 @@ def test_add_to_my_list_adds_then_changes_the_row(folder, shipped):
     assert b"Ysgramor" in content and b"Aw-ree" in content and b"Or-ee" not in content
 
 
+def test_a_list_not_saved_as_utf8_is_still_read_with_one_warning(folder, shipped, caplog):
+    words = WordLists(folder, shipped)
+    with open(os.path.join(folder, "excel.csv"), "wb") as f:
+        f.write((HEADER + "Ysgramor,Is-gra-mor,,,\nBjørn,Byorn,,,\n").encode("cp1252")) # how Excel saves it on a Western Windows
+    with caplog.at_level(logging.DEBUG):
+        assert words.apply("Ysgramor", pocket(), "en") == "Is-gra-mor"
+        assert words.apply("Bjørn", pocket(), "en") == "Byorn"
+    assert sum("not saved as UTF-8" in r.message for r in caplog.records) == 1
+    with open(os.path.join(folder, MY_LIST), "wb") as f:
+        f.write((HEADER + "Bjørn,Byorn,,,\n").encode("cp1252"))
+    words.add_to_my_list("Auri", "Or-ee")
+    with open(os.path.join(folder, MY_LIST), encoding="utf-8") as f:
+        content = f.read()
+    assert "Bjørn" in content and "Or-ee" in content # saved back as UTF-8
+
+
 def test_whole_words_only_and_longest_first():
     replacements = {"balgruuf": "Bal-groof", "jarl balgruuf": "Yarl Bal-groof", "dova": "X"}
     assert replace_words("Jarl Balgruuf and BALGRUUF met Dovahkiin.", replacements) == "Yarl Bal-groof and Bal-groof met Dovahkiin."

@@ -526,5 +526,8 @@ class MantellaConfigValueDefinitionsNew:
                                     "Conversation Wheel.")
         vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_days_kept_config_value())
         vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_most_per_npc_config_value())
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_menu_talk_config_value())
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_scenes_config_value())
         vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_menu_only_config_value())
+        vanilla_dialogues.add_config_value(OtherDefinitions.get_heard_lines_ignored_npcs_config_value())
         return [all_conversations, group, shout, director, npc_initiative, *event_sections, npc_event, vanilla_dialogues, actions_section]
