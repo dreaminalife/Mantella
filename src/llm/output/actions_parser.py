@@ -1,3 +1,7 @@
+from __future__ import annotations
+import re
+from typing import TYPE_CHECKING
+from src.actions.function_manager import FunctionManager
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
 from src.llm.sentence_content import SentenceContent, has_action
 from src.conversation.action import Action
@@ -5,8 +9,15 @@ from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
 
 log = get_topic_logger(LogTopic.ACTIONS)
+if TYPE_CHECKING:
+    from src.characters_manager import Characters
 
 LOOK = "mantella_npc_vision"
+
+
+def _whole_name(keyword: str) -> re.Pattern:
+    """An action's name with its colon, not as the end of a longer name"""
+    return re.compile(r"(?<!\w)" + re.escape(keyword))
 
 
 def _drop_keyword(content: SentenceContent, keyword: str) -> None:
@@ -15,15 +26,17 @@ def _drop_keyword(content: SentenceContent, keyword: str) -> None:
         content.voice_text = " ".join(content.voice_text.replace(keyword, " ").split())
     
 class actions_parser(output_parser):
-    def __init__(self, actions: list[Action], other_actions: list[Action] | None = None) -> None:
+    def __init__(self, actions: list[Action], other_actions: list[Action] | None = None, characters: Characters | None = None) -> None:
         """
         Args:
             actions (list[Action]): the actions the NPC can use here
             other_actions (list[Action] | None): every other action. One of these at the start of a line is taken out of it, so the NPC
                 doesn't say its name, but nothing happens: it is switched off for this kind of conversation, or the NPC can't use it here
+            characters (Characters | None): who is in the conversation, for the details of another mod's actions (see FunctionManager.keyword_action)
         """
         super().__init__()
         self.__actions = actions
+        self.__characters = characters
         allowed = {a.identifier for a in actions}
         self.__other_actions = [a for a in other_actions or [] if a.identifier not in allowed]
 
@@ -49,11 +62,13 @@ class actions_parser(output_parser):
                         settings.stop_generation = True
                         return None, last_content
                     continue
-                if keyword in cut_content.text:
-                    cut_content.text = cut_content.text.replace(keyword,"").strip()
-                    _drop_keyword(cut_content, keyword)
+                whole_name = _whole_name(keyword) # "SexWithPlayer:" is not inside "GroupSexWithPlayer:"
+                if whole_name.search(cut_content.text):
+                    cut_content.text = whole_name.sub("", cut_content.text).strip()
+                    if cut_content.voice_text is not None:
+                        cut_content.voice_text = " ".join(whole_name.sub(" ", cut_content.voice_text).split())
                     if not has_action(cut_content.actions, action.identifier): # Named twice, done once
-                        cut_content.actions.append({'identifier': action.identifier})
+                        cut_content.actions.append(FunctionManager.keyword_action(action.identifier, cut_content.speaker, self.__characters))
                     log.info(f"Action: {action.name} ({cut_content.speaker.name})")
                     # TODO: Add back this functionality while keeping the first delivered sentence intact
                     # ie "Inventory: Here you go." instead of just "Inventory:" with no further response

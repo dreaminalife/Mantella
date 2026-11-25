@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 from pathlib import Path
 from copy import deepcopy
 from typing import TYPE_CHECKING
@@ -14,6 +15,10 @@ if TYPE_CHECKING: # Only for type hints: the config loads the actions, and these
     from src.character_manager import Character
     from src.characters_manager import Characters
     from src.games.gameable import Gameable
+
+# Another mod's action file tells the NPC to start its line with the action's name. Given to the AI model as a tool, that becomes "use this tool"
+KEYWORD_INSTRUCTION = re.compile(r"""begin (?:your|the) (?:response|reply|line) with\s*['"]?\{key\}:?['"]?""", re.IGNORECASE)
+PLAYER_WORDS = {"player", "the player", "you", "player character", "the player character"} # How a model may name the player
 
 
 class FunctionManager:
@@ -295,6 +300,12 @@ class FunctionManager:
             identifier = action_data['identifier'].lower()
             action_data['identifier'] = f"mantella_{identifier}" if not identifier.startswith('mantella_') else identifier
 
+            earlier = FunctionManager._actions.get(action_data['identifier'])
+            if earlier is not None:
+                # Two mods made the same action, e.g. Actions For Mantella and its Expanded Sex Actions. Only one of them works in the game
+                log.warning(f"'{file_path.name}' ({name}) and '{earlier.get('_file', '?')}' ({earlier.get('name')}) are the same action: "
+                            f"'{file_path.name}' is used. If {name} does nothing in game, turn off one of the two mods that added them")
+            action_data['_file'] = file_path.name
             FunctionManager._actions[action_data['identifier']] = action_data
             log.debug(f"Loaded action: {action_data['identifier']}")
 
@@ -393,18 +404,21 @@ class FunctionManager:
                 continue
             properties: dict = deepcopy(action_def.get('parameters', {}))
             required: list[str] = list(action_def.get('required', []))
-            if not is_add and several_speakers:
+            together = FunctionManager._group_size(action_def) is not None # Its source is everyone taking part: the model names them
+            if not is_add and not together and several_speakers:
                 # Who does it, one of the NPCs: also for the actions that are otherwise always done by the speaker
                 properties['source'] = {**properties.get('source', {'type': 'string'}), 'scope': 'conversation',
                                         'description': FunctionManager.DOER_DESCRIPTION}
                 required = [r for r in required if r != 'source'] + ['source']
-            elif not is_add and 'source' in properties:
+            elif not is_add and not together and 'source' in properties:
                 del properties['source']
                 required = [r for r in required if r != 'source']
             for param_def in properties.values():
                 scope = param_def.get('scope')
                 if scope and not include_player and scope.endswith('_w_player'):
                     param_def['scope'] = scope[:-len('_w_player')]
+            if not FunctionManager._name_the_player(action_def, properties, required, characters, include_player):
+                continue
             if is_add and free_places is not None:
                 properties['source']['description'] = (properties['source'].get('description', '') + f" At most {free_places} can join.").strip()
             parameters: dict = {'type': 'object', 'properties': properties}
@@ -416,8 +430,130 @@ class FunctionManager:
                 continue
             for param_def in properties.values():
                 param_def.pop('scope', None) # Only for Mantella: the names are in the description
-            tools.append({'type': 'function', 'function': {'name': action_def['name'], 'description': action_def.get('description', ''), 'parameters': parameters}})
+            tools.append({'type': 'function', 'function': {'name': action_def['name'], 'description': FunctionManager.tool_description(action_def),
+                                                           'parameters': parameters}})
         return tools
+
+
+    @staticmethod
+    def is_other_mods_action(action_def: dict) -> bool:
+        """Added by another mod's action file (e.g. Actions For Mantella's), not one of the original Mantella's actions"""
+        from src.config.definitions.action_definitions import ORIGINAL_ACTIONS # Here: the config loads the actions
+        return action_def.get('name') not in ORIGINAL_ACTIONS
+
+
+    @staticmethod
+    def tool_description(action_def: dict) -> str:
+        """What the AI model reads about an action it can pick. Another mod's action also brings the rules its file gives the NPC (e.g. only
+        when the player starts the scene), with "begin your response with 'Sex:'" read as "use this tool". The original Mantella's
+        actions have their own descriptions for this"""
+        description = action_def.get('description', '')
+        prompt = action_def.get('prompt') or ''
+        if not prompt or not FunctionManager.is_other_mods_action(action_def):
+            return description
+        rules = KEYWORD_INSTRUCTION.sub("use this tool", prompt)
+        if '{key}' in rules: # Worded some other way: the sentences naming the keyword go
+            rules = " ".join(s for s in re.split(r'(?<=[.!?])\s+', rules) if '{key}' not in s)
+        rules = rules.strip()
+        return f"{description}\n\n{rules}".strip() if rules else description
+
+
+    @staticmethod
+    def _group_size(action_def: dict) -> tuple[int, int] | None:
+        """An action several NPCs take part in together (its file asks for at least two in source, e.g. a group scene): the fewest and most
+        people it takes, 0 for no most. None for any other action"""
+        source = action_def.get('parameters', {}).get('source', {})
+        try:
+            fewest, most = int(source.get('minItems', 1) or 1), int(source.get('maxItems', 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        return (fewest, most) if source.get('type') == 'array' and fewest >= 2 else None
+
+
+    @staticmethod
+    def _is_player_detail(action_def: dict, param_def: dict) -> bool:
+        """A detail of another mod's action that names the player (e.g. who a scene is with), without a list of names in its file"""
+        return (FunctionManager.is_other_mods_action(action_def) and not param_def.get('scope') and param_def.get('type', 'string') == 'string'
+                and 'player' in param_def.get('description', '').lower())
+
+
+    @staticmethod
+    def _name_the_player(action_def: dict, properties: dict, required: list[str], characters: Characters, include_player: bool) -> bool:
+        """The player's name goes in the details of another mod's action that name the player. False when the NPCs don't know the player is
+        there, or the player isn't in the conversation, and the action needs the player: it is left out"""
+        player = characters.get_player_name() if include_player else None
+        for name, param_def in properties.items():
+            if not FunctionManager._is_player_detail(action_def, param_def):
+                continue
+            if not player:
+                if name in required:
+                    return False
+                continue
+            param_def['description'] = f"{param_def.get('description', '')} The player is {player}.".strip()
+        return True
+
+
+    @staticmethod
+    def _player_named(action_def: dict, arguments: dict, characters: Characters) -> None:
+        """A detail naming the player as "player" or "you" gets the player's name, which the game looks them up by"""
+        player = characters.get_player_name()
+        if not player:
+            return
+        for name, param_def in action_def.get('parameters', {}).items():
+            value = arguments.get(name)
+            if isinstance(value, str) and FunctionManager._is_player_detail(action_def, param_def) and value.strip().lower() in PLAYER_WORDS:
+                arguments[name] = player
+
+
+    @staticmethod
+    def keyword_action(identifier: str, speaker: Character, characters: Characters | None) -> dict:
+        """The action sent to the game when an NPC starts its line with an action's name. The original Mantella's actions go without details,
+        as always. Another mod's action whose file has details (written for Advanced Actions, e.g. Expanded Sex Actions) only happens in the
+        game with them, so they are filled in where they are clear (see _keyword_arguments). When they aren't, it goes without, as before"""
+        action: dict = {'identifier': identifier}
+        action_def = FunctionManager._actions.get(identifier, {})
+        if not action_def.get('parameters') or characters is None or not FunctionManager.is_other_mods_action(action_def):
+            return action
+        arguments = FunctionManager._keyword_arguments(action_def, speaker, characters)
+        if arguments is None:
+            log.info(f"{speaker.name} used {action_def.get('name')}, but who it is for isn't clear here. Its mod may do nothing")
+            return action
+        call = {'id': '', 'type': 'function', 'function': {'name': action_def.get('name', ''), 'arguments': json.dumps(arguments)}}
+        parsed = FunctionManager.parse_function_calls([call], characters, None, filter_repeats=False, record_shares=False)
+        return parsed[0] if parsed else action
+
+
+    @staticmethod
+    def _keyword_arguments(action_def: dict, speaker: Character, characters: Characters) -> dict | None:
+        """The details of another mod's action an NPC started its line with: the speaker does it, a detail about the player names the player,
+        one about someone else names the only other person there it can be, and an action done together takes everyone in the conversation,
+        the speaker first. None when a detail it needs isn't clear (e.g. which of two NPCs)"""
+        npcs = [c.name for c in characters.get_all_characters() if not c.is_player_character]
+        required = set(action_def.get('required', []))
+        group = FunctionManager._group_size(action_def)
+        arguments: dict = {}
+        for name, param_def in action_def.get('parameters', {}).items():
+            value = None
+            scope = param_def.get('scope') or ''
+            if name == 'source':
+                if group:
+                    people = list(dict.fromkeys([speaker.name] + npcs))
+                    people = people[:group[1]] if group[1] else people
+                    value = people if len(people) >= group[0] else None
+                else:
+                    value = [speaker.name] if param_def.get('type') == 'array' else speaker.name
+            elif FunctionManager._is_player_detail(action_def, param_def):
+                value = characters.get_player_name()
+            elif scope.startswith('conversation'):
+                others = [n for n in characters.get_all_names_w_nearby(include_player=scope.endswith('_w_player')) if n != speaker.name]
+                if len(others) == 1:
+                    value = others if param_def.get('type') == 'array' else others[0]
+            if value is None:
+                if name in required:
+                    return None
+                continue
+            arguments[name] = value
+        return arguments
 
 
     ADD_TO_CONVERSATION = "mantella_npc_addtoconversation"
@@ -465,9 +601,25 @@ class FunctionManager:
                     arguments = {}
                 if not isinstance(arguments, dict):
                     arguments = {}
-                source = FunctionManager._actions[identifier].get('parameters', {}).get('source')
+                action_def = FunctionManager._actions[identifier]
+                source = action_def.get('parameters', {}).get('source')
+                group = FunctionManager._group_size(action_def)
+                FunctionManager._player_named(action_def, arguments, characters)
                 doers = [speaker.name]
-                if identifier != FunctionManager.ADD_TO_CONVERSATION:
+                if group and identifier != FunctionManager.ADD_TO_CONVERSATION:
+                    # Done together: everyone the model names takes part, with the speaker unless one reply speaks for several NPCs
+                    named = arguments.pop('source', None)
+                    people = list(dict.fromkeys(npc_names[n.strip().lower()] for n in (named if isinstance(named, list) else [named])
+                                                if isinstance(n, str) and n.strip().lower() in npc_names))
+                    if speaker.name not in people and (not several_speakers or len(people) < group[0]):
+                        people.insert(0, speaker.name)
+                    people = people[:group[1]] if group[1] else people
+                    if len(people) < group[0]:
+                        log.info(f"{speaker.name} picked {name} with too few people ({', '.join(people)}). Nothing happens")
+                        continue
+                    arguments['source'] = people
+                    doers = [speaker.name if speaker.name in people else people[0]]
+                elif identifier != FunctionManager.ADD_TO_CONVERSATION:
                     named = arguments.pop('source', None)
                     if several_speakers:
                         named_npcs = [npc_names[n.strip().lower()] for n in (named if isinstance(named, list) else [named])

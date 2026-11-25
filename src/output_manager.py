@@ -959,7 +959,7 @@ class ChatManager:
         if tags_parser:
             parser_chain.append(tags_parser)
         parser_chain.extend([
-            actions_parser(actions, getattr(self.__config, 'all_actions', None)),
+            actions_parser(actions, getattr(self.__config, 'all_actions', None), characters),
             sentence_length_parser(self.__config.number_words_tts),
             max_count_sentences_parser(
                 max_response_sentences,
