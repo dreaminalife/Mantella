@@ -42,6 +42,8 @@ from src.sequential_llm_selector import SequentialLLMSelector
 from src.model_profile_manager import ModelProfileManager
 from src.llm.client_base import ClientBase, FirstTokenTimeout, ProviderError, ToolCalls
 from src.prompt_label import label_prompt
+from src.config.definitions.prompt_definitions import PromptDefinitions
+from src.prompt_errors import PromptConditionError
 from src.llm.image_client import ImageClient, VisionCapture, image_manager_for
 from src.image.image_manager import ImageManager
 from src.llm.messages import AssistantMessage, Message, UserMessage
@@ -849,7 +851,12 @@ class ChatManager:
         name = speaker.name
         if tool_request.several_speakers:
             name = join_names([c.name for c in characters.get_all_characters() if not c.is_player_character] or [speaker.name], "or")
-        prompt = label_prompt(self.__config.advanced_actions_prompt.replace("{game}", self.__config.game.display_name).replace("{name}", name),
+        try:
+            prompt_text = PromptDefinitions.apply_prompt_conditions("advanced_actions_prompt", self.__config.advanced_actions_prompt, None)
+        except PromptConditionError as e:
+            actions_log.error(f"{e} No actions are picked. Fix the Advanced Actions Prompt.")
+            return []
+        prompt = label_prompt(prompt_text.replace("{game}", self.__config.game.display_name).replace("{name}", name),
                               self.__config.prompt_profile_manager, "advanced_actions_prompt", speaker=name)
         actions_log.debug(f"The Advanced Actions model {client.model_name} picks {name}'s actions...")
         return client.request_tool_calls(messages.copy_with_system_message(prompt), tools, topic_log=get_topic_logger(LogTopic.ACTIONS))

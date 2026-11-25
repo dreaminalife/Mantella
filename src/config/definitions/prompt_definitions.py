@@ -3,7 +3,7 @@ from regex import Regex
 from src.config.types.config_value import ConfigValue
 from src.config.types.config_value_string import ConfigValueString
 from src.config.config_value_constraint import ConfigValueConstraint, ConfigValueConstraintResult
-from src.prompt_conditions import apply_conditions, find_condition_error, has_condition_tags, strip_condition_tags
+from src.prompt_conditions import apply_conditions, find_condition_error, has_condition_tags, hold_model_blocks, strip_condition_tags
 
 
 class PromptDefinitions:
@@ -213,32 +213,49 @@ class PromptDefinitions:
         ],
     }
 
+    # Prompts that never go to an AI model, so they take no conditional blocks at all, not even model conditions
+    PROMPTS_WITHOUT_BLOCKS: tuple[str, ...] = ("stt_names_prompt",)
+
     @staticmethod
     def get_conditions(prompt_type: str | None) -> tuple[str, ...] | None:
-        """The conditions a merged prompt knows. None for a prompt type that takes no conditional blocks"""
+        """The situation conditions a merged prompt knows. None for a prompt type without them (model conditions work in every prompt)"""
         return PromptDefinitions.PROMPT_CONDITIONS.get(prompt_type) if prompt_type else None
 
     @staticmethod
     def find_condition_problem(prompt_type: str | None, text: str) -> str | None:
         """What is wrong with the conditional blocks of a prompt of this type, in plain words. None if nothing is"""
-        conditions = PromptDefinitions.get_conditions(prompt_type)
-        if conditions is None:
+        if prompt_type in PromptDefinitions.PROMPTS_WITHOUT_BLOCKS:
             if has_condition_tags(text):
-                return "Conditional blocks like {if ...} only work in the Skyrim, Skyrim Multi-NPC, Skyrim Multi-NPC Director, Skyrim NPC Initiative, Skyrim Radiant Conversation, Game Master, Game Master NPC, Talk/Nearby/Random Event Generator, Game Master Decision Instructions, Game Master Decision Player Criteria, Decision Nearby Criteria, Say To Room Decision Nobody Criteria and Memory prompts."
+                return "Conditional blocks like {if ...} don't work here: this text goes to speech-to-text, not to an AI model."
             return None
+        conditions = PromptDefinitions.get_conditions(prompt_type) or ()
         return find_condition_error(text, set(conditions), PromptDefinitions.CONDITION_EXPLANATIONS.get(prompt_type or ""))
 
     @staticmethod
     def apply_prompt_conditions(prompt_type: str | None, text: str, active: set[str] | frozenset[str] | None) -> str:
-        """Keeps the branches of a merged prompt whose condition is true now. A prompt type without conditions is returned unchanged
+        """Keeps the branches of a prompt whose situation condition is true now. The blocks that depend on the AI model ({if model has ...})
+        are kept for when the request is made (src/prompt_conditions.py, apply_model_conditions)
 
         Raises:
             PromptConditionError: the blocks are broken
         """
-        conditions = PromptDefinitions.get_conditions(prompt_type)
-        if conditions is None:
+        if prompt_type in PromptDefinitions.PROMPTS_WITHOUT_BLOCKS:
             return text
-        return apply_conditions(text, set(active or ()), set(conditions), PromptDefinitions.CONDITION_EXPLANATIONS.get(prompt_type or ""))
+        conditions = PromptDefinitions.get_conditions(prompt_type) or ()
+        applied = apply_conditions(text, set(active or ()), set(conditions), PromptDefinitions.CONDITION_EXPLANATIONS.get(prompt_type or ""))
+        return hold_model_blocks(applied)
+
+    @staticmethod
+    def preview_prompt_conditions(prompt_type: str | None, text: str, active: set[str] | frozenset[str] | None, model: str | None) -> str:
+        """The prompt as one AI model gets it in one situation. Without a model, its model blocks are shown as they are written
+
+        Raises:
+            PromptConditionError: the blocks are broken
+        """
+        if prompt_type in PromptDefinitions.PROMPTS_WITHOUT_BLOCKS:
+            return text
+        conditions = PromptDefinitions.get_conditions(prompt_type) or ()
+        return apply_conditions(text, set(active or ()), set(conditions), PromptDefinitions.CONDITION_EXPLANATIONS.get(prompt_type or ""), model or None)
     
     ALLOWED_PROMPT_VARIABLES_RADIANT = [
                                 "game",
@@ -383,7 +400,8 @@ class PromptDefinitions:
         def __init__(self, allowed_prompt_variables: list[str], prompt_type: str | None = None) -> None:
             """
             Args:
-                prompt_type (str | None): for a merged prompt, the conditions its conditional blocks may use. Without one, any tag is rejected
+                prompt_type (str | None): for a merged prompt, the situation conditions its conditional blocks may use. Without one, only
+                    model conditions are accepted
             """
             super().__init__()
             self.__allowed_prompt_variables = allowed_prompt_variables
@@ -1366,7 +1384,7 @@ If {name} does nothing, do not call any functions."""
                         Supports {names} = the NPCs in the conversation, {nearby_names} = the other NPCs nearby, {location} = where you are,
                         {player_name} = your character. Each is filled with names with commas between them."""
         return ConfigValueString("stt_names_prompt", "Speech-to-Text Names", description, PromptDefinitions.STT_NAMES_PROMPT,
-                                 [PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_STT_NAMES)])
+                                 [PromptDefinitions.PromptChecker(PromptDefinitions.ALLOWED_PROMPT_VARIABLES_STT_NAMES, "stt_names_prompt")])
 
     @staticmethod
     def get_radiant_start_prompt_config_value() -> ConfigValue:
@@ -1596,11 +1614,11 @@ If {name} does nothing, do not call any functions."""
     def get_usage_note(prompt_type: str) -> str:
         """What a prompt does, when it is used in game and what it needs, shown above the supported variables in the prompt profile editor. Empty for prompt types without a note"""
         note = PromptDefinitions.USAGE_NOTES.get(prompt_type)
+        conditions = PromptDefinitions.get_conditions_note(prompt_type)
         if not note:
-            return ""
+            return conditions
         what, when, needs = note
         text = f"**What it does:** {what}\n\n**When it is used:** {when}\n\n**Needs:** {needs}"
-        conditions = PromptDefinitions.get_conditions_note(prompt_type)
         return f"{text}\n\n{conditions}" if conditions else text
 
     # When each condition of the conditional blocks is true, in the player's words
@@ -1671,10 +1689,15 @@ If {name} does nothing, do not call any functions."""
 
     @staticmethod
     def get_conditions_note(prompt_type: str) -> str:
-        """For a merged prompt: how to write conditional blocks, and when each of its conditions is true. Empty for other prompt types"""
+        """How to write conditional blocks: for a merged prompt, when each of its conditions is true, and for every other prompt sent to an
+        AI model, the model conditions. Empty for a prompt that takes no blocks"""
+        if prompt_type in PromptDefinitions.PROMPTS_WITHOUT_BLOCKS:
+            return ""
         conditions = PromptDefinitions.get_conditions(prompt_type)
         if not conditions:
-            return ""
+            return ("**Model conditions:** write text for some AI models only inside `{if model has claude}` ... `{else}` ... `{end if}`. "
+                    "Only the text for the model that gets this prompt is sent. A tag alone on its line takes its whole line with it. "
+                    f"{PromptDefinitions.MODEL_CONDITION_MEANING}")
         lines = ["**Conditional blocks:** write what differs between situations inside `{if ...}` ... `{else if ...}` ... `{else}` ... `{end if}`. "
                  "Only the text for the situation at hand is sent. A tag alone on its line takes its whole line with it. "
                  "Conditions can be combined with `not`, `and` and `or`, for example `{if shout or npc_event}`.",
@@ -1684,7 +1707,15 @@ If {name} does nothing, do not call any functions."""
         none_meaning = PromptDefinitions.CONDITION_NONE_MEANINGS.get(prompt_type)
         if none_meaning:
             lines.append(f"- {none_meaning}")
+        lines.append(f"- `model has ...`, `model is ...`: {PromptDefinitions.MODEL_CONDITION_MEANING}")
         return "\n".join(lines)
+
+    # When a model condition is true, in the player's words
+    MODEL_CONDITION_MEANING = ("`model has claude` is true when the AI model that gets this prompt has \"claude\" in its name, and "
+                               "`model is google/gemini-3.1-flash-lite` when it is exactly that model, as its name is written in the model setting. "
+                               "It is the model the prompt is actually sent to: the one set for this prompt, a character's own model, or the "
+                               "Fallback model when it takes over. Upper and lower case don't matter. "
+                               "Combine them with `not`, `and` and `or`, for example `{if model has deepseek or model has qwen}`.")
 
     @staticmethod
     def get_variables_note(prompt_type: str) -> str:

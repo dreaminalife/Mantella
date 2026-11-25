@@ -13,6 +13,7 @@ from src.utils import get_time_group
 from src.character_manager import Character
 from src.config.config_loader import ConfigLoader
 from src.config.definitions.prompt_definitions import PromptDefinitions
+from src.prompt_conditions import apply_model_conditions
 from src.prompt_label import label_prompt
 from src.llm.llm_client import LLMClient
 from src.config.definitions.game_definitions import GameEnum
@@ -882,8 +883,9 @@ class context:
         }
         if prompt_type:
             prompt = self.__config.prompt_profile_manager.resolve_prompt(prompt_type, prompt)
-            # A merged prompt's conditional blocks are always applied, also when no conditions were passed, so no {if ...} tag reaches the LLM
-            prompt = PromptDefinitions.apply_prompt_conditions(prompt_type, prompt, conditions)
+        # The conditional blocks are always applied, also when no conditions were passed, so no {if ...} tag reaches the LLM. The model
+        # blocks are kept for when the request is made
+        prompt = PromptDefinitions.apply_prompt_conditions(prompt_type, prompt, conditions)
         # Searched after the shared sections are expanded and the branches are chosen: the variables in the text that is actually sent
         lorebook_text = self.__build_lorebook_text(prompt, variable_values, messages_for_lorebook)
         # Reads every nearby person's memories, so it is only built for a prompt that uses it (the Game Master Prompt in Shout or when saying something to the room)
@@ -943,7 +945,11 @@ class context:
         
         should_log_prompt = should_log or self.__config.consume_log_next_system_prompt()
         if should_log_prompt:
-            ai_replies_prompt_log.info(f'Prompt sent to LLM ({self.__client.get_count_tokens(result)} tokens): {result.strip()}')
+            # The model blocks ({if model has ...}) are chosen when the request is made. The log shows the text this conversation's model gets
+            model = self.__client.model_name
+            shown = apply_model_conditions(result, model)
+            for_model = f", as {model} gets it" if shown != result else ""
+            ai_replies_prompt_log.info(f'Prompt sent to LLM ({self.__client.get_count_tokens(shown)} tokens{for_model}): {shown.strip()}')
         if have_summaries_been_dropped and have_bios_been_dropped:
             log.warning(f'Both the bios and summaries of the NPCs selected could not fit into the maximum prompt size of {int(round(self.__client.token_limit * self.TOKEN_LIMIT_PERCENT, 0))} tokens. NPCs will not remember previous conversations and will have limited knowledge of who they are.')
         elif have_summaries_been_dropped:

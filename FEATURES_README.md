@@ -1178,7 +1178,7 @@ Only the text for the situation at hand is sent. In Shout, the LLM reads the fir
 - **Tags:** `{if ...}`, `{else if ...}`, `{else}` and `{end if}`. Blocks can be inside other blocks.
 - **Combining:** `not`, `and` and `or`, for example `{if shout or say_to_room}` or `{if not director}`.
 - **Lines:** a tag on a line of its own takes that whole line with it, and so do the lines of a part that is left out, so no empty gaps are left. A tag can also sit inside a line: `You are in {location}{if shout}, where people can hear you{end if}.`
-- **Where they work:** only in the prompts below, in the Prompts tab and in prompt profiles. Anywhere else, a tag is an error.
+- **Where they work:** the conditions below work only in the prompts listed with them. Model conditions (below) work in every prompt that goes to an AI model. Both work in the Prompts tab and in prompt profiles.
 
 **Which prompts take conditions**
 
@@ -1218,7 +1218,26 @@ The first six used to be 18 separate prompts: the Director, Shout, Say To Room a
 - `director` can be true together with `shout`, `say_to_room` or a wheel event's kind. It is never true while you watch an NPC Event.
 - One NPC without Director Mode or Shout, a group with Game Master Mode off, radiant conversations and Fallout 4 don't use the Game Master prompts. The Memory Prompt is used by every conversation.
 
-**Preview.** Under each of these prompts, in the Prompts tab and in the Prompt Profiles editor, **Preview** shows the text that is sent in a situation you pick from **Show as**. Variables are left as `{name}`, since there is no conversation to fill them from. In the profile editor, shared sections are filled in.
+**Model conditions**
+
+Different AI models need different instructions. One may need "no markdown", another "never show your reasoning". Write those lines inside a model condition, and each model only gets its own:
+
+```text
+{if model has claude}
+Write plain prose, no markdown.
+{else if model has deepseek or model has qwen}
+Never write out your reasoning.
+{end if}
+```
+
+- `model has claude` is true when the model's name contains "claude", such as `anthropic/claude-sonnet-4.5`. One condition covers a whole family of models, including newer versions.
+- `model is gpt-4o` is true only for that exact model, not for `gpt-4o-mini`.
+- The name is checked as it is written in the model setting. Upper and lower case don't matter.
+- They work in every prompt that goes to an AI model, and in shared sections. The only exception is **Speech-to-Text Names**, which goes to speech-to-text.
+- They combine with `not`, `and`, `or` and the other conditions: `{if shout and not model has deepseek}`.
+- The model checked is the one the prompt is actually sent to: the model set for that prompt, an NPC's own model, a model from a profile, or the **Fallback model** when it takes over.
+
+**Preview.** Under every prompt that goes to an AI model, in the Prompts tab and in the Prompt Profiles editor, **Preview** shows the text that is sent. For the prompts above, pick the situation in **Show as**. Type a model's name in **Model** to see what that model gets, or leave it empty to see every model's text. Variables are left as `{name}`, since there is no conversation to fill them from. In the profile editor, shared sections are filled in.
 
 **Broken blocks block the request.** A missing `{end if}`, an `{else}` with no `{if}`, or a condition the prompt doesn't know is rejected when you save, with a message that says what is wrong. So is a tag that is almost right, like `{endif}`, `{elif shout}` or `{If shout}`: the message says how to write it. Tags are lower case. A shared section can't be named `else`, `if`, `end`, `endif`, `elif`, `elseif` or `fi`, since it would be read as a tag. If one reaches a conversation anyway, Mantella refuses the LLM call and logs `Refusing LLM call. The prompt's conditional blocks are broken: ...`.
 
@@ -1226,7 +1245,7 @@ The first six used to be 18 separate prompts: the Director, Shout, Say To Room a
 - `{if …}`, `{else if …}`, `{else}` and `{end if}` stand out as tags, with the condition names and `and` / `or` / `not` in their own colours.
 - Variables like `{name}` and shared sections like `{content_rules}` each have their own colour.
 - The lines inside a block get a tinted band and a bar on the left, a different colour for each level of nesting, so you can see where a block starts and ends.
-- A mistake is underlined in red as you type: a typo like `{endif}`, a condition this prompt doesn't know (like `{if after_event}` in the Game Master Prompt), an `{else}` with no `{if}`, an `{if}` with no `{end if}`, or any tag in a prompt that has no conditional blocks. The message under the box says what is wrong. A shared section can go into any prompt, so in its text box every condition is accepted; it is checked in the prompt that uses it.
+- A mistake is underlined in red as you type: a typo like `{endif}`, a condition this prompt doesn't know (like `{if after_event}` in the Game Master Prompt), an `{else}` with no `{if}`, an `{if}` with no `{end if}`, a model condition without `has` or `is`, or any tag in **Speech-to-Text Names**. The message under the box says what is wrong. A shared section can go into any prompt, so in its text box every condition is accepted; it is checked in the prompt that uses it.
 - With the cursor on a tag, its whole block lights up: the `{if}`, its `{else if}` and `{else}`, and its `{end if}`.
 
 Only the display changes: what is saved and sent is the plain text.

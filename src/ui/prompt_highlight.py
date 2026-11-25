@@ -8,7 +8,8 @@ the plain text box is left as it was.
 
 The colours use only colour and backgrounds, never bold or other widths, so the copy lines up with the typed text.
 Each box knows its prompt type (prompt_box_classes), so a condition that prompt doesn't know is underlined, and so is any tag
-in a prompt without conditional blocks. A shared section can go into any prompt, so its box knows every condition"""
+in a prompt that takes no blocks. Model conditions ({if model has claude}) work in every other prompt. A shared section can go
+into any prompt, so its box knows every condition"""
 import json
 
 from src.config.definitions.prompt_definitions import PromptDefinitions
@@ -36,6 +37,7 @@ def highlight_data() -> dict:
     conditions = sorted({condition for conditions in PromptDefinitions.PROMPT_CONDITIONS.values() for condition in conditions})
     return {"conditions": conditions,
             "prompt_conditions": {prompt_type: list(conditions) for prompt_type, conditions in PromptDefinitions.PROMPT_CONDITIONS.items()},
+            "no_block_types": list(PromptDefinitions.PROMPTS_WITHOUT_BLOCKS),
             "variables": sorted(PromptProfileManager.builtin_variables())}
 
 
@@ -46,11 +48,13 @@ _JS = r"""
   }
   const DATA = __MANTELLA_PROMPT_HIGHLIGHT_DATA__;
   const ALL_CONDITIONS = new Set(DATA.conditions);
+  const NO_BLOCK_TYPES = new Set(DATA.no_block_types);
   const VARIABLES = new Set(DATA.variables);
   const TYPE_PREFIX = "__MANTELLA_PROMPT_HIGHLIGHT_TYPE_PREFIX__";
   const SECTION_TYPE = "__MANTELLA_PROMPT_HIGHLIGHT_SECTION_TYPE__";
 
-  // The conditions a prompt type knows: its own for a merged prompt, none for any other prompt, all of them for a shared section
+  // The situation conditions a prompt type knows: its own for a merged prompt, none for any other prompt, all of them for a shared section.
+  // Model conditions work in every prompt but those in NO_BLOCK_TYPES
   function conditionsFor(promptType) {
     if (promptType === undefined || promptType === null || promptType === SECTION_TYPE) {
       return ALL_CONDITIONS;
@@ -63,12 +67,15 @@ _JS = r"""
   const NAME_RE = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
   const BRACES_RE = /\{[^{}\n]*\}/g;
   const WORD_RE = /([A-Za-z_][A-Za-z0-9_]*)/;
+  // A model condition inside a tag: 'model has claude', 'model is google/gemini-3.1-flash-lite' (MODEL_WORD and MODEL_TESTS in prompt_conditions.py)
+  const MODEL_CONDITION_RE = /(\bmodel[ \t]+(?:has|is)[ \t]+[^\s{}]+)/i;
+  const MODEL_PARTS_RE = /^(model)([ \t]+)(has|is)([ \t]+)(.+)$/i;
 
   function escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  // Whether a condition can be read: names joined by 'and' / 'or', each optionally after 'not' (as _evaluate in prompt_conditions.py)
+  // Whether a condition can be read: names or model conditions joined by 'and' / 'or', each optionally after 'not' (as _read in prompt_conditions.py)
   function isReadableCondition(expression, conditions) {
     if (/[()]/.test(expression)) {
       return false;
@@ -78,10 +85,20 @@ _JS = r"""
       return false;
     }
     let expectName = true;
-    for (const word of words) {
-      const lowered = word.toLowerCase();
+    for (let index = 0; index < words.length; index++) {
+      const lowered = words[index].toLowerCase();
       if (expectName) {
         if (lowered === "not") {
+          continue;
+        }
+        if (lowered === "model") {
+          const test = (words[index + 1] || "").toLowerCase();
+          const value = (words[index + 2] || "").toLowerCase();
+          if ((test !== "has" && test !== "is") || !value || value === "and" || value === "or" || value === "not") {
+            return false;
+          }
+          index += 2;
+          expectName = false;
           continue;
         }
         if (lowered === "and" || lowered === "or" || !conditions.has(lowered)) {
@@ -101,7 +118,7 @@ _JS = r"""
   // promptType: which prompt the text is, for the conditions it may use (see conditionsFor)
   function analyze(text, promptType) {
     const conditions = conditionsFor(promptType);
-    const tagsAllowed = conditions.size > 0; // A prompt without conditional blocks takes no tag at all
+    const tagsAllowed = !NO_BLOCK_TYPES.has(promptType); // A prompt that never goes to an AI model takes no tag at all
     const tokens = [];
     BRACES_RE.lastIndex = 0;
     let match;
@@ -169,8 +186,20 @@ _JS = r"""
     if (matchGroup !== null && token.group === matchGroup) {
       classes += " ph-match";
     }
-    const parts = token.raw.split(WORD_RE);
-    const html = parts.map(function (part, index) {
+    // A model condition's name can hold any characters, so it is coloured as one piece before the words around it
+    const words = function (text) {
+      return text.split(WORD_RE).map(colourWord).join("");
+    };
+    const colourModelCondition = function (text) {
+      const parts = MODEL_PARTS_RE.exec(text);
+      return '<span class="ph-condition">' + escapeHtml(parts[1]) + "</span>" + escapeHtml(parts[2]) +
+        '<span class="ph-operator">' + escapeHtml(parts[3]) + "</span>" + escapeHtml(parts[4]) +
+        '<span class="ph-condition">' + escapeHtml(parts[5]) + "</span>";
+    };
+    const html = token.kind === "typo" ? escapeHtml(token.raw) : token.raw.split(MODEL_CONDITION_RE).map(function (piece, index) {
+      return index % 2 === 1 ? colourModelCondition(piece) : words(piece);
+    }).join("");
+    function colourWord(part, index) {
       if (index % 2 === 0) {
         return escapeHtml(part);
       }
@@ -185,7 +214,7 @@ _JS = r"""
         return '<span class="ph-operator">' + escapeHtml(part) + "</span>";
       }
       return '<span class="ph-condition' + (token.conditions.has(lowered) ? "" : " ph-unknown") + '">' + escapeHtml(part) + "</span>";
-    }).join("");
+    }
     return '<span class="' + classes + '">' + html + "</span>";
   }
 

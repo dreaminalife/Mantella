@@ -176,13 +176,17 @@ def test_the_prompts_tab_colours_every_prompt_and_nothing_else(tmp_path):
 CROSS_CHECK_TEXTS = [
     "{if after_event}\nA\n{end if}", "{if shout}\nA\n{else}\nB\n{end if}", "{if say_to_room}\nA\n{end if}",
     "{if talk_event or random_event}\nA\n{end if}", "{if director and not shout}\nA\n{end if}", "Plain {name} text", "{else}",
+    "{if model has claude}\nA\n{else}\nB\n{end if}", "{if not model is google/gemini-3.1-flash-lite}\nA\n{end if}",
+    "{if shout and model has claude}\nA\n{end if}", "{if model claude}\nA\n{end if}", "{if model has}\nA\n{end if}",
 ]
 
 
 @needs_node
-@pytest.mark.parametrize("prompt_type", list(PromptDefinitions.PROMPT_CONDITIONS) + ["skyrim_prompt", "memory_prompt"])
+@pytest.mark.parametrize("prompt_type", list(PromptDefinitions.PROMPT_CONDITIONS) + ["skyrim_prompt", "memory_prompt", "resummarize_prompt",
+                                                                                 "stt_names_prompt"])
 def test_each_prompt_type_underlines_what_its_own_check_rejects(prompt_type):
-    """A condition of another prompt, or any tag in a prompt without conditional blocks, is underlined like the check rejects it"""
+    """A condition of another prompt, a broken model condition, or any tag in a prompt that never goes to an AI model, is underlined like
+    the check rejects it"""
     results = run(*[("render", text, None, prompt_type) for text in CROSS_CHECK_TEXTS])
     for text, html in zip(CROSS_CHECK_TEXTS, results):
         rejected = PromptDefinitions.find_condition_problem(prompt_type, text) is not None
@@ -195,3 +199,13 @@ def test_a_shared_section_may_use_every_condition():
     for text in CROSS_CHECK_TEXTS[:5]:
         html = render(text)
         assert "ph-error" not in html and "ph-unknown" not in html, text
+
+
+@needs_node
+def test_a_model_condition_is_coloured_and_its_name_kept_as_typed():
+    text = "{if model has google/gemini-3.1-flash-lite and not shout}\nA\n{end if}"
+    html = render(text, None, "skyrim_game_master_prompt")
+    assert shown_text(html) == text
+    assert '<span class="ph-condition">google/gemini-3.1-flash-lite</span>' in html
+    assert '<span class="ph-operator">has</span>' in html
+    assert "ph-error" not in html and "ph-unknown" not in html

@@ -20,6 +20,7 @@ from src.llm.messages import AssistantMessage, UserMessage, join_message, leave_
 from src.llm.sentence import Sentence
 from src.llm.sentence_content import SentenceContent, SentenceTypeEnum
 from src.llm.sentence_queue import SentenceQueue
+from src.prompt_conditions import apply_conditions, hold_model_blocks
 from src.prompt_profile_manager import PromptSectionError
 from src.game_manager import GameStateManager
 from src.llm.client_base import ClientBase
@@ -118,6 +119,16 @@ def test_build_decision_request_fills_prompts_and_adds_player_when_allowed():
         "Ulfric": "Ulfric was asked something by Dragonborn.",
         "Dragonborn": "Dragonborn was addressed.",
     }
+
+
+def test_build_decision_request_chooses_the_model_blocks_for_the_decision_model():
+    held = hold_model_blocks(apply_conditions("{if model has jev}Pick fast.{else}Think first.{end if}", set(), set()))
+    prompts = {**PROMPTS, DECISION_INSTRUCTIONS: held + " Who speaks next of {names}?"} # As resolve_decision_prompts gives them
+    body = build_decision_request(prompts, "typesafe/jev-1.13", "Scene. " + held, [], ["Lydia"], "Dragonborn", False, count_words, 32000)
+    assert body["state"]["scene"] == "Scene. Pick fast."
+    assert body["questions"][DECISION_QUESTION]["instructions"] == "Pick fast. Who speaks next of Lydia?"
+    other = build_decision_request(prompts, "other/model", "Scene. " + held, [], ["Lydia"], "Dragonborn", False, count_words, 32000)
+    assert other["state"]["scene"] == "Scene. Think first."
 
 
 def test_build_decision_request_leaves_out_player_when_not_allowed():

@@ -16,6 +16,7 @@ from src.llm.messages import Message, ImageMessage, UserMessage
 from src.llm.llm_model_list import LLMModelList
 import src.utils as utils
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
+from src.prompt_conditions import apply_model_conditions_to_request
 from src.logs.log_topic import LINE_WHITE, LogTopic
 from src.logs.topic_logger import get_topic_logger, in_colour
 
@@ -177,6 +178,10 @@ class ClientBase(AIClient):
         """Returns the max_tokens value from request params, or defaults to 250"""
         return self._request_params.get("max_tokens", 250) if self._request_params else 250
 
+    def _for_this_model(self, openai_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The messages with the prompts' model blocks ({if model has claude}) applied for this model, the one the request goes to"""
+        return apply_model_conditions_to_request(openai_messages, self.model_name)
+
     def _http_timeout(self, read_seconds: float | None = None) -> httpx.Timeout:
         """Wait for response data. Connecting still times out after 5 seconds."""
         read = float(self._response_timeout if read_seconds is None else read_seconds)
@@ -262,6 +267,7 @@ class ClientBase(AIClient):
                     topic_log.warning(f"Sonnet caching transform (sync) failed: {e}")
             if isinstance(messages, message_thread):
                 openai_messages = messages.append_decensor_commitment(openai_messages)
+            openai_messages = self._for_this_model(openai_messages)
 
             self.__log_request(topic_log, messages, openai_messages, request_params)
 
@@ -353,6 +359,7 @@ class ClientBase(AIClient):
                         log.warning(f"Sonnet caching transform (stream) failed: {e}")
                 if isinstance(messages, message_thread):
                     openai_messages = messages.append_decensor_commitment(openai_messages)
+                openai_messages = self._for_this_model(openai_messages)
 
                 self.__log_request(log, messages, openai_messages, request_params)
 
@@ -467,7 +474,7 @@ class ClientBase(AIClient):
         topic_log = topic_log or log
         with self._generation_lock:
             sync_client = self.generate_sync_client()
-            openai_messages = messages.get_openai_messages()
+            openai_messages = self._for_this_model(messages.get_openai_messages())
             request_params = self._completion_request_params(self._request_params)
             request_params["tools"] = tools
             self.__log_request(topic_log, messages, openai_messages, request_params)

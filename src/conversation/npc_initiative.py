@@ -14,6 +14,7 @@ from src.llm.client_base import ClientBase
 from src.llm.decision_service_resolver import UNUSABLE_SERVICE_MESSAGE, decision_service_resolver
 from src.llm.message_thread import message_thread
 from src.llm.messages import UserMessage
+from src.prompt_conditions import apply_model_conditions_to_request
 from src.prompt_label import describe_prompt, label_prompt
 from src.utils import get_time_group
 
@@ -117,7 +118,9 @@ def _choose_with_decision_model(config: ConfigLoader, client: ClientBase, labell
         log.error(f"NPC Initiative: {UNUSABLE_SERVICE_MESSAGE.format(service=client.service_name)}")
         return None
     # The scene is in the question's instructions. The empty scene keeps the request in the Game Master's shape
-    body = {"model": client.model_name, "state": {"scene": "", "conversation": []}, "questions": {DECISION_QUESTION: question}}
+    # The model blocks ({if model has ...}) are chosen before the debug log, so it shows the text that is sent
+    questions = apply_model_conditions_to_request({DECISION_QUESTION: question}, client.model_name)
+    body = {"model": client.model_name, "state": {"scene": "", "conversation": []}, "questions": questions}
     if log.isEnabledFor(logging.DEBUG):
         log.debug("NPC Initiative decision request:\n" + format_decision_request(body))
     log.info(f"NPC Initiative decision request for {describe_prompt(config.prompt_profile_manager, INSTRUCTIONS)}: model='{client.model_name}', url='{url}'")

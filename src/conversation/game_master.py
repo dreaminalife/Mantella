@@ -27,6 +27,7 @@ from src.llm.messages import AssistantMessage, join_message, leave_message, Mess
 from src.llm.sentence import Sentence
 from src.llm.sentence_content import SentenceContent, SentenceTypeEnum
 from src.llm.sentence_queue import SentenceQueue
+from src.prompt_conditions import apply_model_conditions_to_request
 from src.prompt_profile_manager import PromptSectionError
 from src.prompt_label import describe_prompt, label_of, prompt_display_name
 
@@ -99,7 +100,9 @@ TOKEN_MARGIN = 0.9 # The token count is only an estimate, so part of the limit i
 
 def post_decision_with_retry(url: str, headers: dict[str, str], body: dict[str, Any], timeout: int,
                              should_retry: Callable[[], bool] = lambda: True) -> requests.Response:
-    """Posts to the Decisions API, and posts once more if the connection breaks or the server fails (5xx) and should_retry() allows it"""
+    """Posts to the Decisions API, and posts once more if the connection breaks or the server fails (5xx) and should_retry() allows it.
+    The bodies are built with the prompts' model blocks ({if model has ...}) chosen already. Any left are chosen here for the model the body names"""
+    body = apply_model_conditions_to_request(body, str(body.get("model") or ""))
     try:
         response = requests.post(url, headers=headers, json=body, timeout=timeout)
         if response.status_code < 500 or not should_retry():
@@ -260,7 +263,9 @@ def build_decision_request(prompts: dict[str, str], model: str, scene: str, hist
         "criteria": criteria,
     }
 
-    questions = {DECISION_QUESTION: question, **(extra_questions or {})}
+    # The model blocks ({if model has ...}) are chosen here, so the token count and the debug log are of the text that is sent
+    questions = apply_model_conditions_to_request({DECISION_QUESTION: question, **(extra_questions or {})}, model)
+    scene = apply_model_conditions_to_request(scene, model)
     budget = (int(token_limit * TOKEN_MARGIN) - count_tokens(json.dumps(questions, ensure_ascii=False))
               - count_tokens(json.dumps({"scene": scene, "conversation": []}, ensure_ascii=False)))
     kept_lines = drop_oldest_lines(history_lines, budget, lambda line: count_tokens(json.dumps(line, ensure_ascii=False)) + 1)

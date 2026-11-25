@@ -88,6 +88,12 @@ class SettingConfig(NamedTuple):
 # Model dropdowns where no selection (empty value) means "use the active Summary model".
 SUMMARY_FALLBACK_MODEL_IDS = {"thoughts_model", "reflection_model"}
 
+# The preview under a prompt (Prompts tab and Prompt Profiles editor): the text sent in a situation, to a model
+PREVIEW_TITLE = "Preview: the text that is sent"
+PREVIEW_TEXT_LABEL = "Text that is sent (variables are filled in when it is sent)"
+PREVIEW_MODEL_BOX = {"label": "Model", "placeholder": "e.g. claude or google/gemini-3.1-flash-lite",
+                     "info": "Shows the text this model gets from {if model has ...} blocks. Leave empty to see every model's text."}
+
 class ModelConfig(TypedDict):
     dependent_config: str  # The config value this model depends on (e.g., "llm_api")
     model_list_getter: Callable[[str, str, str, bool], Any]  # Function to get model list based on service, secret_key_file, default_model, is_vision
@@ -876,16 +882,18 @@ class SettingsUIConstructor(ConfigValueVisitor):
         )
         load_prompts_tab_btn = gr.Button("Load from Prompts tab", size="sm")
         initial_situations = PromptProfileManager.preview_situation_labels(initial_type)
-        with gr.Accordion("Preview: the text sent in one situation", open=False, visible=bool(initial_situations)) as preview_accordion_ui:
+        with gr.Accordion(PREVIEW_TITLE, open=False, visible=PromptProfileManager.has_preview(initial_type)) as preview_accordion_ui:
             preview_situation_ui = gr.Dropdown(
                 choices=initial_situations,
                 value=initial_situations[0] if initial_situations else None,
                 label="Show as",
-                allow_custom_value=False
+                allow_custom_value=False,
+                visible=bool(initial_situations)
             )
+            preview_model_ui = gr.Textbox(**PREVIEW_MODEL_BOX)
             preview_ui = gr.Textbox(
-                value=manager.preview_text(initial_type, initial_text or "", initial_situations[0]) if initial_situations else "",
-                label="Text sent in this situation (variables are filled in when it is sent)",
+                value=manager.preview_text(initial_type, initial_text or "", initial_situations[0] if initial_situations else None),
+                label=PREVIEW_TEXT_LABEL,
                 lines=12,
                 max_lines=12,
                 interactive=False,
@@ -1092,11 +1100,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
 
         def on_preview_type_change(type_display: str):
             situations = PromptProfileManager.preview_situation_labels(type_id(type_display))
-            return (gr.update(visible=bool(situations)),
-                    gr.update(choices=situations, value=situations[0] if situations else None))
+            return (gr.update(visible=PromptProfileManager.has_preview(type_id(type_display))),
+                    gr.update(choices=situations, value=situations[0] if situations else None, visible=bool(situations)))
 
-        def refresh_preview(type_display: str, text: str, situation: str):
-            return manager.preview_text(type_id(type_display), text or "", situation or "")
+        def refresh_preview(type_display: str, text: str, situation: str, model: str):
+            return manager.preview_text(type_id(type_display), text or "", situation or "", model=model or "")
 
         def on_active_change(type_display: str, active_value: str):
             prompt_type = type_id(type_display)
@@ -1193,32 +1201,35 @@ class SettingsUIConstructor(ConfigValueVisitor):
             outputs=[preview_accordion_ui, preview_situation_ui],
             show_progress="hidden"
         )
-        preview_inputs = [type_ui, text_ui, preview_situation_ui]
-        for trigger in (preview_situation_ui.change, text_ui.change, section_save_btn.click, section_rename_btn.click, section_delete_btn.click):
+        preview_inputs = [type_ui, text_ui, preview_situation_ui, preview_model_ui]
+        for trigger in (preview_situation_ui.change, preview_model_ui.change, text_ui.change, section_save_btn.click, section_rename_btn.click,
+                        section_delete_btn.click):
             trigger(refresh_preview, inputs=preview_inputs, outputs=[preview_ui], show_progress="hidden")
 
     def __embed_prompt_preview(self, config_value: ConfigValue, input_ui: Any) -> None:
-        """The Prompts tab: under a merged prompt, the text it sends in one chosen situation. Shared sections are not expanded here,
-        since the Prompts tab text is sent as it is"""
+        """The Prompts tab: under a prompt, the text it sends to one AI model, and for a merged prompt in one chosen situation. Shared
+        sections are not expanded here, since the Prompts tab text is sent as it is"""
         prompt_type = config_value.identifier
-        situations = PromptProfileManager.preview_situation_labels(prompt_type)
-        if not situations:
+        if not PromptProfileManager.has_preview(prompt_type):
             return
+        situations = PromptProfileManager.preview_situation_labels(prompt_type)
         manager = self.get_prompt_profile_manager()
-        with gr.Accordion("Preview: the text sent in one situation", open=False):
-            situation_ui = gr.Dropdown(choices=situations, value=situations[0], label="Show as", allow_custom_value=False)
+        with gr.Accordion(PREVIEW_TITLE, open=False):
+            situation_ui = gr.Dropdown(choices=situations, value=situations[0] if situations else None, label="Show as", allow_custom_value=False,
+                                       visible=bool(situations))
+            model_ui = gr.Textbox(**PREVIEW_MODEL_BOX)
             preview_ui = gr.Textbox(
-                value=manager.preview_text(prompt_type, str(config_value.value), situations[0], expand_sections=False),
-                label="Text sent in this situation (variables are filled in when it is sent)",
+                value=manager.preview_text(prompt_type, str(config_value.value), situations[0] if situations else None, expand_sections=False),
+                label=PREVIEW_TEXT_LABEL,
                 lines=12,
                 max_lines=12,
                 interactive=False,
                 elem_classes="multiline-textbox"
             )
-        def refresh(text: str, situation: str):
-            return manager.preview_text(prompt_type, text or "", situation or "", expand_sections=False)
-        for trigger in (situation_ui.change, input_ui.change):
-            trigger(refresh, inputs=[input_ui, situation_ui], outputs=[preview_ui], show_progress="hidden")
+        def refresh(text: str, situation: str, model: str):
+            return manager.preview_text(prompt_type, text or "", situation or "", expand_sections=False, model=model or "")
+        for trigger in (situation_ui.change, model_ui.change, input_ui.change):
+            trigger(refresh, inputs=[input_ui, situation_ui, model_ui], outputs=[preview_ui], show_progress="hidden")
 
     def __render_tts_page(self, config_value: ConfigValueGroup) -> bool:
         """The Text-to-Speech page (see tts_definitions for its order): its settings, and the voice parts that keep their own files next

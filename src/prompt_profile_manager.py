@@ -101,23 +101,34 @@ class PromptProfileManager:
 
     @staticmethod
     def preview_situation_labels(prompt_type: str) -> list[str]:
-        """The situations a merged prompt can be previewed as, in plain words. Empty for a prompt type without conditional blocks"""
+        """The situations a merged prompt can be previewed as, in plain words. Empty for a prompt type without situation conditions"""
         return [label for label, _conditions in PromptDefinitions.PREVIEW_SITUATIONS.get(prompt_type, [])]
 
-    def preview_text(self, prompt_type: str, text: str, situation: str, expand_sections: bool = True) -> str:
-        """The prompt as it reads in one situation: shared sections expanded and only that situation's branches kept.
+    @staticmethod
+    def has_preview(prompt_type: str) -> bool:
+        """Every prompt sent to an AI model can be previewed: as a model, and for a merged prompt in a situation"""
+        return PromptProfileManager.is_known_type(prompt_type) and prompt_type not in PromptDefinitions.PROMPTS_WITHOUT_BLOCKS
+
+    def preview_text(self, prompt_type: str, text: str, situation: str | None, expand_sections: bool = True, model: str = "") -> str:
+        """The prompt as it reads in one situation, for one AI model: shared sections expanded and only the branches for them kept.
         Variables stay as {name}, since there is no conversation to fill them from. Shared by the profile editor and the Prompts tab
 
         Args:
-            situation (str): one of preview_situation_labels
+            situation (str | None): one of preview_situation_labels. Ignored for a prompt without situations
             expand_sections (bool): False for the Prompts tab, whose text is sent without expanding shared sections
+            model (str): the model's name, as written in the model setting. Empty to show the model blocks as they are written
         """
-        conditions = dict(PromptDefinitions.PREVIEW_SITUATIONS.get(prompt_type, [])).get(situation)
-        if conditions is None:
+        if not PromptProfileManager.has_preview(prompt_type):
             return ""
+        situations = PromptDefinitions.PREVIEW_SITUATIONS.get(prompt_type, [])
+        conditions: frozenset[str] | None = frozenset()
+        if situations:
+            conditions = dict(situations).get(situation or "")
+            if conditions is None:
+                return ""
         expanded = self.expand_sections(text or "") if expand_sections else (text or "")
         try:
-            return PromptDefinitions.apply_prompt_conditions(prompt_type, expanded, conditions)
+            return PromptDefinitions.preview_prompt_conditions(prompt_type, expanded, conditions, (model or "").strip())
         except PromptConditionError as e:
             return f"No preview: {e.problem}"
 
@@ -396,19 +407,23 @@ class PromptProfileManager:
         return None
 
     def resolve_prompt(self, prompt_type: str, text: str) -> str:
-        """Expand shared sections for an active overlay.
+        """Expand shared sections for an active overlay. Prompts-tab text and types with no active profile keep their text.
 
-        Prompts-tab text and types with no active profile are returned unchanged.
+        Then, for a prompt without situation conditions, its model blocks ({if model has ...}) are kept for when the request is made.
+        A merged prompt gets them from apply_prompt_conditions, once its situation is known
         """
-        if not self.get_active_name(prompt_type):
-            return text or ""
-        expanded = self.expand_sections(text or "")
-        problem = PromptDefinitions.find_condition_problem(prompt_type, expanded)
-        if problem:
-            raise PromptConditionError(problem)
-        broken = self.first_broken_variable(prompt_type, text or "")
-        if broken:
-            raise PromptSectionError(broken)
+        if self.get_active_name(prompt_type):
+            expanded = self.expand_sections(text or "")
+            problem = PromptDefinitions.find_condition_problem(prompt_type, expanded)
+            if problem:
+                raise PromptConditionError(problem)
+            broken = self.first_broken_variable(prompt_type, text or "")
+            if broken:
+                raise PromptSectionError(broken)
+        else:
+            expanded = text or ""
+        if PromptDefinitions.get_conditions(prompt_type) is None:
+            expanded = PromptDefinitions.apply_prompt_conditions(prompt_type, expanded, None)
         return expanded
 
     def save_section(self, name: str, text: str) -> tuple[bool, str, bool]:
