@@ -5,6 +5,7 @@ import src.utils as utils
 import pandas as pd
 import sys
 from src.config.config_loader import ConfigLoader
+from src.logs.console_window import WINDOWS_TERMINAL_TIP, is_classic_console
 from src.logs.log_setup import ILogSetup, MantellaLogSetup
 from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
@@ -35,6 +36,8 @@ class MantellaSetup:
     {self.save_folder}''')
         log.info(f'''Mantella currently running for {self.config.game.display_name}. Mantella mod files located in: 
     {self.config.mod_path}''')
+        if is_classic_console():
+            log.info(WINDOWS_TERMINAL_TIP)
         if not self.config.have_all_config_values_loaded_correctly:
             log.error("Cannot start Mantella. Not all settings that are required are set to correct values. This error often occurs when you start Mantella.exe manually without setting up the `Game` tab in the Mantella UI.")
 

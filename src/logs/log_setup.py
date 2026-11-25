@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 from src.logs.log_formatters import FileFormatter, WindowFormatter
 from src.logs.log_topic import LogChoices, LogTopic
 from src.logs.topic_logger import get_prompt_logger, get_topic_logger
+from src.logs.window_writer import WindowWriter
 
 MAX_FILE_BYTES = 10 * 1024 * 1024 # Then the log is moved to logging.log.1 (replacing the previous one) and a new one is started
 FILE_BACKUPS = 1
@@ -22,12 +23,16 @@ class EarlyProblems(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.WARNING)
         self.records: list[logging.LogRecord] = []
-        self.__window = logging.StreamHandler()
+        self.__window = WindowWriter()
         self.__window.setFormatter(WindowFormatter())
 
     def emit(self, record: logging.LogRecord) -> None:
         self.records.append(record)
         self.__window.handle(record)
+
+    def close(self) -> None:
+        self.__window.close() # its lines are shown before the started log's
+        super().close()
 
 
 class ILogSetup(ABC):
@@ -69,10 +74,11 @@ class MantellaLogSetup(ILogSetup):
         early_records: list[logging.LogRecord] = []
         if self.__early_problems is not None:
             root.removeHandler(self.__early_problems)
+            self.__early_problems.close()
             early_records = self.__early_problems.records
             self.__early_problems = None
 
-        window_handler = logging.StreamHandler()
+        window_handler = WindowWriter() # clicking the window doesn't stop Mantella
         window_handler.setFormatter(WindowFormatter())
         file_handler = RotatingFileHandler(file_path, maxBytes=self.__max_file_bytes, backupCount=self.__file_backups, encoding='utf-8')
         file_handler.setFormatter(FileFormatter())
