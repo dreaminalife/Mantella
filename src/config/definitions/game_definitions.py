@@ -37,6 +37,25 @@ class GameEnum(Enum):
         }[self]
 
 
+# The Game tab's settings: ignored when Mantella works out the game's folders from where Mantella.exe is (see started_inside_game_folder)
+GAME_TAB_SETTINGS = ("game", "skyrim_mod_folder", "skyrimvr_mod_folder", "fallout4_mod_folder", "fallout4vr_mod_folder", "fallout4_folder", "fallout4vr_folder")
+
+
+def started_inside_game_folder(exe_folder: str) -> bool:
+    """Mantella.exe sits in <game>\\Data\\SKSE\\Plugins\\MantellaSoftware (F4SE for Fallout 4), with the mod's Sound\\Voice\\Mantella.esp in that
+    Data folder: a folder, which the NPCs' lines go in.
+    That is where it is when the game starts it, and where Mod Organizer 2 shows it to a program it starts. Then the game and the mod
+    folder are worked out from there, however Mantella.exe was started, instead of read from the Game tab"""
+    folder = os.path.abspath(exe_folder)
+    plugins = os.path.dirname(folder)
+    script_extender = os.path.dirname(plugins)
+    data = os.path.dirname(script_extender)
+    return (os.path.basename(plugins).lower() == "plugins"
+            and os.path.basename(script_extender).lower() in ("skse", "f4se")
+            and os.path.basename(data).lower() == "data"
+            and os.path.exists(os.path.join(data, "Sound", "Voice", "Mantella.esp")))
+
+
 class GameDefinitions:
     MOD_FOLDER_DESCRIPTION = """If you are using Mod Organizer 2, this path can be found by right-clicking the Mantella mod in your mod list and selecting 'Open in Explorer'.
         If you are using Vortex, this path needs to be set to your {0}\\Data folder.
@@ -63,16 +82,15 @@ See here to learn how to move your game's installation folder: https://art-from-
 
         def apply_constraint(self, value_to_apply_to: str) -> ConfigValueConstraintResult:
             if not os.path.exists(f"{value_to_apply_to}\\Sound\\Voice\\Mantella.esp"):
-                return ConfigValueConstraintResult(f"""Error setting '{self.__mod_folder_config_value} = {value_to_apply_to}' 
-Expected subfolders '{value_to_apply_to}\\Sound\\Voice\\Mantella.esp' do not seem to exist.
-The correct location to set this config value to depends on your mod manager. 
-Please see here to learn where to set this value: https://art-from-the-machine.github.io/Mantella/pages/installation.html#setup-configuration""")
+                return ConfigValueConstraintResult(f"""There's no Sound\\Voice\\Mantella.esp in {value_to_apply_to}
+It needs to be the folder the Mantella mod is installed in. With Mod Organizer 2, right-click Mantella in the mod list and pick 'Open in Explorer'.
+With Vortex, it's your game's Data folder. More help: https://art-from-the-machine.github.io/Mantella/pages/installation.html#setup-configuration""")
             return ConfigValueConstraintResult()
 
     @staticmethod
     def get_game_config_value() -> ConfigValue:
         options = [e.display_name for e in GameEnum]
-        return ConfigValueSelection("game","Game","Choose the game to run with Mantella.",GameEnum.SKYRIM_VR.display_name,options,list(GameEnum))
+        return ConfigValueSelection("game","Game","Choose the game to run with Mantella.",GameEnum.SKYRIM.display_name,options,list(GameEnum))
     
     @staticmethod
     def get_skyrim_mod_folder_config_value() -> ConfigValue:

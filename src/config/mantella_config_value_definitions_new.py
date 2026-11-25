@@ -35,13 +35,12 @@ class MantellaConfigValueDefinitionsNew:
     @staticmethod
     def get_config_values(is_integrated: bool, actions: list[Action], on_value_change_callback: Callable[..., Any] | None = None) -> ConfigValues:
         result: ConfigValues = ConfigValues()
-        is_integrated = "--integrated" in sys.argv
         # hidden_category= ConfigValueGroup("Hidden", "Hidden", "Don't show these on the UI", on_value_change_callback, is_hidden=True)
         # hidden_category.add_config_value(ConfigValueBool("show_advanced","","", False, is_hidden=True))
         # result.add_base_group(hidden_category)
 
-        # if "--integrated" not in sys.argv: # if integrated, these paths are all relative so do not need to be manually set
-        game_category = ConfigValueGroup("Game", "Game", "Settings for the games Mantella supports.", on_value_change_callback, is_integrated)
+        # Always shown, even when Mantella works out the game's folders for itself: Your keys are at the top of this page
+        game_category = ConfigValueGroup("Game", "Game", "Settings for the games Mantella supports.", on_value_change_callback)
         game_category.add_config_value(GameDefinitions.get_game_config_value())
         game_category.add_config_value(GameDefinitions.get_skyrim_mod_folder_config_value())
         game_category.add_config_value(GameDefinitions.get_skyrimvr_mod_folder_config_value())

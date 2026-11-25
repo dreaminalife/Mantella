@@ -8,7 +8,7 @@ from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, DIR
                                                              REPLIES_IN_BETWEEN, SHARED, SHOUT, TALK_KINDS, WHEN_NPC_TALKS, WHEN_YOU_TALK, WHO_MUST_SPEAK,
                                                              AtReplyLimitEnum, NewcomersRememberEnum, WhoAnswersFirstEnum, WhoMustSpeakEnum,
                                                              max_npc_turns_identifier, most_replies_identifier, talk_key, use_own_key)
-from src.config.definitions.game_definitions import GameEnum
+from src.config.definitions.game_definitions import GameEnum, started_inside_game_folder
 from src.config.definitions.tts_definitions import NO_BACKUP, TTSEnum
 from src.tts.model_catalog import ServiceModels
 from src.tts.registry import FALLBACK_SERVICE, normalize_service_name, voice_services
@@ -45,7 +45,8 @@ SECRET_WORDS = ("key", "token", "password", "secret") # a setting whose identifi
 
 class ConfigLoader:
     def __init__(self, mygame_folder_path: str, file_name='config.ini', game_override: GameEnum | None = None, prompt_profiles_path: str | None = None):
-        self.is_run_integrated = "--integrated" in sys.argv
+        # Started by the game, or from where the game would start it (e.g. from Mod Organizer 2): the game's folders are worked out from where Mantella.exe is
+        self.is_run_integrated = "--integrated" in sys.argv or started_inside_game_folder(utils.resolve_path())
         self.save_folder = mygame_folder_path
         self.__has_any_value_changed: bool = False
         self.__log_next_system_prompt: bool = False
@@ -435,8 +436,8 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
     def __update_config_values_from_current_state(self):
         self.__definitions.clear_constraint_violations()
         try:
-            # if the exe is being run by another process, replace config.ini paths with relative paths
-            if "--integrated" in sys.argv:
+            # if the exe is being run by the game, or sits where the game would run it, replace config.ini paths with relative paths
+            if self.is_run_integrated:
                 # Plugins/MantellaSoftware folder
                 exe_folder = Path(utils.resolve_path())
                 # Working backwards from MantellaSoftware (where the .exe runs) -> Plugins -> F4SE/SKSE -> Data (mod folder) -> Game

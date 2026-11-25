@@ -5,12 +5,31 @@ import src.utils as utils
 import pandas as pd
 import sys
 from src.config.config_loader import ConfigLoader
+from src.config.definitions.game_definitions import GAME_TAB_SETTINGS
 from src.logs.console_window import WINDOWS_TERMINAL_TIP, is_classic_console
 from src.logs.log_setup import ILogSetup, MantellaLogSetup
 from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
 
 log = get_topic_logger(LogTopic.STARTUP)
+
+
+def settings_problem_message(config: ConfigLoader) -> str:
+    """Why Mantella can't start: each setting that is wrong and what is wrong with it, and for the Game tab's settings, how to avoid setting them"""
+    lines = ["Mantella can't start until these settings are fixed:"]
+    for identifier, problems in config.definitions.constraint_violations.items():
+        try:
+            name = config.definitions.get_config_value_definition(identifier).name
+        except Exception:
+            name = identifier
+        for problem in problems:
+            text = "\n    ".join(line.strip() for line in problem.strip().splitlines())
+            lines.append(f"- {name}: {text}")
+    if any(identifier in GAME_TAB_SETTINGS for identifier in config.definitions.constraint_violations):
+        lines.append("Mantella finds the game and mod folders by itself when the game starts it, or when you start Mantella.exe from Mod Organizer 2. "
+                     f"Started any other way, set them on the Game tab: http://localhost:{config.port}/ui")
+    return "\n".join(lines)
+
 
 class MantellaSetup:
     def __init__(self):
@@ -39,7 +58,7 @@ class MantellaSetup:
         if is_classic_console():
             log.info(WINDOWS_TERMINAL_TIP)
         if not self.config.have_all_config_values_loaded_correctly:
-            log.error("Cannot start Mantella. Not all settings that are required are set to correct values. This error often occurs when you start Mantella.exe manually without setting up the `Game` tab in the Mantella UI.")
+            log.error(settings_problem_message(self.config))
 
         # clean up old instances of exe runtime files
         utils.cleanup_mei(self.config.remove_mei_folders)
