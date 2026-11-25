@@ -25,7 +25,7 @@ class ModelProfileDefinitions:
             "profile_selected_model",
             "Model",
             description,
-            "google/gemma-4-26b-a4b-it:free",
+            "openrouter/free",
             ["Select a service first"],
             allows_values_not_in_options=True
         )
@@ -49,7 +49,7 @@ Common parameters:
 Example with OpenRouter reasoning exclusion:
 ```
 {
-    "max_tokens": 250,
+    "max_tokens": 5000,
     "temperature": 1,
     "top_p": 0.9,
     "stop": [
@@ -79,7 +79,7 @@ Example with OpenRouter reasoning exclusion:
     @staticmethod
     def get_example_profile_json_config_value() -> ConfigValue:
         example_json = """{
-    "max_tokens": 250,
+    "max_tokens": 5000,
     "temperature": 1,
     "top_p": 0.9,
     "stop": [

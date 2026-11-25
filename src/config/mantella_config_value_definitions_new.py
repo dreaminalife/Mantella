@@ -76,7 +76,7 @@ class MantellaConfigValueDefinitionsNew:
             "bio_llm_model",
             "Bio LLM Model",
             "Model used by Bio Editor LLM requests.",
-            "google/gemma-4-26b-a4b-it:free",
+            "openrouter/free",
             []
         ))
         hidden_category.add_config_value(ConfigValueBool(

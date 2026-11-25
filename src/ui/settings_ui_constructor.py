@@ -312,7 +312,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             # Use the first (primary) key file from the resolver
             key_files = key_file_resolver.get_key_files_for_service(service, 'GPT_SECRET_KEY.txt')
             secret_key_file = key_files[0] if key_files else 'GPT_SECRET_KEY.txt'
-        default_model = 'google/gemma-4-26b-a4b-it:free'
+        default_model = 'openrouter/free'
         is_vision = True if model_config.identifier == 'vision_model' else False
         model_list = handler["model_list_getter"](service, secret_key_file, default_model, is_vision)
         selected_model = model_config.value
@@ -657,7 +657,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
             model_list = ClientBase.get_model_list(
                 service,
                 secret_key_file,
-                "google/gemma-4-26b-a4b-it:free",
+                "openrouter/free",
                 False
             )
             model = preferred_model if preferred_model and model_list.is_model_in_list(preferred_model) else model_list.default_model
@@ -718,7 +718,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     label="Parameters (JSON)",
                     lines=8,
                     max_lines=20,
-                    placeholder='{\n  "temperature": 0.8,\n  "max_tokens": 250\n}'
+                    placeholder='{\n  "temperature": 0.8,\n  "max_tokens": 5000\n}'
                 )
                 slot_inputs.extend([enabled_ui, weight_ui, parameters_ui])
 
@@ -2081,7 +2081,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                         parameters_config = self.__identifier_to_config_value.get("profile_parameters")
                         if parameters_config:
                             default_json = """{
-    "max_tokens": 250,
+    "max_tokens": 5000,
     "temperature": 0.8,
     "top_p": 1.0,
     "frequency_penalty": 0.0,
@@ -2198,7 +2198,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
                     # Use the first (primary) key file from the resolver
                     key_files = key_file_resolver.get_key_files_for_service(service, 'GPT_SECRET_KEY.txt')
                     secret_key_file = key_files[0] if key_files else 'GPT_SECRET_KEY.txt'
-                default_model = 'google/gemma-4-26b-a4b-it:free'
+                default_model = 'openrouter/free'
                 is_vision = True if config_value.identifier == 'vision_model' else False
                 model_list = handler["model_list_getter"](service, secret_key_file, default_model, is_vision)
                 selected_model = config_value.value

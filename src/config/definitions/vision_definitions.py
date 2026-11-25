@@ -63,7 +63,7 @@ class VisionDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/models?modality=text%2Bimage-%3Etext
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("vision_model", "Custom Vision Model", model_description, "google/gemma-4-26b-a4b-it:free", ["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.advanced])
+        return ConfigValueSelection("vision_model", "Custom Vision Model", model_description, "openrouter/free", ["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.advanced])
     
     @staticmethod
     def get_vision_custom_token_count_config_value() -> ConfigValue:
@@ -75,7 +75,7 @@ class VisionDefinitions:
     @staticmethod
     def get_vision_llm_params_config_value() -> ConfigValue:
         value = """{
-                        "max_tokens": 100,
+                        "max_tokens": 5000,
                         "stop": ["#"]
                     }"""
         description = """Parameters passed as part of the request to the vision model.

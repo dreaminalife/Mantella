@@ -801,7 +801,7 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
         return LLMModelList([("Custom model","Custom model")], "Custom model", allows_manual_model_input=True)
 
     @staticmethod
-    def get_model_list(service: str, secret_key_file: str, default_model: str = "google/gemma-4-26b-a4b-it:free", is_vision: bool = False) -> LLMModelList:
+    def get_model_list(service: str, secret_key_file: str, default_model: str = "openrouter/free", is_vision: bool = False) -> LLMModelList:
         if service not in ['OpenAI', 'OpenRouter', 'NanoGPT']:
             return ClientBase.custom_model_list()
         try:

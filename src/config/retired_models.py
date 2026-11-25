@@ -2,7 +2,7 @@
 the next time Mantella starts, instead of NPCs that can't answer"""
 from __future__ import annotations
 
-CURRENT_FREE_MODEL = "google/gemma-4-26b-a4b-it:free"
+CURRENT_FREE_MODEL = "openrouter/free"
 
 # Old defaults OpenRouter took down (checked November 2026): the old Single NPC Model and the old Custom Vision Model
 RETIRED_MODELS = (

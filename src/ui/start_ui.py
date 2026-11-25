@@ -1205,7 +1205,7 @@ class StartUI(routeable):
                     save_prompt_btn = gr.Button("Save prompt", variant="primary")
                     delete_prompt_btn = gr.Button("Delete prompt", variant="secondary")
                 prompt_editor = gr.Text(value=_profiles_dict.get(_selected_prompt_name, ""), lines=8, label="Prompt (supports {bio}, {summary}, {player_description}, and {conversation_history})")
-                params_editor = gr.Text(value=json.dumps({"max_tokens": 250}, indent=2), lines=6, label="Parameters (JSON)")
+                params_editor = gr.Text(value=json.dumps({"max_tokens": 5000}, indent=2), lines=6, label="Parameters (JSON)")
                 with gr.Row():
                     service_dropdown = gr.Dropdown(
                         choices=["OpenRouter", "OpenAI", "NanoGPT", "KoboldCpp", "textgenwebui"],
@@ -1220,11 +1220,11 @@ class StartUI(routeable):
                         _service = config.definitions.get_string_value("bio_llm_api") or config.llm_api
                         _skf = _kfr.get_key_files_for_service(_service, 'GPT_SECRET_KEY.txt')
                         _skf0 = _skf[0] if _skf else 'GPT_SECRET_KEY.txt'
-                        _model_list = ClientBase.get_model_list(_service, _skf0, 'google/gemma-4-26b-a4b-it:free', False)
+                        _model_list = ClientBase.get_model_list(_service, _skf0, 'openrouter/free', False)
                         _initial_model = config.definitions.get_string_value("bio_llm_model") or config.llm
                         _selected_model = _initial_model if _model_list.is_model_in_list(_initial_model) else _model_list.default_model
                     except Exception:
-                        _model_list = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'google/gemma-4-26b-a4b-it:free', False)
+                        _model_list = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'openrouter/free', False)
                         _selected_model = _model_list.default_model
                     model_dropdown = gr.Dropdown(
                         value=_selected_model,
@@ -1631,7 +1631,7 @@ class StartUI(routeable):
                     from src.llm.key_file_resolver import key_file_resolver as _kfr
                     skf = _kfr.get_key_files_for_service(service_value, 'GPT_SECRET_KEY.txt')
                     skf0 = skf[0] if skf else 'GPT_SECRET_KEY.txt'
-                    ml = ClientBase.get_model_list(service_value, skf0, 'google/gemma-4-26b-a4b-it:free', False)
+                    ml = ClientBase.get_model_list(service_value, skf0, 'openrouter/free', False)
                     # prefer saved bio_llm_model when available
                     saved_model = config.definitions.get_string_value("bio_llm_model") or config.llm
                     sel = saved_model if ml.is_model_in_list(saved_model) else (model_dropdown.value if hasattr(model_dropdown, 'value') and ml.is_model_in_list(model_dropdown.value) else ml.default_model)
@@ -1640,7 +1640,7 @@ class StartUI(routeable):
                     return gr.Dropdown(value=sel, choices=ml.available_models, multiselect=False, allow_custom_value=ml.allows_manual_model_input, label="Model")
                 except Exception as e:
                     log.error(f"LLM model list update failed: {e}")
-                    ml = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'google/gemma-4-26b-a4b-it:free', False)
+                    ml = ClientBase.get_model_list("OpenRouter", 'GPT_SECRET_KEY.txt', 'openrouter/free', False)
                     return gr.Dropdown(value=ml.default_model, choices=ml.available_models, multiselect=False, allow_custom_value=ml.allows_manual_model_input, label="Model")
 
             def on_send_llm_request(label: str, df: pd.DataFrame, l2k: dict[str, str], world_id: str, raw_prompt: str, bio_text_ui: str, summary_text_ui: str, params_text: str, apply_profile: bool, omit_stop: bool, temp_ovr: float, max_tokens_ovr: int, srv: str, mdl: str):

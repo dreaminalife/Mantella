@@ -1399,7 +1399,7 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 ### Quick start
 
 1. Install the MantellaHeardLines plugin and the updated game add-on.
-2. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is on by default, but stays off if you turned off **Enable Vanilla Dialogue Awareness** in an older version of Mantella.
+2. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is off on a new game.
 3. In Whiterun, wait in the Bannered Mare until Mikael talks to Carlotta.
 4. Talk to Mikael or Saadia through Mantella and ask what just happened.
 
@@ -2908,7 +2908,7 @@ When the scene ends, the conversation ends like any other: with **Enable Convers
 
 | Setting                                | Default                     | What it does                                                                                                                      |
 | -------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **NPC Event Generator Model**          | `google/gemma-4-26b-a4b-it:free` | The model that invents the scenes. Always its own model, never the summary model                                                 |
+| **NPC Event Generator Model**          | `openrouter/free`                | The model that invents the scenes. Always its own model, never the summary model                                                 |
 | **Max Participants**         | 3                           | The most NPCs the generator may put in a scene when it starts                                                                    |
 | **Player Notice Delay**      | 3                           | How many NPC lines the scene runs before the NPCs can notice you                                                                 |
 | **Max Lines Without Player** | 10                          | The scene ends after this many NPC lines while you have not joined                                                               |

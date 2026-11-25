@@ -81,7 +81,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("model","Single NPC Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("model","Single NPC Model",model_description,"openrouter/free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     
     @staticmethod
@@ -162,7 +162,7 @@ class LLMDefinitions:
     @staticmethod
     def get_llm_params_config_value() -> ConfigValue:
         value = """{
-                        "max_tokens": 250,
+                        "max_tokens": 5000,
                         "stop": ["#"]
                     }"""
         description = """Parameters passed as part of the request to the LLM.
@@ -327,7 +327,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("summary_model","Summary Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("summary_model","Summary Model",model_description,"openrouter/free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     @staticmethod
     def get_summary_custom_token_count_config_value() -> ConfigValue:
@@ -341,7 +341,7 @@ class LLMDefinitions:
         description = """Parameters for the summary LLM model. These should be in JSON format.
                     Common parameters include temperature (0.0-2.0), top_p (0.0-1.0), frequency_penalty (0.0-1.0), presence_penalty (0.0-1.0).
                     Lower temperature values produce more consistent outputs, while higher values increase creativity."""
-        default_params = json.dumps({"temperature": 0.1, "top_p": 0.9}, indent=4)
+        default_params = json.dumps({"max_tokens": 5000, "temperature": 0.1, "top_p": 0.9}, indent=4)
         return ConfigValueString("summary_llm_params","Summary LLM Parameters",description, default_params, tags=[ConfigValueTag.basic], row_group="llm_params_row")
 
     # Private Thoughts / Personal Reflection LLM Configuration
@@ -364,7 +364,7 @@ class LLMDefinitions:
         return ConfigValueSelection(f"{key}_llm_api",f"{label} LLM Service",description, "OpenRouter", ["OpenRouter", "OpenAI", "NanoGPT", "KoboldCpp", "textgenwebui"], allows_free_edit=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
 
     @staticmethod
-    def get_memory_task_model_config_value(key: str, label: str, has_summary_option: bool = True, default_model: str = "google/gemma-4-26b-a4b-it:free") -> ConfigValue:
+    def get_memory_task_model_config_value(key: str, label: str, has_summary_option: bool = True, default_model: str = "openrouter/free") -> ConfigValue:
         when_own_model = f" when 'Use Summary Model for {label}' is disabled" if has_summary_option else ""
         model_description = f"""Select the model to use for {label}{when_own_model}. Press the *Update* button to load a list of models available from the service selected above.
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
@@ -386,7 +386,7 @@ class LLMDefinitions:
                     Only used when 'Use Summary Model for {label}' is disabled.""" if has_summary_option else ""
         description = f"""Parameters for the {label} LLM model. These should be in JSON format.{when_own_model}
                     Common parameters include temperature (0.0-2.0), top_p (0.0-1.0), frequency_penalty (0.0-1.0), presence_penalty (0.0-1.0)."""
-        default_params = json.dumps({"temperature": 0.1, "top_p": 0.9}, indent=4)
+        default_params = json.dumps({"max_tokens": 5000, "temperature": 0.1, "top_p": 0.9}, indent=4)
         return ConfigValueString(f"{key}_llm_params",f"{label} LLM Parameters",description, default_params, tags=[ConfigValueTag.basic], row_group="memory_llm_params_row")
 
     @staticmethod
@@ -424,7 +424,7 @@ class LLMDefinitions:
                             The list does not provide all details about the models. For additional information please refer to the corresponding sites:
                             - OpenRouter: https://openrouter.ai/docs#models
                             - OpenAI: https://platform.openai.com/docs/models https://openai.com/api/pricing/"""
-        return ConfigValueSelection("multi_npc_model","Multi-NPC & Radiant Model",model_description,"google/gemma-4-26b-a4b-it:free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("multi_npc_model","Multi-NPC & Radiant Model",model_description,"openrouter/free",["Custom Model"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
     
     @staticmethod
     def get_multi_npc_custom_token_count_config_value() -> ConfigValue:
@@ -438,7 +438,7 @@ class LLMDefinitions:
         description = """Parameters for the multi-NPC LLM model. These should be in JSON format.
                     Common parameters include temperature (0.0-2.0), top_p (0.0-1.0), frequency_penalty (0.0-1.0), presence_penalty (0.0-1.0).
                     Higher temperature values can help with more dynamic multi-character interactions."""
-        default_params = json.dumps({"temperature": 0.8, "top_p": 0.9}, indent=4)
+        default_params = json.dumps({"max_tokens": 5000, "temperature": 0.8, "top_p": 0.9}, indent=4)
         return ConfigValueString("multi_npc_llm_params","Multi-NPC & Radiant LLM Parameters",description, default_params, tags=[ConfigValueTag.basic], row_group="llm_params_row")
 
     @staticmethod
@@ -664,7 +664,7 @@ class LLMDefinitions:
         description = """Parameters for the Game Master LLM model. These should be in JSON format.
                     Only used when Multi-NPC Game Master Mode is enabled.
                     Common parameters include temperature (0.0-2.0), top_p (0.0-1.0), frequency_penalty (0.0-1.0), presence_penalty (0.0-1.0)."""
-        default_params = json.dumps({"temperature": 0.2}, indent=4)
+        default_params = json.dumps({"max_tokens": 5000, "temperature": 0.2}, indent=4)
         return ConfigValueString("game_master_llm_params","Game Master LLM Parameters",description, default_params, tags=[ConfigValueTag.basic], row_group="llm_params_row")
 
     @staticmethod

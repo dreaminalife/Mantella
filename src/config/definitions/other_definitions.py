@@ -17,7 +17,7 @@ class OtherDefinitions:
         automatic_greeting_description = """Should a conversation be started with an automatic greeting from the LLM / NPC.
                                         - If enabled: Conversations are always started by the LLM.
                                         - If disabled: The LLM will not respond until the player speaks first."""
-        return ConfigValueBool("automatic_greeting","Automatic Greeting",automatic_greeting_description,True)
+        return ConfigValueBool("automatic_greeting","Automatic Greeting",automatic_greeting_description,False)
     
     @staticmethod
     def get_max_count_events_config_value() -> ConfigValue:
