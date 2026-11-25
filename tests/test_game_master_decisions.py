@@ -347,7 +347,7 @@ def test_decision_model_list(get):
     assert [value for _, value in model_list.available_models] == ["typesafe/jev-1.13", "respan/span-01"]
     assert model_list.available_models[0][0].startswith("typesafe/jev-1.13 | Context: ")
     assert "Context: unknown" in model_list.available_models[1][0]
-    assert model_list.default_model == "typesafe/jev-1.13"
+    assert model_list.default_model == "perplexity/pplx-decider-v1.2"
     assert ClientBase.api_token_limits["jev-1.13"] == 32000
     assert "span-01" not in ClientBase.api_token_limits
     assert get.call_args.args[0] == "https://openrouter.ai/api/v1/models?output_modalities=decisions"

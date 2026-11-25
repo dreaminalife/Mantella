@@ -941,11 +941,11 @@ For more information, see here: https://art-from-the-machine.github.io/Mantella/
         "OpenRouter": ("https://openrouter.ai/api/v1/models?output_modalities=decisions", 1_000_000),
         "NanoGPT": ("https://nano-gpt.com/api/v1/models?detailed=true", 1),
     }
-    DEFAULT_DECISION_MODEL = "typesafe/jev-1.13"
+    DEFAULT_DECISION_MODEL = "perplexity/pplx-decider-v1.2"
 
     @staticmethod
     def get_decision_model_list(service: str, secret_key_file: str, default_model: str = DEFAULT_DECISION_MODEL, is_vision: bool = False) -> LLMModelList:
-        """Lists the decision models on OpenRouter or NanoGPT (e.g. typesafe/jev-1.13). These do not appear in the OpenRouter chat model list.
+        """Lists the decision models on OpenRouter or NanoGPT (e.g. perplexity/pplx-decider-v1.2). These do not appear in the OpenRouter chat model list.
         For a typed address (a decision server on the player's own computer), the model name is typed, as for a local LLM.
         The arguments match the other model list getters. The lists need no key, so the key file is not used.
         """

@@ -588,7 +588,7 @@ class LLMDefinitions:
     @staticmethod
     def get_game_master_use_decision_model_config_value() -> ConfigValue:
         description = """Use a decision model instead of an LLM for the Game Master in multi-NPC Game Master Mode.
-                        Decision models (e.g. typesafe/jev-1.13) do not write text. They pick the next speaker from a fixed list of options and return a probability for each one. They are fast and cheap.
+                        Decision models (e.g. perplexity/pplx-decider-v1.2) do not write text. They pick the next speaker from a fixed list of options and return a probability for each one. They are fast and cheap.
                         When enabled, the Game Master uses the Game Master Decision Model below through the Game Master Decision Service.
                         Game Master LLM Service, Game Master Model, Game Master LLM Parameters and Apply Profile for Game Master are then ignored."""
         return ConfigValueBool("game_master_use_decision_model", "Use Decision Model for Game Master", description, True, tags=[ConfigValueTag.basic])
@@ -607,7 +607,7 @@ class LLMDefinitions:
         description = """Select the decision model the Game Master uses when Use Decision Model for Game Master is enabled. Press the *Update* button to load the decision models available on the Game Master Decision Service.
                         For a decision model running on your own computer, type the model name its server expects. Set Game Master Custom Token Count to the model's token limit.
                         The instructions and the criteria for each option can be changed in the Game Master Decision prompts."""
-        return ConfigValueSelection("game_master_decision_model","Game Master Decision Model",description,"typesafe/jev-1.13",["typesafe/jev-1.13"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
+        return ConfigValueSelection("game_master_decision_model","Game Master Decision Model",description,"perplexity/pplx-decider-v1.2",["perplexity/pplx-decider-v1.2"], allows_values_not_in_options=True, tags=[ConfigValueTag.basic, ConfigValueTag.share_row])
 
     @staticmethod
     def get_npc_initiative_threshold_config_value() -> ConfigValue:
