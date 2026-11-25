@@ -135,6 +135,7 @@ class VoicePicker:
 
     def pick(self, speaker: VoiceSpeaker | None, named_voice: str | None = None) -> VoicePick:
         speaker = speaker or VoiceSpeaker()
+        named_voice = file_value(named_voice) # an empty advanced_voice_model cell can still come as nan
         if named_voice:
             clip = self.__clips.voice_type_clip(named_voice)
             if clip:

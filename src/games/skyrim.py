@@ -22,6 +22,14 @@ characters_log = get_topic_logger(LogTopic.CHARACTERS)
 actions_log = get_topic_logger(LogTopic.ACTIONS)
 
 
+def _filled(value: Any) -> str:
+    """A skyrim_characters.csv cell as text: an empty one is '' (pandas reads it as nan, a number)"""
+    if value is None or pd.isna(value):
+        return ''
+    text = str(value).strip()
+    return '' if text.lower() == 'nan' else text
+
+
 class Skyrim(Gameable):
     DIALOGUELINE1_FILENAME = "MantellaDi_MantellaDialogu_00001D8B_1"
     DIALOGUELINE2_FILENAME = "MantellaDi_MantellaDialogu_0018B644_1"
@@ -185,7 +193,11 @@ class Skyrim(Gameable):
         if pd.isna(voice_effect_value) or str(voice_effect_value).strip().lower() == 'nan':
             voice_effect_value = ''
 
-        return external_character_info(name, is_generic_npc, expanded_bio, actor_voice_model_name, character_info['voice_model'], character_info['skyrim_voice_folder'], character_info['advanced_voice_model'], character_info.get('voice_accent', None), tts_service_value, llm_service_value, llm_model_value, dynamic_tag_events=dynamic_tag_events, voice_effect=str(voice_effect_value).strip())
+        # The voice cells too: an empty one reached the voice services as nan, a number, and broke the NPC's lines (Redoran Guard, no advanced_voice_model)
+        voice_accent_value = character_info.get('voice_accent', None)
+        return external_character_info(name, is_generic_npc, expanded_bio, actor_voice_model_name, _filled(character_info['voice_model']), _filled(character_info['skyrim_voice_folder']),
+                                       _filled(character_info['advanced_voice_model']), None if voice_accent_value is None else _filled(voice_accent_value),
+                                       tts_service_value, llm_service_value, llm_model_value, dynamic_tag_events=dynamic_tag_events, voice_effect=str(voice_effect_value).strip())
     
     @utils.time_it
     def find_best_voice_model(self, actor_race: str | None, actor_sex: int | None, ingame_voice_model: str, library_search:bool = True) -> str:
@@ -226,18 +238,24 @@ class Skyrim(Gameable):
                 if actor_voice_model_id.endswith(key):
                     voice_model = Skyrim.VOICE_MODEL_IDS[key]
                     return voice_model
-            # if voice_model not found in the voice model ID list
-            try: # search for voice model in skyrim_characters.csv
-                voice_model = self.character_df.loc[self.character_df['skyrim_voice_folder'].astype(str).str.lower()==actor_voice_model_name.lower(), 'voice_model'].values[0]
-            except:
-                pass
+            # if voice_model not found in the voice model ID list, search for it in skyrim_characters.csv
+            voice_model = self.__first_filled('skyrim_voice_folder', actor_voice_model_name, 'voice_model')
         
         if voice_model == '':
             voice_model = self.dictionary_match(female_voice_model_dictionary, male_voice_model_dictionary, actor_race, actor_sex)
 
         return voice_model
     
-    def dictionary_match(self, female_voice_model_dictionary: dict, male_voice_model_dictionary: dict, actor_race: str | None, actor_sex: int | None) -> str: 
+    def __first_filled(self, match_column: str, value: str, wanted_column: str) -> str:
+        """The wanted column of the first skyrim_characters.csv row whose match column is value. Rows that leave the wanted column
+        empty are skipped: Dremora Merchant has the DLC2MaleDarkElfCynical voice folder but no voice model. '' when no row has one"""
+        try:
+            rows = self.character_df.loc[self.character_df[match_column].astype(str).str.lower() == str(value).lower(), wanted_column]
+        except KeyError:
+            return ''
+        return next((str(found).strip() for found in rows if not pd.isna(found) and str(found).strip()), '')
+
+    def dictionary_match(self, female_voice_model_dictionary: dict, male_voice_model_dictionary: dict, actor_race: str | None, actor_sex: int | None) -> str:
         if actor_race is None:
             actor_race = "Nord"
         if actor_sex is None:
@@ -258,10 +276,8 @@ class Skyrim(Gameable):
 
         voice_model = self.find_best_voice_model(actor_race, actor_sex, ingame_voice_model)
 
-        try: # search for relavant skyrim_voice_folder for voice_model
-            skyrim_voice_folder = self.character_df.loc[self.character_df['voice_model'].astype(str).str.lower()==voice_model.lower(), 'skyrim_voice_folder'].values[0]
-        except: # assume it is simply the voice_model name without spaces
-            skyrim_voice_folder = voice_model.replace(' ','')
+        # search for relavant skyrim_voice_folder for voice_model, else assume it is simply the voice_model name without spaces
+        skyrim_voice_folder = self.__first_filled('voice_model', voice_model, 'skyrim_voice_folder') or voice_model.replace(' ','')
         
         character_info = {
             'name': name,

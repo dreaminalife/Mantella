@@ -9,6 +9,7 @@ from src.character_manager import Character
 import shutil
 import os
 import json
+import pandas as pd
 
 
 @pytest.fixture
@@ -181,6 +182,42 @@ def test_find_best_voice_model(skyrim: Skyrim):
     assert unknown_voice == "Male Nord" # Default model names have spaces for readability, but are parsed without spaces
 
 
+def _put_first_row(skyrim: Skyrim, **values):
+    """A skyrim_characters.csv row before all the others, so it is the first one a lookup finds"""
+    row = pd.DataFrame([{column: values.get(column, float('nan')) for column in skyrim.character_df.columns}])
+    skyrim._Gameable__character_df = pd.concat([row, skyrim.character_df], ignore_index=True)
+
+
+def test_find_best_voice_model_skips_a_row_without_a_voice_model(skyrim: Skyrim):
+    """Like Dremora Merchant: the first row with the NPC's voice folder has no voice model. The next row's is used, not an empty one"""
+    _put_first_row(skyrim, name="Test Merchant", skyrim_voice_folder="DLC2MaleDarkElfCynical")
+    _put_first_row(skyrim, name="Test Elder", voice_model="MaleDarkElfCynical", skyrim_voice_folder="DLC2MaleDarkElfCynical")
+    _put_first_row(skyrim, name="Test Merchant Again", skyrim_voice_folder="DLC2MaleDarkElfCynical")
+
+    voice = skyrim.find_best_voice_model(actor_race="[Race <DarkElfRace (00013746)>]", actor_sex=0, ingame_voice_model="VoiceType <DLC2MaleDarkElfCynical (0201A3E3)>")
+
+    assert voice == "MaleDarkElfCynical"
+
+
+def test_find_best_voice_model_uses_the_race_when_no_row_has_a_voice_model(skyrim: Skyrim):
+    _put_first_row(skyrim, name="Test Merchant", skyrim_voice_folder="TestOnlyVoiceFolder")
+
+    voice = skyrim.find_best_voice_model(actor_race="[Race <DarkElfRace (00013746)>]", actor_sex=0, ingame_voice_model="VoiceType <TestOnlyVoiceFolder (0201A3E3)>")
+
+    assert isinstance(voice, str) and voice # a voice from the race list, not an empty cell
+
+
+def test_generic_npc_voice_folder_skips_a_row_without_one(skyrim: Skyrim):
+    """Like Mephala: the first row with the voice model has no voice folder. The next row's is used, not an empty one"""
+    _put_first_row(skyrim, name="Test Guard", voice_model="TestOnlyVoice", skyrim_voice_folder="TestOnlyFolder")
+    _put_first_row(skyrim, name="Test Daedra", voice_model="TestOnlyVoice")
+
+    info = skyrim.load_unnamed_npc("Test Guard", "DarkElf", 0, "VoiceType <TestOnlyFolder (0201A3E3)>")
+
+    assert info["voice_model"] == "TestOnlyVoice"
+    assert info["skyrim_voice_folder"] == "TestOnlyFolder"
+
+
 def test_dictionary_match(skyrim: Skyrim):
     """Test the dictionary_match method for voice model mapping"""
     # Test with valid race/sex combinations
@@ -267,6 +304,24 @@ def test_load_external_character_info(skyrim: Skyrim):
     assert info.advanced_voice_model == ""
     assert info.voice_accent == "en"
     assert info.bio == "You are a male Nord Unknown Character."
+
+
+def test_load_external_character_info_empty_voice_cells_are_text(skyrim: Skyrim):
+    """Redoran Guard's rows leave voice_model, skyrim_voice_folder and advanced_voice_model empty. They come as '', not nan:
+    nan is a number, and Pocket TTS failed on it with "'float' object has no attribute 'lower'" """
+    info = skyrim.load_external_character_info(
+        base_id='0195B5',
+        name='Redoran Guard',
+        race='[Race <DarkElfRace (00013742)>]',
+        gender=0,
+        ingame_voice_model='[VoiceType <DLC2MaleDarkElfCynical (04018469)>]'
+    )
+    assert info.is_generic_npc == False
+    assert info.advanced_voice_model == ""
+    assert info.csv_in_game_voice_model == ""
+    assert info.tts_voice_model == "Male Dark Elf Cynical"
+    assert all(isinstance(value, str) for value in (info.advanced_voice_model, info.csv_in_game_voice_model, info.tts_voice_model, info.voice_accent))
+
 
 
 def test_prepare_sentence_for_game(tmp_path, skyrim: Skyrim, default_config: ConfigLoader, example_skyrim_npc_character: Character):

@@ -80,3 +80,12 @@ def test_a_new_clip_is_seen_without_starting_again(tmp_path):
     path = clip(tmp_path, "voice_types", "MaleNord")
     os.utime(os.path.join(tmp_path, "voice_types"), (1, 1)) # folders keep their time on some file systems; a changed time is what is watched
     assert store.voice_type_clip("Male Nord") == path
+
+
+def test_an_empty_named_voice_cell_is_passed_over(tmp_path):
+    """An empty advanced_voice_model cell comes as nan, a number. Pocket TTS's voice check lowercases the name and failed on it"""
+    def has_voice(name):
+        return name.lower() in {"alba"}
+    p = VoicePicker(ClipStore(str(tmp_path)), lambda gender: "george", has_voice)
+    guard = VoiceSpeaker("Redoran Guard", 0, "<Race: DarkElfRace (00013742)>", "DLC2MaleDarkElfCynical")
+    assert p.pick(guard, named_voice=float("nan")).kind == BUILT_IN
