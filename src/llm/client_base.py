@@ -645,14 +645,13 @@ class ClientBase(AIClient):
 
         if not api_key or api_key == '':
                 if show_error:
-                    utils.play_error_sound()
-                    log.critical(f'''No secret key found in GPT_SECRET_KEY.txt.
+                    # No error sound or pause: the settings page asks for the key once per model list, so a missing key would beep many times at start-up
+                    log.warning(f'''No secret key found in GPT_SECRET_KEY.txt.
 Please create a secret key and paste it in your Mantella mod folder's GPT_SECRET_KEY.txt file.
 If you are using OpenRouter (default), you can create a secret key in Account -> Keys once you have created an account: https://openrouter.ai/
 If using OpenAI, see here on how to create a secret key: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key
 If you are running a model locally, please ensure the service (eg Kobold / Text generation web UI) is selected and running via: http://localhost:4999/ui
 For more information, see here: https://art-from-the-machine.github.io/Mantella/''')
-                    time.sleep(3)
 
         return api_key
     
