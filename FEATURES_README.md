@@ -1376,21 +1376,21 @@ The columns go in the character CSV, or in a character override file (see [File 
 
 ### What it does
 
-Skyrim has its own voiced lines: the scenes NPCs play out with each other, and the talk you pick in the dialogue menu. Vanilla Dialogues lets NPCs remember those lines when they hear them. The people talking remember what they said, and anyone close enough remembers what they overheard. Later, when you talk to them through Mantella, they know what was said and who said it. NPCs who were too far away know nothing about it.
+NPCs remember Skyrim's own voiced lines when they hear them: the scenes NPCs play out with each other, and what you say in Skyrim's dialogue menu. Later, when you talk to them through Mantella, they know what was said and who said it. NPCs who were too far away don't.
 
 For example, when you bring Jarl Balgruuf news of the dragon, Irileth and Proventus argue about it in front of him. Talk to Proventus that evening and he knows it happened. A guard by the throne can mention it if you ask. Hulda, down in the Bannered Mare, heard nothing.
 
-- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Irileth says to Proventus: "..."*. When Irileth or Proventus is in the conversation, it leaves out "Nearby": *Irileth says to Proventus: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
-- **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for 3 in-game days at first (change it with **Vanilla Dialogue Memory (Days)**). Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
-- **Overheard:** NPCs near a scene remember it as overheard, so they don't answer it as if it was said to them.
-- **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
-- **Older saves:** load a save from before a scene and NPCs forget it, once you next talk to someone.
-- Greetings, remarks as you walk past, combat shouts and grunts are never kept, also from NPCs in the middle of a scene: in a battle, the soldiers' taunts are left out, and the lines the scene gives them are kept. Neither are Mantella's own lines.
-- **A scene that loops while you talk** goes into the conversation once.
-- **Background chatter:** the everyday talk that repeats in towns, like Carlotta and Olfina bickering over prices, Heimskr preaching and the bards' songs, isn't kept at first. Scenes from quests always are.
-- **NPCs who start talking by themselves:** when an NPC walks up and talks to you, like Brynjolf in the Riften market, or carries on talking without you picking anything, their words are kept as said to you: *Brynjolf says to Kit: "..."*. Your side is left empty, since you didn't pick anything.
+**What's kept and what isn't.** Skyrim's towns are full of talk that plays again and again. If NPCs remembered all of it, it would crowd out what matters. So at first:
 
-It needs the MantellaHeardLines plugin and the updated game add-on. It replaces the separate Mantella Vanilla Dialogue add-on: remove that one.
+- **Quest scenes are always remembered:** anything from a quest in your journal, a moment that only happens once, or a story scene, like Wuunferth's arrest in Windhelm. When Mantella can't be sure, it keeps the scene. A bit of chatter gets through, and that's on purpose: a forgotten quest scene is worse than a remembered song.
+- **Small talk around town is left out:** the short chats NPCs strike up when they run into each other as they go about their day, like Carlotta and Olfina bickering over prices, or guards chatting. Small talk about a quest you're on is remembered, like Enmon and Mena missing their daughter after The Heart of Dibella.
+- **Everyday talk on Mantella's chatter list is left out:** Heimskr preaching, the bards' songs, the innkeeper's greeting, the temple's wounded, the College lectures, followers' comments on caves, Solitude's court talk. Each one was checked so no quest scene is on it. Where needed, the list names a single scene: Mikael's song in Whiterun is left out, but the Jarl hearing about the dragon is remembered.
+- **A scene that keeps playing is remembered once.** If it loops while you talk to someone, it comes into the conversation once.
+- **Never remembered:** greetings, remarks as you walk past, combat shouts, grunts, Mantella's own lines, and dialogue menu choices that only open something, like **I want you to..**. In a battle, the soldiers' taunts are left out, but what a quest has them say is kept.
+
+You can change all of this: see **Choosing what's remembered** below.
+
+> **⚠️ Remove the separate Mantella Vanilla Dialogue add-on.** This feature replaces it, so don't keep both.
 
 ### Where to find it
 
@@ -1400,46 +1400,84 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 
 ### Quick start
 
-1. Install the MantellaHeardLines plugin and the updated game add-on.
-2. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is off on a new game.
-3. In Whiterun, ask Hulda in the Bannered Mare about rumors in Skyrim's dialogue menu.
-4. Talk to Hulda through Mantella and ask what you just talked about.
+1. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is off on a new game.
+2. In Whiterun, ask Hulda in the Bannered Mare about rumors in Skyrim's dialogue menu.
+3. Talk to Hulda through Mantella and ask what you just talked about.
 
-**Ignored Dialogue Menu Choices** is a list of choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history (it never touches scenes NPCs play out with each other): the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings. Without the list, Lydia's history could hold *You said "I want you to..", and she said "Yes?"*, and she might bring it up. When you pick a choice on the list, neither your choice nor the NPC's reply is added to the history. Mantella keeps its own list, which it updates: the follower commands' **I want you to..** and Mantella's own **Goodbye. (Remove from Mantella conversation)**. The setting holds yours on top of it, and is empty at first.
+### How NPCs remember
 
-Only the NPC's reply to that one choice is left out. If the choice opens more choices, like **I want you to..** opening **Wait here**, what you pick next and the NPC's reply to it are kept as usual, unless that choice is on the list too. Other people nearby don't get the left-out reply either.
+- **During a Mantella conversation:** what people nearby say comes into the conversation as it happens, like *Nearby, Irileth says to Proventus: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. The NPC still remembers them after the conversation, even a short one.
+- **At any other time:** the NPC remembers it for 3 in-game days at first (change it with **Vanilla Dialogue Memory (Days)**), in every kind of Mantella conversation. After an NPC forgets a line, hearing it again makes them remember it again.
+- **Overheard:** NPCs who only overheard something know it wasn't said to them.
+- **NPCs who come up to you:** when an NPC walks up and talks to you, like Brynjolf in the Riften market, they remember saying it to you.
+- **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
+- **Older saves:** load a save from before a scene and NPCs forget it.
 
-To add a choice, for example a mod's menu line that keeps showing up in the Vanilla Dialogue history:
+### Choosing what's remembered
+
+All the settings below are on the **Conversation** page -> **Vanilla Dialogues** section.
+
+Vanilla Dialogues remembers two kinds of lines: what you say in Skyrim's dialogue menu, and the scenes NPCs play out with each other. Each has its own switch, so you can keep one and drop the other:
+
+- **Remember Dialogue Menu Talk** (on at first): NPCs remember what you say to them in the dialogue menu, and what NPCs say when they walk up to you. Turn it off if you'd rather keep your dialogue menu talk out of your Mantella conversations. Scenes are still remembered.
+- **Remember Scenes** (on at first): NPCs remember the scenes they play out, and lines like Ralof's on the cart to Helgen. Turn it off if you only want NPCs to remember what you say to them in the dialogue menu.
+
+Turning either one off doesn't wipe anything: what NPCs already remember stays until they forget it.
+
+**Remember Scenes When NPCs Meet** (off at first): small talk around town is left out at first (see **What it does**). Turn it on to remember that too, like Carlotta and Olfina bickering over prices. It only works with **Remember Scenes** on. NPCs then know more about the everyday life around them, but the same chatter plays again and again, so it can crowd out what matters.
+
+**Mantella's own lists.** Three of the list settings below already come with a list from Mantella: what we think NPCs should forget, or should always remember. Each list is a text file in Mantella's mod folder, under `SKSE\Plugins\MantellaSoftware\data\Skyrim\vanilla_dialogues\`. The question mark next to each setting names its file. Open a file to see everything on it, but don't edit it: each Mantella update replaces it. Make your changes in the setting instead. The settings start empty, and what you type there goes on top of Mantella's list. To take something off Mantella's list, type it in the setting with `-` in front.
+
+#### Ignored Dialogue Menu Choices
+
+Some dialogue menu choices aren't real talk. They only open something, like a follower's orders, a shop or a mod's settings. Without this list, Lydia might bring up *You said "I want you to..", and she said "Yes?"*. When you pick a choice on the list, neither your choice nor the reply is remembered. What you pick next, like **Wait here**, is remembered as usual.
+
+**Mantella's list** (`ignored_dialogue_menu_choices.txt`): **I want you to..** (a follower's orders) and Mantella's own **Goodbye. (Remove from Mantella conversation)**.
+
+**To add a choice:**
 
 1. Open the **Conversation** page -> **Vanilla Dialogues** section -> **Ignored Dialogue Menu Choices**.
-2. Type a comma or a new line at the end of the list, then the choice exactly as it shows in the dialogue menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
-3. Use `*` for any text, so you only need part of a choice: `*orders for you*` catches every choice with "orders for you" in it, and `Rent a room*` catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
+2. On a new line, or after a comma, type the choice as it shows in the menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
+3. `*` stands for any text: `Rent a room*` catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
 
-To remember one of Mantella's own choices after all, add it with `-` in front: `-I want you to..`.
+**To take one off Mantella's list:** type it with `-` in front. `-I want you to..` makes NPCs remember a follower's orders again.
 
-**Remember Dialogue Menu Talk** and **Remember Scenes** (both on at first) choose which kind of lines NPCs remember. Turn off **Remember Dialogue Menu Talk** and NPCs forget your talk in the dialogue menu, and what NPCs say when they walk up to you, but still remember scenes. Turn off **Remember Scenes** and they forget the scenes NPCs play out, and the lines NPCs say to you outside the dialogue menu (like Ralof on the cart to Helgen), but still remember the dialogue menu talk. Lines NPCs already remember stay until they are forgotten.
+#### Ignored NPCs
 
-**Ignored NPCs** is a list of NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them, by anyone. It's empty at first. It helps with followers that have a lot of their own dialogue, like Serana. They still remember other people's scenes they overhear. Type each name as it shows in game, with a comma or a new line between names. Capital letters don't matter, and `*` stands for any text: `Serana*` catches every NPC whose name starts with Serana.
+Nothing these NPCs say, and nothing said to them, is remembered. It's handy for followers with a lot of their own dialogue, like Serana. They still remember what other people say. Type each name as it shows in game, on a new line or after a comma. Capital letters don't matter, and `Serana*` catches every name that starts with Serana.
 
-NPCs don't remember background chatter at first: the everyday talk that repeats in towns. Scenes from quests are never left out: anything from a quest in your journal, from a quest that only happens once, or from a story moment, like Wuunferth's arrest in Windhelm, is always remembered. Some chatter gets through instead, and that's on purpose: a forgotten quest scene is worse than a remembered song.
+**Mantella's list:** there isn't one. This setting is empty until you add someone.
 
-Two things leave chatter out:
+#### Quests That Aren't Background Chatter
 
-- **Small talk when two NPCs meet.** Skyrim starts these scenes when two NPCs come across each other, usually in town, like Carlotta and Olfina bickering over prices, guards chatting and the Riften market. Small talk that only plays at certain steps of a quest is still remembered, like Enmon and Mena missing their daughter after The Heart of Dibella, or the Soljund's Sinkhole miners fearing the draugr and then glad they're gone. A few more quest scenes start this way too, and Mantella keeps them on its own list. Turn on **Remember Scenes When NPCs Meet** (off at first) to remember all small talk.
-- **Mantella's checked list of everyday talk.** Some chatter starts another way: Heimskr preaching, the bards' songs, the innkeeper's greeting, the temple's wounded, the College lectures, followers' comments on caves, Solitude's court talk. Each one on the list was checked against what it says, so no quest is on it. When a town's everyday talk shares its quest with a story scene, the list names the chatter scene by scene: Mikael's song and the Battle-Born and Gray-Mane feud are left out, and the Jarl hearing about the dragon, from the same quest, is remembered.
+NPCs always remember these quests and scenes. Use it for a quest scene that Mantella mistakes for town small talk and leaves out.
 
-Two settings change this, quest by quest or scene by scene:
+**Mantella's list** (`quests_that_arent_background_chatter.txt`): quest scenes that start the way town small talk does, when two NPCs meet, so without this list they'd be left out with it. For example, the guests at the Thalmor Embassy party, the heroes in Sovngarde, the College apprentices at Saarthal, and the prisoners in Cidhna Mine.
 
-- **Quests That Aren't Background Chatter:** these quests and scenes are always remembered. Mantella keeps its own list of quest scenes that start like small talk: the guests at the Thalmor Embassy party, the heroes in Sovngarde, the Namira cult's dinner, the Thieves Guild's talk about the guild, the apprentices at Saarthal, Delphine and Esbern at Sky Haven Temple, the Thirsk Nords before and after you retake their mead hall, and more.
-- **Quests That Are Background Chatter:** these quests and scenes are never remembered. Mantella keeps its own checked list (above).
+**To take one off Mantella's list:** type it with `-` in front. `-MQ201Party*` makes the Thalmor Embassy party guests count as small talk again, so they're left out unless **Remember Scenes When NPCs Meet** is on.
 
-Mantella's own lists are updated with Mantella, and the settings start empty: what you type goes on top of Mantella's list. A scene wins over its quest: put one scene on one list and its quest on the other, and the scene's list decides for that scene. Otherwise your entries win over Mantella's, and **Quests That Aren't Background Chatter** wins when you put the same quest or scene on both. Put `-` in front of an entry to take it off Mantella's list: `-BardSongs` remembers the bards' songs again, and `-*` in **Quests That Are Background Chatter** remembers everything on Mantella's list.
+#### Quests That Are Background Chatter
 
-Both take quest IDs or scenes, with a comma or a new line between them. Capital letters don't matter, and `*` stands for any text: `BardSongs*` catches every quest whose ID starts with BardSongs. A scene looks like `Skyrim.esm:092A31`: the game file it comes from and its number in that file. To find a scene or its quest:
+NPCs never remember these quests and scenes. Use it for everyday talk you hear too often.
+
+**Mantella's list** (`quests_that_are_background_chatter.txt`): the chatter list in **What it does**, like Heimskr preaching, the bards' songs and the innkeeper's greeting. Each one was checked so no quest scene is on it. Where a quest mixes chatter with a story scene, the list names just the chatter scene: Mikael's song in Whiterun is on it, but not the rest of Whiterun's talk.
+
+**To take one off Mantella's list:** type it with `-` in front. `-BardSongs` remembers the bards' songs, `-Skyrim.esm:092A31` remembers Mikael's song, and `-*` remembers everything on Mantella's list. Small talk around town is still left out, unless **Remember Scenes When NPCs Meet** is on.
+
+#### When the two quest lists disagree
+
+- **A single scene wins over its whole quest.** Put a quest on one list and one of its scenes on the other, and that scene follows its own list. This holds even when the quest is on your list and the scene only on Mantella's: putting `DialogueWhiterun` on **Quests That Aren't Background Chatter** still leaves out Mikael's song.
+- **Otherwise, yours win over Mantella's.**
+- **On both lists, it's remembered.**
+- The lists count whatever **Remember Scenes When NPCs Meet** is set to.
+
+#### Typing quests and scenes
+
+Each entry is a quest or a scene, the way Mantella's log names it, on a new line or after a comma. Capital letters don't matter, and `*` stands for any text: `BardSongs*` catches every quest whose name starts with BardSongs. To find a scene's name:
 
 1. On the **Other** tab, open **Log** and set **Vanilla Dialogues** to **Full**.
 2. Wait for the scene to play nearby.
-3. In Mantella's log, the scene's lines end with its quest and its scene, like *Quest DialogueWhiterun. Scene Skyrim.esm:092A31.* A line left out as background chatter also says why.
+3. In Mantella's log, each line of the scene ends with its quest and its scene, like *Quest DialogueWhiterun. Scene Skyrim.esm:092A31.* Use the quest for the whole quest, or the scene for just that scene. A line that was left out also says why.
 
 ## Bio Sections to Exclude
 
@@ -2137,6 +2175,8 @@ Every request to an LLM shows one line at Short: the model, its address and the 
 
 Warnings and errors always show, whatever you pick, except Quest tags' warnings at Off. Changes apply right away, with no restart. The window and the file always show the same lines.
 
+Clicking in the window or selecting text in it doesn't stop Mantella: it keeps answering the game. In the older Windows console, the window's text stays frozen until you press Esc, then catches up. Windows Terminal doesn't freeze at all: Mantella's start-up log says how to have Windows use it.
+
 | Topic | Short shows | Full adds | Default |
 | --- | --- | --- | --- |
 | Conversation | Conversations starting and ending, who joins or leaves, and every spoken line | Whose turn it is, and when a reply limit is reached | Short |
@@ -2478,7 +2518,7 @@ Even with no limit, the oldest lines are dropped from the Game Master's request 
 ### Quick start
 
 1. Make sure your OpenRouter key is in `GPT_SECRET_KEY.txt` (or your NanoGPT key in `NANOGPT_SECRET_KEY.txt` and switch **Game Master Decision Service** to **NanoGPT**).
-2. **Large Language Model** tab → turn on **Multi-NPC Game Master Mode**. Leave **Use Decision Model for Game Master** on.
+2. **Large Language Model** tab → check that **Multi-NPC Game Master Mode** is on (it is by default). Leave **Use Decision Model for Game Master** on.
 3. Start a conversation in Skyrim with two or more NPCs and say something.
 4. Check the log. Each decision is logged, for example:
 
@@ -3151,6 +3191,8 @@ How actions fit the kinds of conversation:
 
 **Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations (deprecated)**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
 
+**All Conversations**, the first list, turns an action on or off everywhere at once: tick Barter there and it's ticked in all six lists, untick it and it's unticked in all of them. An action shows ticked there only while it's on in every list, so Inventory, on by default only in One-on-one, Group and Shout, shows unticked. Its **Default** button puts every list back to its own defaults.
+
 **Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
 
 **Large Language Model** tab → **Separate Model for Advanced Actions**: a separate model picks the actions, set with **Advanced Actions LLM Service** and **Advanced Actions Model**, so each NPC keeps its own model for speaking, even one that can't pick actions. Its instructions are the **Advanced Actions Prompt** on the **Prompts** tab. That model must be able to pick actions (on OpenRouter, models that can call tools); it starts as the same model as the Game Master Model's default, which can. With one that can't, no action happens, and the log says why. Mantella doesn't check that a model can pick actions: keep models that can't out of the random model pool while Advanced Actions is on, unless a separate model picks them.
@@ -3467,8 +3509,8 @@ Prices are the ones each service lists on its website, per million characters of
 | **Inworld**, Model TTS-2 | Only if you want Directions | Online | $25 | During testing it doesn't sound significantly better than the flash model. But it support three different delivery modes that could make a difference. |
 | **HeyGen**, Model Turbo Free | Our pick online, until Nov 30, 2026 | Online | Free until Nov 30, 2026 | The most lively voices, with **Expressiveness** to set how lively (0 is flattest, 1 is HeyGen's own). Free accounts can clone 20 voices a day |
 | **HeyGen**, Model Turbo | Our pick online | Online | $8 | The most lively voices, with **Expressiveness** to set how lively. Personally Prefer it on some NPCs. |
+| **Iodine**, Model Iodine v2 | Our pick online | Online | About $7.50 | Among the liveliest voices. No free model, so every line costs. The most ways to set how a line is said: moods, directions, and styles on a few words, such as a whisper |
 | **Boson AI** | Our pick online | Online | $15 | A $10 trial credit you claim once. Also support tone adjustment. |
-| Iodine | | Online | $8 | Cloning works on the free plan. The most ways to set how a line is said: moods, directions, and styles on a few words, such as a whisper |
 | ElevenLabs | | Online | $40 | Sounds the best, costs the most |
 | Qwen | | Online | $30 | **Directions** in English only |
 | Piper | | Your PC | Free | Doesn't clone voices. Comes with the original Mantella mod: keep it turned on, with Mantella Remake loading after it |
@@ -3477,17 +3519,19 @@ Prices are the ones each service lists on its website, per million characters of
 
 Prices are the ones each service lists on its website, turned into the price per hour of your speech (a talkative player says about 8 minutes an hour). Checked in November 2026.
 
+**Our top pick is Deepgram.** It's fast and accurate, catches Skyrim names, and needs no download. New accounts get $200 of free credit, enough for thousands of hours of play.
+
 | Service | Our pick? | Where it runs | Price per hour of speech | Good to know |
 |---|---|---|---|---|
+| **Deepgram** | **Our top pick** | Online | $0.26 ($0.0043 a minute), after $200 of free credit | Fast and accurate, and needs no download. New accounts get $200 of free credit with no card needed, enough for thousands of hours of play. Gets Skyrim names right, because Mantella sends it the names around you |
 | **Whisper**, Model large-v3/large-v3-turbo | Our pick on your PC | Your PC, NVIDIA graphics card (set **Graphics Card or Processor** to cuda) | Free | Very accurate, in 99 languages. Catches Skyrim names best, because Mantella sends it the names around you. Want it faster? large-v3-turbo is nearly as accurate and about 8 times faster |
-| **Parakeet** | Our pick on your PC | Your PC, any processor, no graphics card needed | Free | Accurate, in 25 European languages. Downloads about 670 MB the first time. Can't take names, so Skyrim names come out spelled the way they sound |
-| **Deepgram** | Our pick online | Online | $0.26 ($0.0043 a minute) | Fast and accurate. New accounts get $200 of free credit with no card needed, enough for thousands of hours of play. Takes names. No reason to not use it imo |
+| **Parakeet** | Our pick on your PC | Your PC, any processor, no graphics card needed | Free | Accurate, in 25 European languages. Downloads about 670 MB the first time. Mantella can't send it the names around you, so Skyrim names come out spelled the way they sound |
 | Moonshine | | Your PC, any processor | Free | English only. Best only for weak laptops |
 | Groq | | Online | $0.04 | Very fast, the cheapest. Each line is billed as at least 10 seconds |
 | OpenAI | | Online | $0.27 ($0.0045 a minute) | Model gpt-transcribe |
 | ElevenLabs | | Online | $0.20 | Among the most accurate. Same key as the ElevenLabs voices |
 | Mistral | | Online | About $0.21 (about $0.0035 a minute; not on Mistral's own site) | Strong at European languages |
-| OpenRouter | | Online | Same as the model's maker | Your OpenRouter chat key works here too. Can't take names |
+| OpenRouter | | Online | Same as the model's maker | Your OpenRouter chat key works here too. Mantella can't send it the names around you, so Skyrim names come out spelled the way they sound |
 
 ## Text-to-Speech Services
 
@@ -3691,6 +3735,8 @@ Turns what you say into the microphone into your line. Pick it from one list: on
 
 ### Where to find it
 
+**Mantella MCM** → **General** page → **Microphone** → **Enabled** turns the microphone on. It is off on a new game: until you turn it on, press H to type your line.
+
 **Speech-to-Text** tab:
 
 - **Talking**: push-to-talk, interruptions, how long Mantella waits for you, Proactive Mode and the cough sound.
@@ -3700,16 +3746,17 @@ Turns what you say into the microphone into your line. Pick it from one list: on
 
 ### Quick start
 
-**On your PC:** pick **Moonshine** (English), **Whisper** or **Parakeet** in **Speech-to-Text Service**, then press **Test** at the end of the page.
+**Online:** we recommend **Deepgram**. It's fast and accurate, and new accounts get $200 of free credit with no card needed, enough for thousands of hours of play.
 
-- **Whisper:** set **Graphics Card or Processor** to cuda for the large models (NVIDIA cards only).
-- **Parakeet:** downloads about 670 MB the first time. It works out which of its 25 languages you speak.
-
-**Online:**
-
-1. **Speech-to-Text Service** → **Online Service**, then pick the service in the second list.
+1. **Speech-to-Text Service** → **Online Service**, then pick the service (such as **Deepgram**) in the second list.
 2. Paste your key in the **Key** box and press **Save key**.
 3. Press **Test** at the end of the page.
+
+**On your PC:** pick **Moonshine** (English), **Whisper** or **Parakeet** in **Speech-to-Text Service**, then press **Test** at the end of the page. Each one downloads its model the first time you use it, so be online for that first **Test**. It can take a few minutes.
+
+- **Moonshine:** the starting choice. It only understands English: if you speak another language, pick Parakeet or Whisper.
+- **Whisper:** 99 languages, best with an NVIDIA graphics card. Set **Graphics Card or Processor** to cuda for the large models (NVIDIA cards only).
+- **Parakeet:** 25 European languages, no graphics card needed. Downloads about 670 MB. It works out which language you speak.
 
 **A program of your own:** pick **Custom Service** and type its **Address** and **Model**. It works with anything that takes OpenAI's kind of request (whisper.cpp, Speaches, LocalAI, Together, Fireworks…), or Deepgram's or ElevenLabs' (**Format**). Example: Speaches on a second PC at `http://192.168.1.20:8000/v1` with the model `Systran/faster-whisper-large-v3`, no key.
 
@@ -3722,7 +3769,7 @@ Misheard names are the most common mistake ("Bal Groove" for Balgruuf). So Mante
 Which names go along is a prompt you can change: **Prompts** tab → **Speech-to-Text Names**. Add names from mods or your own story, for example `{names}, {nearby_names}, {location}, {player_name}, Ulfric`, take out the parts you don't want, or empty it to send no names. Put the most likely names first: when the list is too long, names are left out from the end.
 
 - **Catch First Names** (off at first) also sends single words of longer names, so a lone "Camilla" is caught. Turn it off if ordinary words you say get written as names. Only for Deepgram, ElevenLabs and Mistral.
-- Moonshine, Parakeet and OpenRouter can't take names.
+- Moonshine, Parakeet and OpenRouter can't be sent these names, so they spell Skyrim names the way they sound.
 
 ### Good to know
 
