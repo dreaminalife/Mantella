@@ -3,7 +3,16 @@
 This guide has five parts:
 
 1. **[Quick Start](#part-1-quick-start):** install Mantella and talk to your first NPC. Nothing to fine-tune.
-2. **[Fine-Tune Your Experience](#part-2-fine-tune-your-experience):** pick the microphone service, the voices and the AI models that suit you, and get to know the kinds of conversation, tags, quest tags, the lorebook, what NPCs think in private and the things NPCs can do.
+2. **[Fine-Tune Your Experience](#part-2-fine-tune-your-experience):** pick what suits your PC, your language and your budget, and get to know what Mantella can do.
+   - [Speech-to-text: how NPCs hear you](#speech-to-text-how-npcs-hear-you)
+   - [Text-to-speech: how NPCs sound](#text-to-speech-how-npcs-sound)
+   - [AI models: who writes the answers](#ai-models-who-writes-the-answers)
+   - [Kinds of conversations](#kinds-of-conversations)
+   - [Character tags](#character-tags)
+   - [Quest tracking](#quest-tracking)
+   - [Lorebook](#lorebook)
+   - [Inner thoughts: Private Thoughts, Personal Reflection and Turn Thoughts](#inner-thoughts-private-thoughts-personal-reflection-and-turn-thoughts)
+   - [NPC actions: NPCs who do what they say](#npc-actions-npcs-who-do-what-they-say)
 3. **[How Mantella Works](#part-3-how-mantella-works):** what happens behind the scenes when you talk to someone.
 4. **[Make It Better](#part-4-make-it-better):** the parts of Mantella you can improve, and where each one is explained.
 5. **[Questions and Answers](#questions-and-answers):** fixes for common problems, and answers to common questions.
@@ -279,11 +288,14 @@ Part 1 sets everything to a starting choice that works for most players. This pa
 
 Speech-to-text turns what you say into the microphone into text, which Mantella sends as your line. It's only used with the microphone on (see Step 5). If you type, skip this section.
 
-What makes one service better than another:
+<details>
+<summary><b>What makes one service better than another</b></summary>
 
 - **Getting Skyrim names right.** Mantella sends the names around you (the NPCs, the place, your character) with each recording, so "Balgruuf" doesn't come out as "Bal Groove". Some services can't be sent these names, so they spell them the way they sound.
 - **Your language.** The starting choice, Moonshine, only understands English.
 - **Your PC.** Services on your PC are free, but the best ones need an NVIDIA graphics card, which Skyrim is already using. Online services usually have better quality, some are free as well. 
+
+</details>
 
 Personally I would recommend Deepgram because it has 200 USD free credit which you can use forever, and it is online so no need to download anything. It is also fast and accurate. See the links below for details.
 
@@ -295,21 +307,15 @@ Personally I would recommend Deepgram because it has 200 USD free credit which y
 
 Text-to-speech turns each line the AI writes into speech. The game hands the voice service a few of the NPC's real lines, and it copies their voice from them, so Lydia sounds like Lydia. NPCs from mods with voices of their own are copied the same way.
 
-What makes one service better than another:
+<details>
+<summary><b>What makes one service better than another</b></summary>
 
-- **Copying each NPC's own voice.** Every service in the table below copies the voice on the spot from the NPC's own lines, so there's nothing to download for each voice. This matters most for NPCs with voices of their own, like followers from mods: they keep their real voice. Piper and xVASynth from the original Mantella can't copy. They use a ready-made voice for each kind of NPC, so a modded follower sounds like any other NPC of their kind.
+- **Copying each NPC's own voice.** Pocket TTS and the online services copy the voice on the spot from the NPC's own lines, so there's nothing to download for each voice. This matters most for NPCs with voices of their own, like followers from mods: they keep their real voice. Piper and xVASynth from the original Mantella can't copy. They use a ready-made voice for each kind of NPC, so a modded follower sounds like any other NPC of their kind.
 - **How lively it sounds.** Online services usually put more feeling into a line.
 - **Cost.** Online services charge for each character spoken. They usually have better quality.
-- **Your PC.** Pocket TTS runs on the processor, so your graphics card stays free for Skyrim. Its quality is great for a local service.
+- **Your PC.** Pocket TTS, the starting choice, runs on the processor, so your graphics card stays free for Skyrim. Its quality is great for a local service.
 
-| What you want | Pick | Price per million characters |
-| --- | --- | --- |
-| Free, on your PC | **Pocket TTS** (the starting choice) | Free |
-| Good quality  | **Inworld**, model TTS-2 Flash | $15 |
-| The liveliest voices | **HeyGen**, model Turbo | $8. Model Turbo Free costs nothing until Nov 30, 2026 |
-| The liveliest voices | **Iodine**, Iodine v2 | ~$7.5 |
-| Online, without paying at first | **Boson AI** | $15, after a $10 trial credit |
-| The best sound, whatever it costs | **ElevenLabs** | $40 |
+</details>
 
 Pocket TTS speaks English, French, German, Portuguese, Italian, Spanish and Dutch.
 
@@ -333,9 +339,10 @@ Five things decide how good an NPC's answer is. When answers come out flat, wron
 4. **The bio:** who the NPC is, as Mantella tells the model.
 5. **The prompts:** Mantella's instructions to the model, such as how to talk and how long to answer.
 
-Each one is explained below. Change one at a time, and try it with an NPC you know well, so you can tell what made the difference.
+Each one is explained below: click its name to open it. Change one at a time, and try it with an NPC you know well, so you can tell what made the difference.
 
-### The model
+<details>
+<summary><b>The model</b></summary>
 
 The same NPC, with the same bio and memories, can feel flat with one model and alive with another.
 
@@ -352,7 +359,10 @@ The starting choice, `openrouter/free`, picks one of OpenRouter's free models fo
 
 **Finding one:** add a few dollars of credit on OpenRouter, then press **Update** next to a model setting. The list shows each model's price per million tokens (see [What it costs](#what-it-costs)). OpenRouter's [rankings](https://openrouter.ai/rankings) show which models people use most for roleplay. Try two or three, and keep the one that sounds most like the NPC.
 
-### The model's settings
+</details>
+
+<details>
+<summary><b>The model's settings</b></summary>
 
 A few settings change how a model answers:
 
@@ -369,21 +379,32 @@ A few settings change how a model answers:
 
 **Where to set them:** the **Model Profiles** tab. A profile belongs to one model, so its settings follow the model when you switch, and switching back and forth is quick. The tab has an example to copy. Then turn on **Apply Profile for One-on-One Conversations** (and the others you want) on the same tab. Without a profile, or with that switch off, one-on-one talks use the **Single NPC Parameters** box on the **Large Language Model** tab. See [Multiple Profile System](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#multiple-profile-system) for how profiles work, and [OpenRouter's list of settings](https://openrouter.ai/docs/parameters) for every setting a model can take.
 
-### The provider
+</details>
+
+<details>
+<summary><b>The provider</b></summary>
 
 On OpenRouter, the same model is often run by several companies. Each has its own price and speed, and some answer noticeably better than others. By default, OpenRouter picks one for you, and it can change from one answer to the next.
 
 If a model sounds worse than others say it should, or uneven from one answer to the next, pick which providers may answer. This goes in the model's profile on the **Model Profiles** tab: the example there shows how. Like the other settings, it's in [Multiple Profile System](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#multiple-profile-system).
 
-### The bio
+</details>
+
+<details>
+<summary><b>The bio</b></summary>
 
 The model knows an NPC only through their bio and their memories of past talks. A thin bio gives a thin character: the model fills the gaps with a generic Skyrim NPC. A bio that says who they are, how they talk and what they care about gives the model something to play.
 
 Most NPCs come with a bio. To read or change one, open the **Bio Editor** tab. If an NPC keeps acting wrong in the same way, read their bio first: the problem is often there, not in the model.
 
-### The prompts
+</details>
+
+<details>
+<summary><b>The prompts</b></summary>
 
 The prompts are Mantella's instructions to the model, on the **Prompts** tab. The same model, with the same settings, can answer very differently when they change. Mantella's own prompts work well with most models, so you rarely need to touch them. But if NPCs keep getting something wrong with every model you try, a clearer prompt can help as much as a better model. If you changed a prompt and answers got worse, reset it to the default. See [The instructions sent to the AI](#the-instructions-sent-to-the-ai).
+
+</details>
 
 ### What it costs
 
@@ -394,7 +415,8 @@ Models charge by the token, a small piece of text (a token is about three-quarte
 
 For example, if each answer sends about 8,000 tokens and the model charges $0.50 per million for them, 100 answers cost about $0.40, plus a little for the replies. The bill grows with a pricier model, longer talks and more memories, more thinking, and more requests: group talks with Game Master Mode, summaries after each talk, and NPC Events each count.
 
-### Different jobs, different models
+<details>
+<summary><b>Different jobs, different models</b></summary>
 
 Mantella uses models for several jobs, each with its own setting on the **Large Language Model** tab. Pay for a better model only where it matters:
 
@@ -410,6 +432,8 @@ Mantella uses models for several jobs, each with its own setting on the **Large 
 
 More model settings, such as a stronger model for your favorite follower, are in [More model settings](#more-model-settings).
 
+</details>
+
 ## Kinds of conversations
 
 Mantella has two ways to run a conversation with two or more NPCs. One-on-one talks are the same either way.
@@ -419,7 +443,8 @@ Mantella has two ways to run a conversation with two or more NPCs. One-on-one ta
 
 The difference: with the Game Master, each NPC is played on their own, so they keep their own voice and their own secrets. The original way plays everyone at once, so NPCs often sound alike or know what only someone else should, and might have coherence issues. We didn't deprecate the original mode because we want to give users more choices.
 
-### Group conversations: Game Master Mode
+<details>
+<summary><b>Group conversations: Game Master Mode</b></summary>
 
 **Why it makes group talks better:**
 
@@ -434,7 +459,10 @@ The difference: with the Game Master, each NPC is played on their own, so they k
 
 **To switch:** **Large Language Model** tab → **Multi-NPC Game Master Mode**. Shout, Say to Room and NPC Events always use a Game Master, even with it off. Read more: [Game Master Mode](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#game-master-mode).
 
-### The Conversation Wheel: don't play without it
+</details>
+
+<details>
+<summary><b>The Conversation Wheel: don't play without it</b></summary>
 
 The wheel is where you start most of what Mantella can do, and much of it has no other button in the game. Without it, you mostly get one-on-one and group talks. With it, you can shout so the whole tavern hears you, call out to the room, have a nearby NPC come over with a reason to talk, start a scene between NPCs, throw a surprise into a talk, show NPCs what you see, or bring all your companions in at once.
 
@@ -442,7 +470,10 @@ It has no key until you set one, so many players never find it. Set it now: Esc 
 
 **Make it a habit:** whenever you wonder what you can do, hold the key. The wheel only shows what makes sense right now, in a conversation or out of one, and pointing at an option tells you what it does. Let go without clicking to close it. Read more: [Conversation Wheel](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#conversation-wheel).
 
-### Every kind of conversation
+</details>
+
+<details>
+<summary><b>Every kind of conversation</b></summary>
 
 | Kind | What happens | How to start it |
 | --- | --- | --- |
@@ -457,6 +488,8 @@ It has no key until you set one, so many players never find it. Set it now: Esc 
 
 How much NPCs talk among themselves before it's your turn is set by [Talk Level](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#talk-level).
 
+</details>
+
 ## Character tags
 
 **What they are:** a tag is a piece of background that many NPCs share, like what everyone in Whiterun knows about their hold. The tag's text is written once, and every NPC with the tag gets it in their bio.
@@ -465,25 +498,23 @@ How much NPCs talk among themselves before it's your turn is set by [Talk Level]
 
 **What's already there:** Mantella Remake comes with the community character pack ([Nexus](https://www.nexusmods.com/skyrimspecialedition/mods/174770)): over 1,000 tags, already given to about 2,500 NPCs. They cover the holds, guilds and factions, jobs like trainers and blacksmiths, the DLCs, and NPCs from popular mods such as 3DNPC and Immersive Wenches. Tags are on at first (**Large Language Model** tab → **Feature Toggles** → **Enable Character Tag Reading**).
 
-**Making them your own:**
-
-- **Change what a tag says:** open the **Tag Editor** tab, pick the tag (type to search) and edit its text.
-- **Give a tag to an NPC:** open the **Bio Editor** tab, pick the NPC and add the tag.
-- **Make a new tag:** add it to a file of your own in `Documents\My Games\Mantella\data\Skyrim\bio_templates`, or create it in the **Tag Editor**.
+To edit them, use Tag Editor.
 
 **Read more:** [Character Tags](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#character-tags) and [Tag Editor](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#tag-editor).
 
-## Quest tags
+## Quest tracking
 
-**What they are:** tags that follow your quests. Each one has a text for every way a quest can end, and Mantella checks your game to see which one is true right now. Win the Battle for Whiterun, and Adrianne at the forge and everyone else with the tag know the attack failed. You don't edit anything.
+**Mantella keeps track of your quests.** It checks your game for how each quest has gone so far, and the NPCs it matters to know what you've done. Win the Battle for Whiterun, and Adrianne at the forge knows the Stormcloak attack failed. 
 
-**What's tracked:** the community character pack comes with quest tags for the main quest, the Civil War (who holds each hold), the Dark Brotherhood, the Thieves Guild, the College of Winterhold, the Daedric quests, Dawnguard, Dragonborn, many side quests and favors, whether important people are alive or dead, and quests from some popular mods.
+**What's tracked:** the main quest, the Civil War (who holds each hold), the Dark Brotherhood, the Thieves Guild, the College of Winterhold, the Daedric quests, Dawnguard, Dragonborn, many side quests and favors, whether important people are alive or dead, and quests from some popular mods.
 
-**How it works for you:**
+**What you'll notice:**
 
-- NPCs with the tag know in their next conversation. If a quest moves on while you talk, the people with you hear about it with your next line.
-- Each playthrough is tracked on its own, and loading an older save puts NPCs back to what was true then.
-- Start using it in the middle of a playthrough, and everything you've already done counts as background: NPCs know it, but don't all bring it up at once.
+- **NPCs keep up with your playthrough.** When a quest moves on, the people it matters to know in their next conversation.
+- **The people with you react as it happens.** If a quest moves on while you talk, they hear about it with your next line.
+- **Each playthrough is tracked on its own.** Load an older save, and NPCs only know what was true in it.
+- **You can start mid-playthrough.** Everything you've already done counts as background: NPCs know it, but don't all bring it up at once.
+
 
 **The setting:** **Large Language Model** tab → **Feature Toggles** → **Auto Quest Tag Outcomes**. **Static** (the starting choice) puts what happened in the NPC's bio: they know it, but aren't nudged to bring it up. **Dynamic** adds it as news in their memories, so they're likely to mention it. **Off** turns quest tags off.
 
@@ -491,21 +522,24 @@ How much NPCs talk among themselves before it's your turn is set by [Talk Level]
 
 ## Lorebook
 
-**What it is:** facts that come up only when they matter. Each entry has a key, such as a place or a name, and a description. When the key turns up, in where you are, in what someone says, or in what just happened, its description goes along with the NPC's next answer. The rest of the time it stays out, so it doesn't crowd out everything else or cost anything.
+**What it's for:** teaching NPCs about your own story, like your home, a place you made up, or someone only your playthrough has. Write it down once, and NPCs know it whenever it comes up.
 
-**Why you want it:** for your own story. Describe your Breezehome once, and NPCs know what it looks like whenever you're there, while Lydia doesn't think about its furniture when you're talking to the queen in Solitude. Or open a tavern of your own in Riverwood, and anyone who hears its name knows about it, without you explaining.
+**For example:**
 
-**Tags or lorebook?** Tags are always there for the NPCs who have them: what they should know whatever you talk about. The lorebook is only there when its key comes up.
+- **Your home.** Describe how you've furnished Breezehome. Whenever you're there, NPCs know what it looks like, and Lydia can compliment the new hearth. When you're in Solitude talking to the queen, she isn't thinking about your furniture.
+- **A place you made up.** You open a tavern of your own in Riverwood. Mention it by name, and the NPC knows what it is, without you explaining.
+- **Someone from your story.** A rival, a lost sibling, a contact in the Thieves Guild you invented. Say their name, and the NPC knows who you mean.
 
-**What's already there:** nothing. The lorebook is yours to fill.
+It only comes up when it matters, so it doesn't distract NPCs from what you're talking about, and it costs nothing the rest of the time.
 
-**How it works:** you write your entries in a simple spreadsheet file, one line per key. At first, group conversations with Game Master Mode and NPCs who come to talk to you use it. One-on-one talks can use it too, with one small change to their prompt.
+With the starting prompts, NPCs use it in group conversations and when an NPC walks up to you. The feature guide shows how to turn it on for one-on-one talks too.
+
 
 **Set it up:** [Lorebook](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#lorebook) in the feature guide shows how, step by step.
 
 ## Inner thoughts: Private Thoughts, Personal Reflection and Turn Thoughts
 
-**What they are:** after each talk, the AI writes a short summary, and the NPC keeps it as a memory. A summary only says what happened. These three add what the NPC thinks, which they never say out loud. Each one looks at a different stretch of time:
+**What they are:** real people keep thinking, while you talk and after you part. They make up their mind about you, get excited about something you said, or start to resent it, and next time they show up already changed. A summary can't carry that. Say you camp with Serana after a ruin: she teases you about a trap, says she's fine and takes first watch. Her summary records a quiet night. Her private thought says she took first watch so she wouldn't have to sit across the fire and look at you. Her reflection says she stopped waiting for you to turn on her a long time ago, and hasn't told you.
 
 | | What the NPC thinks about | When it's written | How long it lasts |
 | --- | --- | --- | --- |
@@ -513,7 +547,6 @@ How much NPCs talk among themselves before it's your turn is set by [Talk Level]
 | **Private Thoughts** | How they feel about the talk that just ended: their mood, what they suspect, what they want to bring up next time | After a talk ends | Into your next talk |
 | **Turn Thoughts** | What they're thinking right now, and what they'll do or say next | After every line, during the talk | Until the talk ends |
 
-**Why they're here:** real people keep thinking, while you talk and after you part. They make up their mind about you, get excited about something you said, or start to resent it, and next time they show up already changed. A summary can't carry that. Say you camp with Serana after a ruin: she teases you about a trap, says she's fine and takes first watch. Her summary records a quiet night. Her private thought says she took first watch so she wouldn't have to sit across the fire and look at you. Her reflection says she stopped waiting for you to turn on her a long time ago, and hasn't told you.
 
 Turn Thoughts do the same within a single talk. Without them, an NPC only reacts to your last line. With them, they keep a plan from one line to the next: Ysolda thinks "if the guards catch wind of this shipment, my trading license is gone", and on her next line she hurries the deal along without being asked.
 
@@ -527,7 +560,8 @@ You can decide whether or not to turn them on.
 
 **How to trigger one:** just talk. Ask for it, or give the NPC a reason, and they decide whether to do it: a stranger has to be convinced before they follow you. To skip the asking, type just the action's name, like `Barter`, and the last NPC who spoke does it.
 
-**What NPCs can do:**
+<details>
+<summary><b>What NPCs can do</b></summary>
 
 - **Fight:** Attack, Brawl (a fistfight nobody dies in), StandDown (stop fighting), Flee.
 - **Move:** Follow, Unfollow, Wait, MoveTo (walk over to you), Teleport (jump to you when stuck).
@@ -535,6 +569,8 @@ You can decide whether or not to turn them on.
 - **Talk:** Listen (give you more time to speak), Look (see what you see, with Vision on).
 - **With Advanced Actions on:** call someone nearby into the talk, cast a spell, laugh, bow or raise a toast, give directions, travel to a place or lead you there, give you a bounty or let a small crime go, and pass on what you said to someone who isn't there. Only some AI models can use these.
 - **Actions from other mods**, such as Actions For Mantella, show up too.
+
+</details>
 
 **Turn actions on or off:** settings page → **Conversation** page → **Actions**. Each kind of conversation has its own tick boxes, so you can, for example, let NPCs trade in one-on-one talks but not in a Shout. Follow, Inventory, Attack and StandDown also need their switch in the game: Mantella menu → **General** → **NPC Actions**.
 
@@ -547,6 +583,7 @@ Mantella has two pieces. The **mod inside Skyrim** starts conversations, and giv
 ## The pieces
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
     You(["You"]) -- "type or speak" --> Game["Skyrim"]
     Game <--> App["Mantella program<br/>(the black window)<br/>connects it all"]
@@ -565,6 +602,7 @@ flowchart LR
 ### 1. Starting and talking
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart TB
     subgraph Start["When the talk starts"]
         direction LR
@@ -590,6 +628,7 @@ With **Automatic Greeting** on, Lydia speaks first, before your first line.
 ### 2. Ending
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
     A["You say goodbye<br/>or walk away"] --> B["The AI sums up<br/>the talk in a few lines"] --> C["Mantella saves it<br/>as Lydia's memory"]
     C -.-> D["Private Thoughts:<br/>how she feels about<br/>what just happened"]
