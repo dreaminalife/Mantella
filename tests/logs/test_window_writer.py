@@ -1,4 +1,5 @@
 import logging
+import logging.config
 import threading
 import time
 
@@ -63,3 +64,17 @@ def test_closing_doesnt_wait_long_for_a_frozen_window():
     writer.close()
     assert time.time() - started < 5.0
     window.selection_ended.set()
+
+
+def test_the_window_still_gets_lines_after_the_web_server_resets_the_log_settings():
+    window = FrozenWindow()
+    window.selection_ended.set()
+    writer = WindowWriter(window)
+    log = a_logger(writer)
+    log.info("before")
+
+    logging.config.dictConfig({"version": 1, "disable_existing_loggers": False}) # as uvicorn does on start: closes every handler
+    log.info("after")
+
+    assert wait_for(lambda: len(window.lines) == 2)
+    assert window.lines == ["before\n", "after\n"]

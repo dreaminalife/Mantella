@@ -14,7 +14,7 @@ class WindowWriter(logging.Handler):
         """stream: where the lines go. The window (stderr, as logging.StreamHandler) when None"""
         super().__init__()
         self.__stream = stream
-        self.__lines: queue.Queue[str | None] = queue.Queue()
+        self.__lines: queue.Queue[str | threading.Event] = queue.Queue()
         self.__thread = threading.Thread(target=self.__write_lines, name="Mantella window", daemon=True)
         self.__thread.start()
 
@@ -28,8 +28,9 @@ class WindowWriter(logging.Handler):
         while True:
             line = self.__lines.get()
             try:
-                if line is None:
-                    return
+                if isinstance(line, threading.Event): # close() waiting for the lines before it
+                    line.set()
+                    continue
                 stream = self.__stream or sys.stderr
                 if stream is None: # no window
                     continue
@@ -41,7 +42,9 @@ class WindowWriter(logging.Handler):
                 self.__lines.task_done()
 
     def close(self) -> None:
-        if self.__thread.is_alive():
-            self.__lines.put(None)
-            self.__thread.join(CLOSE_WAIT_SECONDS)
+        """Waits a little for the lines not shown yet. The thread keeps going: Python's logging can close a handler and leave it in
+        place (the web server does when it resets the log settings on start), and the window still gets the lines after that"""
+        shown = threading.Event()
+        self.__lines.put(shown)
+        shown.wait(CLOSE_WAIT_SECONDS)
         super().close()
