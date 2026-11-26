@@ -47,6 +47,8 @@ from tests.ingame.talk_settings.talk_settings_ingame import LOG_SETTINGS, write_
 
 # The same Skyrim.esm forms as MantellaHeardLinesTest.psc
 FEUD_SCENE = 0x0E3DE3  # Vignar and Olfrid argue
+FEUD_SCENE_KEY = "Skyrim.esm:0E3DE3"  # The same scene as Mantella's lists name it. Mantella's own Quests That Are Background Chatter has it
+FEUD_QUEST = "DialogueWhiterun"
 VIGNAR = 0x01A6A1
 OLFRID = 0x01A687
 HULDA = 0x01A66E  # Near the speakers
@@ -54,7 +56,7 @@ MIKAEL = 0x01A671  # Far away, except during his conversation with the player
 BRENUIN = 0x02C90F  # Near the speakers but disabled
 PLAYER = 0x14
 SPEAKERS = {VIGNAR, OLFRID}
-MOST_WAITING = 200  # The most lines the plugin keeps waiting outside part 5 (the add-on's MantellaRepository.heardLinesMostWaiting)
+MOST_WAITING = 500  # The most lines the plugin keeps waiting outside part 5 (the add-on's MantellaRepository.heardLinesMostWaiting)
 
 GREETING = "hello"  # The text of the topic the game picks itself when the dialogue menu opens
 ROOM_PATTERN = "*room*"  # Added to Ignored Dialogue Menu Choices for the test: the player asks Hulda to rent a room
@@ -92,9 +94,12 @@ def setup(game_folder: str, mantella_folder: str):
     days = OtherDefinitions.get_heard_lines_days_kept_config_value()
     most = OtherDefinitions.get_heard_lines_most_per_npc_config_value()
     menu_only = OtherDefinitions.get_heard_lines_menu_only_config_value()
+    chatter = OtherDefinitions.get_heard_lines_chatter_quests_config_value()
+    # The feud is on Mantella's own list of background chatter: switched off for the test, so NPCs remember it
     missing = write_settings(config_path, {**voice_settings(), **LOG_SETTINGS, days.identifier: str(days.default_value),
                                            most.identifier: str(most.default_value),
-                                           menu_only.identifier: f"{menu_only.default_value}, {ROOM_PATTERN}"})
+                                           menu_only.identifier: f"{menu_only.default_value}, {ROOM_PATTERN}",
+                                           chatter.identifier: f"-{FEUD_SCENE_KEY}"})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
@@ -208,6 +213,9 @@ def check_scene_lines(report: Report, lines: list[dict[str, Any]], label: str):
     report.check(all(a != b for a, b in zip(pairs, pairs[1:])), f"{label}: no line caught twice in a row")
     places = sorted({str(line.get("place", "")) for line in lines})
     report.check(all(places), f"{label}: the place is known: {', '.join(places)}")
+    report.check(all(line.get("scene_key") == FEUD_SCENE_KEY for line in lines), f"{label}: each line names its scene as {FEUD_SCENE_KEY}")
+    report.check(all((line.get("quest") or {}).get("id") == FEUD_QUEST and (line.get("quest") or {}).get("follows_quest") is False for line in lines),
+                 f"{label}: each line names its quest, {FEUD_QUEST}, which follows no other quest's progress")
 
 
 def check_scenes(report: Report, overs: list[HandOver], all_exchanges: list[Exchange]) -> tuple[list[str], list[dict[str, Any]], list[str]]:

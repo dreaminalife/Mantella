@@ -1378,14 +1378,16 @@ The columns go in the character CSV, or in a character override file (see [File 
 
 Skyrim has its own voiced lines: the scenes NPCs play out with each other, and the talk you pick in the dialogue menu. Vanilla Dialogues lets NPCs remember those lines when they hear them. The people talking remember what they said, and anyone close enough remembers what they overheard. Later, when you talk to them through Mantella, they know what was said and who said it. NPCs who were too far away know nothing about it.
 
-For example, Mikael flirts with Carlotta in the Bannered Mare and she turns him down. Talk to Mikael that evening and he knows it happened. Saadia, at the bar nearby, can mention it if you ask. Hulda, upstairs, heard nothing.
+For example, when you bring Jarl Balgruuf news of the dragon, Irileth and Proventus argue about it in front of him. Talk to Proventus that evening and he knows it happened. A guard by the throne can mention it if you ask. Hulda, down in the Bannered Mare, heard nothing.
 
-- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Mikael says to Carlotta: "..."*. When Mikael or Carlotta is in the conversation, it leaves out "Nearby": *Mikael says to Carlotta: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
+- **Heard during a Mantella conversation:** the line goes straight into the conversation as narration, such as *Nearby, Irileth says to Proventus: "..."*. When Irileth or Proventus is in the conversation, it leaves out "Nearby": *Irileth says to Proventus: "..."*. You can see and edit these lines in the live conversation editor, as **Vanilla Dialogue** rows. Every line of a scene comes through, however many there are. When the conversation ends, the NPC also keeps the lines in their memory, so they remember them even after a short chat, or with summaries off.
 - **Heard at any other time:** the NPC keeps it in their memory, next to their summaries, for 3 in-game days at first (change it with **Vanilla Dialogue Memory (Days)**). Every kind of conversation sees it: one-on-one, groups, Shout, NPC Initiative and NPC Events.
 - **Overheard:** NPCs near a scene remember it as overheard, so they don't answer it as if it was said to them.
 - **Director Mode:** while you direct, NPCs don't learn that you were there, or what you said in the dialogue menu.
 - **Older saves:** load a save from before a scene and NPCs forget it, once you next talk to someone.
-- Greetings, remarks as you walk past, combat shouts and grunts are never kept. Neither are Mantella's own lines.
+- Greetings, remarks as you walk past, combat shouts and grunts are never kept, also from NPCs in the middle of a scene: in a battle, the soldiers' taunts are left out, and the lines the scene gives them are kept. Neither are Mantella's own lines.
+- **A scene that loops while you talk** goes into the conversation once.
+- **Background chatter:** the everyday talk that repeats in towns, like Carlotta and Olfina bickering over prices, Heimskr preaching and the bards' songs, isn't kept at first. Scenes from quests always are.
 - **NPCs who start talking by themselves:** when an NPC walks up and talks to you, like Brynjolf in the Riften market, or carries on talking without you picking anything, their words are kept as said to you: *Brynjolf says to Kit: "..."*. Your side is left empty, since you didn't pick anything.
 
 It needs the MantellaHeardLines plugin and the updated game add-on. It replaces the separate Mantella Vanilla Dialogue add-on: remove that one.
@@ -1394,28 +1396,50 @@ It needs the MantellaHeardLines plugin and the updated game add-on. It replaces 
 
 - **Mantella MCM** -> **Vanilla Dialogues** page: **Enabled** turns it on or off. **Nearby NPCs Overhear** and **Hearing Distance (m)** decide who else remembers a line.
 - **Conversation Wheel** -> **Vanilla Dialogues** turns it on or off without opening the MCM.
-- **Conversation** page -> **Vanilla Dialogues** section: **Vanilla Dialogue Memory (Days)** (how many in-game days NPCs remember a line, 3 at first), **Most Vanilla Dialogue Lines per NPC**, **Remember Dialogue Menu Talk**, **Remember Scenes**, **Ignored Dialogue Menu Choices** and **Ignored NPCs**.
+- **Conversation** page -> **Vanilla Dialogues** section: **Vanilla Dialogue Memory (Days)** (how many in-game days NPCs remember a line, 3 at first), **Most Vanilla Dialogue Lines per NPC**, **Remember Dialogue Menu Talk**, **Remember Scenes**, **Remember Scenes When NPCs Meet**, **Ignored Dialogue Menu Choices**, **Ignored NPCs**, **Quests That Aren't Background Chatter** and **Quests That Are Background Chatter**. The four lists are boxes a few lines tall: drag a box's bottom-right corner to make it taller.
 
 ### Quick start
 
 1. Install the MantellaHeardLines plugin and the updated game add-on.
 2. In game, make sure it is on: open **Mantella MCM** -> **Vanilla Dialogues** and tick **Enabled**, or open the **Conversation Wheel**. If it shows **Turn on Vanilla Dialogues**, pick it. It is off on a new game.
-3. In Whiterun, wait in the Bannered Mare until Mikael talks to Carlotta.
-4. Talk to Mikael or Saadia through Mantella and ask what just happened.
+3. In Whiterun, ask Hulda in the Bannered Mare about rumors in Skyrim's dialogue menu.
+4. Talk to Hulda through Mantella and ask what you just talked about.
 
-**Ignored Dialogue Menu Choices** is a list of choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history (it never touches scenes NPCs play out with each other): the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings. Without the list, Lydia's history could hold *You said "I want you to..", and she said "Yes?"*, and she might bring it up. When you pick a choice on the list, neither your choice nor the NPC's reply is added to the history. The list already has the follower commands' **I want you to..** and Mantella's own **Goodbye. (Remove from Mantella conversation)**.
+**Ignored Dialogue Menu Choices** is a list of choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history (it never touches scenes NPCs play out with each other): the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings. Without the list, Lydia's history could hold *You said "I want you to..", and she said "Yes?"*, and she might bring it up. When you pick a choice on the list, neither your choice nor the NPC's reply is added to the history. Mantella keeps its own list, which it updates: the follower commands' **I want you to..** and Mantella's own **Goodbye. (Remove from Mantella conversation)**. The setting holds yours on top of it, and is empty at first.
 
 Only the NPC's reply to that one choice is left out. If the choice opens more choices, like **I want you to..** opening **Wait here**, what you pick next and the NPC's reply to it are kept as usual, unless that choice is on the list too. Other people nearby don't get the left-out reply either.
 
 To add a choice, for example a mod's menu line that keeps showing up in the Vanilla Dialogue history:
 
 1. Open the **Conversation** page -> **Vanilla Dialogues** section -> **Ignored Dialogue Menu Choices**.
-2. Type a comma at the end of the list, then the choice exactly as it shows in the dialogue menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
+2. Type a comma or a new line at the end of the list, then the choice exactly as it shows in the dialogue menu, with the same punctuation (the two dots in **I want you to..**). Capital letters don't matter.
 3. Use `*` for any text, so you only need part of a choice: `*orders for you*` catches every choice with "orders for you" in it, and `Rent a room*` catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
+
+To remember one of Mantella's own choices after all, add it with `-` in front: `-I want you to..`.
 
 **Remember Dialogue Menu Talk** and **Remember Scenes** (both on at first) choose which kind of lines NPCs remember. Turn off **Remember Dialogue Menu Talk** and NPCs forget your talk in the dialogue menu, and what NPCs say when they walk up to you, but still remember scenes. Turn off **Remember Scenes** and they forget the scenes NPCs play out, and the lines NPCs say to you outside the dialogue menu (like Ralof on the cart to Helgen), but still remember the dialogue menu talk. Lines NPCs already remember stay until they are forgotten.
 
-**Ignored NPCs** is a list of NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them, by anyone. It's empty at first. It helps with followers that have a lot of their own dialogue, like Serana. They still remember other people's scenes they overhear. Type each name as it shows in game, with a comma between names. Capital letters don't matter, and `*` stands for any text: `Serana*` catches every NPC whose name starts with Serana.
+**Ignored NPCs** is a list of NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them, by anyone. It's empty at first. It helps with followers that have a lot of their own dialogue, like Serana. They still remember other people's scenes they overhear. Type each name as it shows in game, with a comma or a new line between names. Capital letters don't matter, and `*` stands for any text: `Serana*` catches every NPC whose name starts with Serana.
+
+NPCs don't remember background chatter at first: the everyday talk that repeats in towns. Scenes from quests are never left out: anything from a quest in your journal, from a quest that only happens once, or from a story moment, like Wuunferth's arrest in Windhelm, is always remembered. Some chatter gets through instead, and that's on purpose: a forgotten quest scene is worse than a remembered song.
+
+Two things leave chatter out:
+
+- **Small talk when two NPCs meet.** Skyrim starts these scenes when two NPCs come across each other, usually in town, like Carlotta and Olfina bickering over prices, guards chatting and the Riften market. Small talk that only plays at certain steps of a quest is still remembered, like Enmon and Mena missing their daughter after The Heart of Dibella, or the Soljund's Sinkhole miners fearing the draugr and then glad they're gone. A few more quest scenes start this way too, and Mantella keeps them on its own list. Turn on **Remember Scenes When NPCs Meet** (off at first) to remember all small talk.
+- **Mantella's checked list of everyday talk.** Some chatter starts another way: Heimskr preaching, the bards' songs, the innkeeper's greeting, the temple's wounded, the College lectures, followers' comments on caves, Solitude's court talk. Each one on the list was checked against what it says, so no quest is on it. When a town's everyday talk shares its quest with a story scene, the list names the chatter scene by scene: Mikael's song and the Battle-Born and Gray-Mane feud are left out, and the Jarl hearing about the dragon, from the same quest, is remembered.
+
+Two settings change this, quest by quest or scene by scene:
+
+- **Quests That Aren't Background Chatter:** these quests and scenes are always remembered. Mantella keeps its own list of quest scenes that start like small talk: the guests at the Thalmor Embassy party, the heroes in Sovngarde, the Namira cult's dinner, the Thieves Guild's talk about the guild, the apprentices at Saarthal, Delphine and Esbern at Sky Haven Temple, the Thirsk Nords before and after you retake their mead hall, and more.
+- **Quests That Are Background Chatter:** these quests and scenes are never remembered. Mantella keeps its own checked list (above).
+
+Mantella's own lists are updated with Mantella, and the settings start empty: what you type goes on top of Mantella's list. A scene wins over its quest: put one scene on one list and its quest on the other, and the scene's list decides for that scene. Otherwise your entries win over Mantella's, and **Quests That Aren't Background Chatter** wins when you put the same quest or scene on both. Put `-` in front of an entry to take it off Mantella's list: `-BardSongs` remembers the bards' songs again, and `-*` in **Quests That Are Background Chatter** remembers everything on Mantella's list.
+
+Both take quest IDs or scenes, with a comma or a new line between them. Capital letters don't matter, and `*` stands for any text: `BardSongs*` catches every quest whose ID starts with BardSongs. A scene looks like `Skyrim.esm:092A31`: the game file it comes from and its number in that file. To find a scene or its quest:
+
+1. On the **Other** tab, open **Log** and set **Vanilla Dialogues** to **Full**.
+2. Wait for the scene to play nearby.
+3. In Mantella's log, the scene's lines end with its quest and its scene, like *Quest DialogueWhiterun. Scene Skyrim.esm:092A31.* A line left out as background chatter also says why.
 
 ## Bio Sections to Exclude
 
@@ -3105,7 +3129,7 @@ How actions fit the kinds of conversation:
 - **Each NPC acts only for themselves.** In a group, every NPC who speaks can act on their own line, and nobody follows, waits or walks over because someone else said so. You say "Stay here." Lydia answers "Wait: As you wish" and waits. Faendal waits only if he says Wait himself.
 - **Nothing involves you while the NPCs don't know you're there.** While you watch an [NPC Event](#npc-events), in [Director Mode](#multi-conversation-director-mode) and in radiant conversations (Skyrim's own small talk between two NPCs), the actions that would act on you are left out, whatever is ticked: Attack, Brawl, Flee, Teleport, Inventory, Barter, Follow, Unfollow and MoveTo. That leaves Wait, StandDown, Loot and CollectIngredients.
 - **An action that is switched off does nothing.** If an NPC says one anyway, its name is still taken out of the line, so it isn't spoken.
-- **Typing just an action's name** (e.g. `Barter`) makes the last NPC who spoke do it, without asking the AI. It works with the actions the NPCs can use in that conversation, also in a group.
+- **Typing just an action's name** (e.g. `Barter`) makes the last NPC who spoke do it, without asking the AI. It works with the actions the NPCs can use in that conversation, also in a group. Another mod's action is aimed as when the NPC starts a line with it (see **Actions from other mods**): typing `SexWithNPC` with only Lydia and Ysolda there starts their scene.
 - **Listen:** say or type "listen" and your next line waits for 10 seconds of silence before it ends, so you have time to think (with the microphone). The NPCs still hear it. An NPC who uses Listen gives you the same extra time.
 - **The interrupt key:** an action happens when its line starts. Interrupting before the line is sent drops the action with it; interrupting during the line doesn't undo it. An action the AI model picked with Advanced Actions goes to the game after the lines the NPC wrote with it, so interrupting while those are spoken drops it too.
 - **Look:** with Vision on, NPCs normally see a screenshot with every reply. Where Look is ticked, they only get one when they use Look: Lydia starts with "Look:", and her reply is asked for again, this time with what you see. What the reply had already said stays said: it goes on from there instead of starting again. In a group, everyone who looks in one turn sees the same screenshot. If Vision fails to start, Look does nothing: an NPC who starts with "Look:" just says the rest of the line. Once an NPC has looked, a second "Look:" in that reply is just taken out of the line, so the line isn't lost. If the vision model sends back no description of the screenshot, the NPC answers without seeing it and the log says why (often a vision model that can't read images, or a max_tokens too low in **Custom Vision Model Parameters**). The **Custom Vision Model** list offers every model that can read images, also those that take more than images, such as Gemini.

@@ -7,7 +7,10 @@ import pytest
 from src.heard_lines.heard_line import GameTime, HeardLine, HeardPerson
 from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver
 from src.heard_lines.heard_lines_store import HeardLinesStore
-from tests.heard_lines.lines import CARLOTTA, HULDA, MIKAEL, PLAYER, REF, SAADIA, WORLD, at, hand_over, menu_line, scene_line, settings
+from src.heard_lines.vanilla_dialogue_lists import ShippedLists
+from tests.heard_lines.lines import (CARLOTTA, DIBELLA_QUEST, DRAGON_NEWS_SCENE, FOLLOWING_MEETING_QUEST, HELPER_QUEST, HULDA, JOURNAL_MEETING_QUEST,
+                                    MEETING_QUEST, MIKAEL, ONCE_MEETING_QUEST, ONCE_QUEST, PLAYER, REF, SAADIA, SONG_SCENE, STORY_QUEST, TAVERN_QUEST,
+                                    TOWN_QUEST, TOWN_STORY_QUEST, WORLD, at, hand_over, menu_line, scene_line, settings)
 
 START = 1000 # When the conversation started
 
@@ -56,8 +59,9 @@ def store() -> FakeStore:
     return FakeStore()
 
 
-def receive(store, text, conversation=None, config=None):
-    GameHeardLinesReceiver(config or settings(), store).receive(text, WORLD, conversation)
+def receive(store, text, conversation=None, config=None, lists: ShippedLists | None = None):
+    """Without Mantella's own list files, unless the test gives some"""
+    GameHeardLinesReceiver(config or settings(), store, lists or ShippedLists()).receive(text, WORLD, conversation)
 
 
 def test_a_line_heard_in_the_conversation_goes_into_it_once_and_outsiders_keep_it(store):
@@ -218,8 +222,206 @@ def test_at_full_a_scene_left_out_says_scenes_are_off(store, caplog):
     assert text.endswith("Left out: scenes are off (Remember Scenes)")
 
 
-def test_the_default_list(default_config):
-    assert default_config.heard_lines_menu_only == ["i want you to..", "goodbye. (remove from mantella conversation)"]
+@pytest.mark.parametrize("quest, kept", [
+    (MEETING_QUEST, False),        # Small talk from two NPCs meeting
+    (JOURNAL_MEETING_QUEST, True), # Two NPCs meeting, but in a quest the player follows
+    (ONCE_MEETING_QUEST, True),    # Two NPCs meeting, but it runs once
+    (STORY_QUEST, True),
+    (DIBELLA_QUEST, True),         # A journal quest with no journal category
+    (HELPER_QUEST, True),          # A story scene with no journal entry, like Wuunferth's arrest
+    (ONCE_QUEST, True),
+    (TOWN_QUEST, True),            # Repeats, but only a list leaves it out
+    (TAVERN_QUEST, True),
+    (FOLLOWING_MEETING_QUEST, True), # Two NPCs meeting, but only after a step of The Heart of Dibella
+    (None, True),                  # No quest: a plugin from before quests were sent
+])
+def test_by_default_only_small_talk_from_two_npcs_meeting_is_left_out(store, quest, kept):
+    receive(store, hand_over(scene_line("Hello.", quest=quest)))
+    assert (store.kept != {}) == kept
+
+
+def test_remember_scenes_when_npcs_meet_keeps_their_small_talk(store):
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST)), config=settings(npcs_meet=True))
+    assert store.kept["Saadia"] == ["Did you raise your prices?"]
+
+
+def test_background_chatter_is_left_out_of_the_conversation_too(store):
+    talk = FakeConversation("Saadia")
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST, time=START + 1),
+                             scene_line("I've been ordered to arrest you.", quest=STORY_QUEST, time=START + 1)), talk)
+    assert [line.words for line in talk.heard] == ["I've been ordered to arrest you."]
+    assert store.kept == {"Mikael": ["I've been ordered to arrest you."], "Carlotta": ["I've been ordered to arrest you."]}
+
+
+@pytest.mark.parametrize("story_quests", [["dialoguewhiteruncarlotta*"], ["dialoguewhiteruncarlottaolfinascene1"], ["*"]])
+def test_quests_that_arent_background_chatter_are_remembered(store, story_quests):
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST)), config=settings(story_quests=story_quests))
+    assert store.kept["Saadia"] == ["Did you raise your prices?"]
+
+
+@pytest.mark.parametrize("npcs_meet", [False, True])
+def test_quests_that_are_background_chatter_are_left_out_whatever_the_switch(store, npcs_meet):
+    receive(store, hand_over(scene_line("Talos is a god.", quest=TOWN_QUEST), scene_line("I've been ordered to arrest you.", quest=STORY_QUEST)),
+            config=settings(chatter_quests=["dialoguewhiterunheimskr*"], npcs_meet=npcs_meet))
+    assert store.kept["Saadia"] == ["I've been ordered to arrest you."]
+
+
+def test_a_quest_on_both_lists_is_remembered(store):
+    receive(store, hand_over(scene_line("Welcome.", quest=TAVERN_QUEST)), config=settings(chatter_quests=["wi*"], story_quests=["witavern"]))
+    assert store.kept["Saadia"] == ["Welcome."]
+
+
+def test_the_quest_lists_never_touch_menu_talk(store):
+    line = {**menu_line("Heard any rumors?", "Plenty.", heard_by=[HULDA, SAADIA]), "quest": MEETING_QUEST}
+    receive(store, hand_over(line), config=settings(chatter_quests=["*"]))
+    assert store.kept["Saadia"] == ["Plenty."]
+
+
+OURS = ShippedLists(menu_choices=("i want you to..",), story_quests=("dialoguewhiteruncarlottaolfinascene1",),
+                    chatter_quests=("witavern", "dialoguewhiterunheimskrpreachscene"))
+
+
+def test_mantellas_own_lists_work_without_any_setting(store):
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST), scene_line("Welcome.", quest=TAVERN_QUEST),
+                             scene_line("Talos is a god.", quest=TOWN_QUEST), menu_line("I want you to..", "Hm?", heard_by=[HULDA, SAADIA])), lists=OURS)
+    assert store.kept["Saadia"] == ["Did you raise your prices?"]
+
+
+def test_the_players_entries_add_to_mantellas(store):
+    receive(store, hand_over(menu_line("I want you to..", "Hm?", heard_by=[HULDA, SAADIA]), menu_line("Show me your wares.", "Take a look.", heard_by=[HULDA, SAADIA])),
+            config=settings(menu_only=["show me your wares."]), lists=OURS)
+    assert store.kept == {}
+
+
+@pytest.mark.parametrize("config, kept", [
+    (settings(menu_only=["-i want you to.."]), ["Hm?"]),                 # Remembered after all
+    (settings(menu_only=["-i want*"]), ["Hm?"]),                         # A minus entry matches like any other
+    (settings(menu_only=["-show me your wares."]), []),                 # Switching off something not on Mantella's list does nothing
+])
+def test_a_minus_switches_off_mantellas_menu_choice(store, config, kept):
+    receive(store, hand_over(menu_line("I want you to..", "Hm?", heard_by=[HULDA, SAADIA])), config=config, lists=OURS)
+    assert store.kept.get("Saadia", []) == kept
+
+
+def test_a_minus_on_a_quest_list_sends_mantellas_quest_back_to_the_rule(store):
+    # Off Mantella's story list: small talk from two NPCs meeting, so left out with the switch off and kept with it on
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST)), config=settings(story_quests=["-dialoguewhiterun*"]), lists=OURS)
+    assert store.kept == {}
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST)), config=settings(story_quests=["-dialoguewhiterun*"], npcs_meet=True),
+            lists=OURS)
+    assert store.kept["Saadia"] == ["Did you raise your prices?"]
+    # Off Mantella's chatter list: kept, as the rule doesn't touch it
+    store.kept.clear()
+    receive(store, hand_over(scene_line("Welcome.", quest=TAVERN_QUEST), scene_line("Talos is a god.", quest=TOWN_QUEST)), config=settings(chatter_quests=["-*"]),
+            lists=OURS)
+    assert store.kept["Saadia"] == ["Welcome.", "Talos is a god."]
+
+
+def test_the_players_entries_win_over_mantellas(store):
+    receive(store, hand_over(scene_line("Did you raise your prices?", quest=MEETING_QUEST), scene_line("Welcome.", quest=TAVERN_QUEST)),
+            config=settings(chatter_quests=["dialoguewhiterun*"], story_quests=["witavern"], npcs_meet=True), lists=OURS)
+    assert store.kept["Saadia"] == ["Welcome."]
+
+
+@pytest.mark.parametrize("quest, config, lists, why", [
+    (MEETING_QUEST, settings(), None, "Left out: background chatter: it starts when two NPCs meet, and Remember Scenes When NPCs Meet is off"),
+    (TAVERN_QUEST, settings(chatter_quests=["wi*"]), None, "Left out: background chatter: it is on Quests That Are Background Chatter"),
+    (TAVERN_QUEST, settings(), OURS, "Left out: background chatter: it is on Mantella's own Quests That Are Background Chatter"),
+])
+def test_at_full_background_chatter_left_out_names_its_quest_and_why(store, caplog, quest, config, lists, why):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("Hello.", quest=quest)), config=config, lists=lists)
+    [text] = written()
+    assert f"Quest {quest['id']}." in text and text.endswith(why)
+
+
+def test_at_full_a_kept_scene_line_names_its_quest(store, caplog):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("I've been ordered to arrest you.", quest=STORY_QUEST)))
+    [text] = written()
+    assert "Kit was there. Quest MS11. Kept by all 3 as a heard line." in text
+
+
+def test_small_talk_that_follows_a_quest_is_still_left_out_when_it_is_on_the_chatter_list(store):
+    receive(store, hand_over(scene_line("I still miss her.", quest=FOLLOWING_MEETING_QUEST)), config=settings(chatter_quests=["dialoguekarthwasten*"]))
+    assert store.kept == {}
+
+
+def song_and_dragon_news() -> str:
+    """Two scenes of one town quest: Mikael's song, and the Jarl hearing about the dragon"""
+    return hand_over(scene_line("One more song, what say you?", quest=TOWN_STORY_QUEST, scene_key=SONG_SCENE),
+                     scene_line("And you're sure?", quest=TOWN_STORY_QUEST, scene_key=DRAGON_NEWS_SCENE))
+
+
+@pytest.mark.parametrize("config, lists", [
+    (settings(chatter_quests=["skyrim.esm:092a31"]), None),
+    (settings(chatter_quests=["skyrim.esm:092a3*"]), None), # * works in a scene entry too
+    (settings(), ShippedLists(chatter_quests=("skyrim.esm:092a31",))),
+])
+def test_a_scene_entry_leaves_out_only_that_scene(store, config, lists):
+    receive(store, song_and_dragon_news(), config=config, lists=lists)
+    assert store.kept["Saadia"] == ["And you're sure?"]
+
+
+def test_a_scene_wins_over_its_quest_on_the_other_list(store):
+    # The quest is story, but one of its scenes is chatter
+    receive(store, song_and_dragon_news(), config=settings(story_quests=["dialoguewhiterun"], chatter_quests=["skyrim.esm:092a31"]))
+    assert store.kept["Saadia"] == ["And you're sure?"]
+    # The quest is chatter, but one of its scenes is story, also when only Mantella's list names the scene
+    store.kept.clear()
+    receive(store, song_and_dragon_news(), config=settings(chatter_quests=["dialoguewhiterun"]), lists=ShippedLists(story_quests=("skyrim.esm:09dcd5",)))
+    assert store.kept["Saadia"] == ["And you're sure?"]
+
+
+def test_a_wildcard_quest_entry_never_decides_ahead_of_a_scene_entry(store):
+    # * on the chatter list is a quest entry: Mantella's story scene entry still keeps that scene
+    receive(store, song_and_dragon_news(), config=settings(chatter_quests=["*"]), lists=ShippedLists(story_quests=("skyrim.esm:09dcd5",)))
+    assert store.kept["Saadia"] == ["And you're sure?"]
+
+
+def test_a_scene_on_both_lists_is_remembered_and_the_players_entry_wins(store):
+    receive(store, song_and_dragon_news(), config=settings(story_quests=["skyrim.esm:092a31"], chatter_quests=["skyrim.esm:092a31"]))
+    assert store.kept["Saadia"] == ["One more song, what say you?", "And you're sure?"]
+    store.kept.clear()
+    receive(store, song_and_dragon_news(), config=settings(story_quests=["skyrim.esm:092a31"]), lists=ShippedLists(chatter_quests=("skyrim.esm:092a31",)))
+    assert store.kept["Saadia"] == ["One more song, what say you?", "And you're sure?"]
+
+
+@pytest.mark.parametrize("off", ["-skyrim.esm:092a31", "-*"])
+def test_a_minus_switches_off_mantellas_scene_entry(store, off):
+    receive(store, song_and_dragon_news(), config=settings(chatter_quests=[off]), lists=ShippedLists(chatter_quests=("skyrim.esm:092a31",)))
+    assert store.kept["Saadia"] == ["One more song, what say you?", "And you're sure?"]
+
+
+def test_a_line_without_a_scene_is_decided_by_its_quest(store):
+    receive(store, hand_over(scene_line("Welcome.", quest=TAVERN_QUEST)), config=settings(chatter_quests=["skyrim.esm:*"]))
+    assert store.kept["Saadia"] == ["Welcome."]
+
+
+@pytest.mark.parametrize("config, lists, why", [
+    (settings(chatter_quests=["skyrim.esm:092a31"]), None, "Left out: background chatter: its scene is on Quests That Are Background Chatter"),
+    (settings(), ShippedLists(chatter_quests=("skyrim.esm:092a31",)), "Left out: background chatter: its scene is on Mantella's own Quests That Are Background Chatter"),
+])
+def test_at_full_a_scene_left_out_says_its_scene_is_on_the_list(store, caplog, config, lists, why):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("One more song, what say you?", quest=TOWN_STORY_QUEST, scene_key=SONG_SCENE)), config=config, lists=lists)
+    [text] = written()
+    assert text.endswith(why)
+
+
+def test_at_full_a_scene_line_ends_with_its_quest_and_scene_and_menu_talk_with_neither(store, caplog):
+    written = full_log(caplog)
+    receive(store, hand_over(scene_line("One more song, what say you?", quest=TOWN_STORY_QUEST, scene_key=SONG_SCENE), scene_line("No scene."),
+                             menu_line("Any rumors?", "Not today.", heard_by=[HULDA, SAADIA])))
+    song, no_scene, menu = written()
+    assert "Kit was there. Quest DialogueWhiterun. Scene Skyrim.esm:092A31. Kept by all 3 as a heard line." in song
+    assert "Scene " not in no_scene and "Quest " not in no_scene
+    assert "Scene " not in menu and "Quest " not in menu
+
+
+def test_the_settings_start_empty_and_the_switch_off(default_config):
+    assert default_config.heard_lines_menu_only == [] and default_config.heard_lines_story_quests == [] and default_config.heard_lines_chatter_quests == []
+    assert not default_config.heard_lines_npcs_meet
 
 
 def test_one_npc_that_cant_be_written_loses_no_one_elses_lines(store):

@@ -298,6 +298,10 @@ class ConfigLoader:
             return []
         return [part.strip() for part in raw.split(",") if part.strip()]
 
+    def __list_value(self, identifier: str) -> list[str]:
+        """A list setting: the parts between commas or line breaks, trimmed and in lower case"""
+        return [p.strip().lower() for p in self.__definitions.get_string_value(identifier).replace("\r", "\n").replace("\n", ",").split(",") if p.strip()]
+
     def save_ui_tab_order(self, names: list[str]) -> None:
         already_changed = self.__has_any_value_changed
         order = ",".join(name.strip() for name in names if isinstance(name, str) and name.strip())
@@ -781,10 +785,13 @@ Summary LLM parameter list must follow the Python dictionary format: https://www
             self.ingame_events_filter: list[str] = [p.strip().lower() for p in self.__definitions.get_string_value("ingame_events_filter").split(",") if p.strip()]
             self.heard_lines_days_kept: int = self.__definitions.get_int_value("heard_lines_days_kept")
             self.heard_lines_most_per_npc: int = self.__definitions.get_int_value("heard_lines_most_per_npc")
-            self.heard_lines_menu_only: list[str] = [p.strip().lower() for p in self.__definitions.get_string_value("heard_lines_menu_only").split(",") if p.strip()]
+            self.heard_lines_menu_only: list[str] = self.__list_value("heard_lines_menu_only")
             self.heard_lines_menu_talk: bool = self.__definitions.get_bool_value("heard_lines_menu_talk")
             self.heard_lines_scenes: bool = self.__definitions.get_bool_value("heard_lines_scenes")
-            self.heard_lines_ignored_npcs: list[str] = [p.strip().lower() for p in self.__definitions.get_string_value("heard_lines_ignored_npcs").split(",") if p.strip()]
+            self.heard_lines_ignored_npcs: list[str] = self.__list_value("heard_lines_ignored_npcs")
+            self.heard_lines_npcs_meet: bool = self.__definitions.get_bool_value("heard_lines_npcs_meet")
+            self.heard_lines_story_quests: list[str] = self.__list_value("heard_lines_story_quests")
+            self.heard_lines_chatter_quests: list[str] = self.__list_value("heard_lines_chatter_quests")
             self.hourly_time = self.__definitions.get_bool_value("hourly_time")
             self.player_character_description: str = self.__definitions.get_string_value("player_character_description")
             self.voice_player_input: bool = self.__definitions.get_bool_value("voice_player_input")

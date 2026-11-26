@@ -87,6 +87,9 @@ class SettingConfig(NamedTuple):
 
 # Model dropdowns where no selection (empty value) means "use the active Summary model".
 SUMMARY_FALLBACK_MODEL_IDS = {"thoughts_model", "reflection_model"}
+# Lists that grow long: a text box of a few lines that players can stretch by dragging its corner, instead of one long line
+STRETCHABLE_LISTS = {"heard_lines_menu_only", "heard_lines_ignored_npcs", "heard_lines_story_quests", "heard_lines_chatter_quests"}
+STRETCHABLE_LIST_LINES = 4
 
 # The preview under a prompt (Prompts tab and Prompt Profiles editor): the text sent in a situation, to a model
 PREVIEW_TITLE = "Preview: the text that is sent"
@@ -1866,6 +1869,11 @@ class SettingsUIConstructor(ConfigValueVisitor):
             if config_value.identifier.endswith("_extra_request"):
                 return gr.Text(value=config_value.value, show_label=False, container=False, lines=3, max_lines=12,
                                elem_classes="multiline-textbox", placeholder='{"speed": 1.1}')
+
+            if config_value.identifier in STRETCHABLE_LISTS:
+                # The same lines and max_lines: Gradio then leaves the height alone, so a stretched box stays stretched while typing
+                return gr.Text(value=config_value.value, show_label=False, container=False, lines=STRETCHABLE_LIST_LINES,
+                               max_lines=STRETCHABLE_LIST_LINES, elem_classes="multiline-textbox")
 
             count_rows = self.__count_rows_in_text(config_value.value)
             if PromptProfileManager.is_known_type(config_value.identifier):

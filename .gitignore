@@ -8,6 +8,7 @@ data/**/*.json
 !data/stt_whisper_tokenizer.json
 !data/voice_models.json
 data/**/*.txt
+!data/Skyrim/vanilla_dialogues/*.txt
 !data/Fallout4/placeholder/*.lip
 !data/voice_effects/*.json
 data/tmp/

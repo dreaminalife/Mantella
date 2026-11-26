@@ -1,0 +1,8 @@
+# Choices in Skyrim's dialogue menu that only open something, so NPCs don't remember them or the reply to them.
+# One choice per line, as the dialogue menu shows it. Capital letters don't matter, and * stands for any text.
+# Players add their own, or switch one of these off, in Ignored Dialogue Menu Choices. Mantella's updates replace this file.
+
+# The follower commands
+I want you to..
+# Mantella's own line that takes someone out of the conversation
+Goodbye. (Remove from Mantella conversation)

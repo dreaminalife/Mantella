@@ -70,6 +70,7 @@ class Conversation:
         self.__heard_lines_text: HeardLinesText | None = heard_lines_text
         self.__heard_lines_store: HeardLinesStore | None = heard_lines_store
         self.__heard_for_memory: list[HeardLine] = [] # Vanilla Dialogues: every line heard during the conversation, kept as heard lines when it ends
+        self.__heard_given: set[tuple[str, str, str]] = set() # Vanilla Dialogues: (speaker, words, pick) of each line already given in this conversation
 
         self.__context: Context = context_for_conversation
         self.__mic_input: bool = mic_input
@@ -351,9 +352,18 @@ class Conversation:
 
     def add_heard_dialogue(self, lines: list[HeardLine]):
         """Vanilla Dialogues: Skyrim's own lines heard by people in the conversation. They go with the next message, and are kept as
-        heard lines when the conversation ends"""
-        self.__context.add_heard_dialogue(lines)
-        self.__heard_for_memory.extend(lines)
+        heard lines when the conversation ends. A line already given in this conversation (the same speaker saying the same words, and
+        for menu talk to the same pick) isn't given again, so a scene that loops while the player talks goes in once"""
+        new_lines: list[HeardLine] = []
+        for line in lines:
+            key = (line.speaker.ref_id, line.words, line.asked)
+            if key not in self.__heard_given:
+                self.__heard_given.add(key)
+                new_lines.append(line)
+        if not new_lines:
+            return
+        self.__context.add_heard_dialogue(new_lines)
+        self.__heard_for_memory.extend(new_lines)
 
     def event_history_lines(self) -> list[str]:
         """Conversation, Nearby and Random Events: the recent lines of the conversation for the event generator, the same ones the Game Master sees"""

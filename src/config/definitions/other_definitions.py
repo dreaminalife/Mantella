@@ -72,12 +72,12 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_menu_only_config_value() -> ConfigValue:
-        description = """Choices you pick in Skyrim's dialogue menu that are kept out of the Vanilla Dialogue history: the Skyrim lines an NPC heard, which they bring into later Mantella conversations. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings.
-                        When you pick one of these, neither your choice nor the NPC's reply to it is added to the history, also for everyone nearby who heard it. Only that one reply is left out: if the choice opens more choices, like I want you to.. opening Wait here, what you pick next and the reply to it are kept as usual, unless that choice is on the list too. Scenes NPCs play out with each other are never left out by this list.
-                        To add a choice, type what your dialogue menu shows. It has to match the whole choice, with the same punctuation (the two dots in I want you to..), but capital letters don't matter. Put a comma between choices.
-                        Use * for any text, so you only need part of a choice: *orders for you* catches every choice with "orders for you" in it, and Rent a room* catches "Rent a room (10 gold)" and "Rent a room (25 gold)"."""
-        return ConfigValueString("heard_lines_menu_only","Ignored Dialogue Menu Choices",description,
-                                 "I want you to.., Goodbye. (Remove from Mantella conversation)")
+        description = """Choices you pick in Skyrim's dialogue menu that NPCs don't remember. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings.
+                        Mantella already ignores I want you to.. and Goodbye. (Remove from Mantella conversation), and updates its own list. Add yours here.
+                        When you pick one of these, neither your choice nor the NPC's reply to it is remembered, also by everyone nearby. Only that one reply is left out: if the choice opens more choices, like I want you to.. opening Wait here, what you pick next and the reply to it are kept as usual, unless that choice is on the list too. Scenes NPCs play out with each other are never left out by this list.
+                        Type each choice as your dialogue menu shows it, with the same punctuation (the two dots in I want you to..). Capital letters don't matter. Put a comma or a new line between choices, and use * for any text: Rent a room* catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
+                        Put - in front of a choice to remember it after all, even when Mantella's own list ignores it: -I want you to.."""
+        return ConfigValueString("heard_lines_menu_only","Ignored Dialogue Menu Choices",description,"")
 
     @staticmethod
     def get_heard_lines_menu_talk_config_value() -> ConfigValue:
@@ -87,7 +87,7 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_scenes_config_value() -> ConfigValue:
-        description = """NPCs remember the scenes they play out, like Mikael flirting with Carlotta, and the lines NPCs say to you outside the dialogue menu, like Ralof on the cart to Helgen.
+        description = """NPCs remember the scenes they play out, like Irileth and Proventus arguing in front of the Jarl, and the lines NPCs say to you outside the dialogue menu, like Ralof on the cart to Helgen.
                         Turn it off and they only remember the dialogue menu talk. Lines already remembered stay until they are forgotten."""
         return ConfigValueBool("heard_lines_scenes","Remember Scenes",description,True,tags=[ConfigValueTag.share_row])
 
@@ -95,8 +95,33 @@ class OtherDefinitions:
     def get_heard_lines_ignored_npcs_config_value() -> ConfigValue:
         description = """NPCs whose Skyrim lines are never remembered: nothing they say, and nothing said to them. Handy for followers with a lot of their own dialogue, like Serana.
                         They still remember other people's scenes they overhear.
-                        Type each name as it shows in game, with a comma between names. Capital letters don't matter. Use * for any text: Serana* catches every NPC whose name starts with Serana."""
+                        Type each name as it shows in game, with a comma or a new line between names. Capital letters don't matter. Use * for any text: Serana* catches every NPC whose name starts with Serana."""
         return ConfigValueString("heard_lines_ignored_npcs","Ignored NPCs",description,"")
+
+    @staticmethod
+    def get_heard_lines_npcs_meet_config_value() -> ConfigValue:
+        description = """NPCs remember the small talk Skyrim starts when two NPCs come across each other, usually in town: Carlotta and Olfina bickering over prices, guards chatting, the Riften market. It repeats every day.
+                        Quest scenes are never left out by this, even when two NPCs meeting starts them: scenes from a quest in your journal, from one that only happens once, or that only play at certain steps of a quest (Enmon and Mena missing their daughter after The Heart of Dibella) are always remembered.
+                        Turn it on if NPCs forget a scene you wanted them to remember, and Mantella's log says it starts when two NPCs meet. Lines already remembered stay until they are forgotten."""
+        return ConfigValueBool("heard_lines_npcs_meet","Remember Scenes When NPCs Meet",description,False,tags=[ConfigValueTag.share_row])
+
+    @staticmethod
+    def get_heard_lines_story_quests_config_value() -> ConfigValue:
+        description = """Quests whose scenes NPCs always remember, even with Remember Scenes When NPCs Meet off. For quest scenes that start when two NPCs meet, like the guests' talk at the Thalmor Embassy party.
+                        Mantella already keeps a list of them, and updates it. Add yours here.
+                        Type each quest's ID, with a comma or a new line between them. Capital letters don't matter. Use * for any text: MQ201Party* catches every quest whose ID starts with MQ201Party. Put - in front of one of Mantella's to take it off its list: -MQ201Party*.
+                        To keep just one scene of a quest, type the scene instead, like Dragonborn.esm:03A320 (Drovas missing Varona). A scene always wins over its quest on the other list.
+                        To find a scene's quest ID or the scene, set Vanilla Dialogues to Full in the Log part of the Other tab: each scene line in Mantella's log ends with its quest and its scene."""
+        return ConfigValueString("heard_lines_story_quests","Quests That Aren't Background Chatter",description,"")
+
+    @staticmethod
+    def get_heard_lines_chatter_quests_config_value() -> ConfigValue:
+        description = """Quests whose scenes NPCs never remember: everyday talk that repeats, which isn't small talk from two NPCs meeting.
+                        Mantella already keeps a checked list of them, like Heimskr preaching, the bards' songs and the innkeeper's greeting, and updates it. Add yours here.
+                        Type each quest's ID, with a comma or a new line between them. Capital letters don't matter. Use * for any text. Put - in front of one of Mantella's to take it off its list: -BardSongs, or -* to remember all of them.
+                        To leave out just one scene of a quest, type the scene instead, like Skyrim.esm:092A31 (Mikael singing in the Bannered Mare). A scene always wins over its quest on the other list.
+                        Quests That Aren't Background Chatter wins when you put the same quest or scene on both. To find a scene's quest ID or the scene, set Vanilla Dialogues to Full in the Log part of the Other tab: each scene line in Mantella's log ends with its quest and its scene."""
+        return ConfigValueString("heard_lines_chatter_quests","Quests That Are Background Chatter",description,"")
 
     @staticmethod
     def get_hourly_time_config_value() -> ConfigValue:

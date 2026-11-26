@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 from src.config.config_loader import ConfigLoader
 from src.heard_lines.heard_line import HandOver, HeardLine, HeardPerson
 from src.heard_lines.heard_lines_store import HeardLinesStore
+from src.heard_lines.vanilla_dialogue_lists import EditableList, ShippedLists
 from src.logs.log_topic import LogTopic
 from src.logs.topic_logger import get_topic_logger
 
@@ -31,9 +32,11 @@ class HeardLinesReceiver(ABC):
 
 
 class GameHeardLinesReceiver(HeardLinesReceiver):
-    def __init__(self, config: ConfigLoader, store: HeardLinesStore):
+    def __init__(self, config: ConfigLoader, store: HeardLinesStore, lists: ShippedLists | None = None):
+        """lists: Mantella's own list entries. None reads them from data/Skyrim/vanilla_dialogues"""
         self.__config: ConfigLoader = config
         self.__store: HeardLinesStore = store
+        self.__lists: ShippedLists = lists if lists is not None else ShippedLists.load()
 
     def receive(self, hand_over_text: Any, world_id: str, conversation: Conversation | None) -> None:
         hand_over = HandOver.parse(hand_over_text)
@@ -89,7 +92,10 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
         where = f" in {line.place}" if line.place else ""
         names = ", ".join(person.name for person in line.heard_by)
         there = f"{line.player} was there" if line.player_there else f"{line.player} wasn't there"
-        return f"{said}{where}. Heard by {len(line.heard_by)} ({names}). {there}."
+        # For Quests That Are (or Aren't) Background Chatter: a whole quest, or one scene
+        quest = f" Quest {line.quest.id}." if line.quest and line.quest.id else ""
+        scene = f" Scene {line.scene_key}." if line.scene_key and not line.is_menu_talk else ""
+        return f"{said}{where}. Heard by {len(line.heard_by)} ({names}). {there}.{quest}{scene}"
 
     @staticmethod
     def __where(line: HeardLine, insiders: list[HeardPerson]) -> str:
@@ -111,8 +117,37 @@ class GameHeardLinesReceiver(HeardLinesReceiver):
         ignored = next((person.name for person in (line.speaker, line.to) if person and self.__matches(person.name, self.__config.heard_lines_ignored_npcs)), None)
         if ignored:
             return f"{ignored} is on Ignored NPCs"
-        if line.is_menu_talk and line.asked and self.__matches(line.asked, self.__config.heard_lines_menu_only):
+        if line.is_menu_talk and line.asked and EditableList(self.__lists.menu_choices).with_players(self.__config.heard_lines_menu_only).matches(line.asked):
             return "the pick only opens a menu (Ignored Dialogue Menu Choices)"
+        chatter = self.__why_background_chatter(line)
+        if chatter:
+            return f"background chatter: {chatter}"
+        return ""
+
+    def __why_background_chatter(self, line: HeardLine) -> str:
+        """Why a scene line is background chatter that NPCs don't remember. Empty when they remember it, also for menu talk and a line
+        without a quest or scene (from a plugin from before they were sent).
+        A scene entry decides before a quest entry, so one scene can be dropped from a story quest, or kept from a chatter quest. Within
+        each, the player's entries come before Mantella's, and Quests That Aren't Background Chatter before Quests That Are. The lists
+        always apply. Remember Scenes When NPCs Meet only decides the small talk Skyrim starts when two NPCs meet"""
+        if line.is_menu_talk:
+            return ""
+        story = EditableList(self.__lists.story_quests).with_players(self.__config.heard_lines_story_quests)
+        chatter = EditableList(self.__lists.chatter_quests).with_players(self.__config.heard_lines_chatter_quests)
+        for what, key, story_entries, chatter_entries in (("its scene", line.scene_key, story.scenes(), chatter.scenes()),
+                                                          ("it", line.quest.id if line.quest else "", story.quests(), chatter.quests())):
+            if not key:
+                continue
+            if story_entries.players_match(key):
+                return ""
+            if chatter_entries.players_match(key):
+                return f"{what} is on Quests That Are Background Chatter"
+            if story_entries.ours_match(key):
+                return ""
+            if chatter_entries.ours_match(key):
+                return f"{what} is on Mantella's own Quests That Are Background Chatter"
+        if line.quest and line.quest.is_small_talk_when_npcs_meet and not self.__config.heard_lines_npcs_meet:
+            return "it starts when two NPCs meet, and Remember Scenes When NPCs Meet is off"
         return ""
 
     @staticmethod

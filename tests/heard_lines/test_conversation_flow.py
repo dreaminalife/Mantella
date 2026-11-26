@@ -126,6 +126,21 @@ def test_a_line_in_the_conversation_is_not_also_in_memory_while_it_runs(game: He
     assert kept(game.manager, "Hulda", "01A66E") == [HEARD]
 
 
+def test_a_scene_that_loops_during_the_conversation_is_given_once_and_remembered_once(game: HeardLinesGame, model: FakeModel):
+    game.start(HULDA_PERSON)
+    now = int(time.time())
+    game.heard = hand_over(scene_line(HEARD, time=now, heard_by=[HULDA]), scene_line("Thank you, thank you.", time=now + 1, heard_by=[HULDA]))
+    game.say("Did you hear that?")
+    assert HEARD in model.npc_requests[-1]
+    game.heard = hand_over(scene_line(HEARD, time=now + 60, heard_by=[HULDA]), scene_line("Something new.", time=now + 61, heard_by=[HULDA]))
+    game.say("He's singing it again.")
+    request = model.npc_requests[-1]
+    assert "Something new." in request
+    assert request.count(HEARD) == 1 # Only from the earlier message, not given again
+    game.end()
+    assert kept(game.manager, "Hulda", "01A66E") == [HEARD, "Thank you, thank you.", "Something new."]
+
+
 @pytest.mark.parametrize("summaries_on", [True, False])
 def test_a_short_conversation_still_remembers_what_was_heard(game: HeardLinesGame, summaries_on: bool):
     """No summary is written for a short conversation, or with summaries off: the lines are kept anyway"""

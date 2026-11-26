@@ -1,0 +1,29 @@
+# Quests whose scenes NPCs always remember, although they start when two NPCs meet and have no journal entry, like small talk.
+# Each one happens inside a quest or a quest's place, or follows how a quest turned out, so it stays. Checked against what the scenes say in Skyrim.esm and the DLCs.
+# One quest ID per line, or one scene as <file>:<form ID in that file>, as the Vanilla Dialogues log at Full shows it. Capital letters don't matter, and * stands for any text.
+# Players add their own, or switch one of these off, in Quests That Aren't Background Chatter. Mantella's updates replace this file.
+
+# The guests at the Thalmor Embassy party (Diplomatic Immunity)
+MQ201Party*
+# The heroes in Sovngarde (Sovngarde, the end of the main quest)
+MQSovngardeConv*
+# The Namira cult's dinner in Markarth (The Taste of Death)
+DA11Convo*
+# The Thieves Guild talking about the guild's troubles and jobs, which follow the guild's story
+TGDialogueHQScene*
+# The College apprentices at Saarthal (Under Saarthal)
+DialogueSaarthal*
+# Delphine and Esbern at Sky Haven Temple
+DialogueSkyHavenTemple*
+# The prisoners inside Cidhna Mine (No One Escapes Cidhna Mine)
+DialogueCidhnaMine*
+# The Severins hinting at their plot in Raven Rock
+DLC2RRSeverinManorScene*
+# The Thirsk Nords, before and after you retake the mead hall: "We need to be back up there." and "What exactly happened at the barrow?"
+DLC2MH*
+# Crescius and Aphia after The Final Descent: "They've laughed at me, Aphia... But I proved them wrong."
+DLC2RRCresciusHouseScene*
+# Grosta and Gralnach at Heartwood Mill, talking about his father, with different words before and after the quest about him: "He left us..." and "now that he's dead..."
+DialogueHeartwoodMillScene01
+# Drovas missing Varona at Tel Mithryn, after she dies: "I miss Varona. She used to help me with the gardening."
+Dragonborn.esm:03A320

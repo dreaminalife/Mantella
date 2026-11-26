@@ -1,0 +1,98 @@
+# Quests whose scenes NPCs never remember: everyday talk that repeats, which isn't small talk from two NPCs meeting.
+# Every quest here was checked against what its scenes say in Skyrim.esm and the DLCs: none is part of a quest you can follow or a one-time event.
+# A quest that also holds a story scene stays off, like Whiterun's town scenes (the Jarl hearing about the dragon). Its chatter is named scene by scene instead.
+# One quest ID per line, or one scene as <file>:<form ID in that file>, as the Vanilla Dialogues log at Full shows it. Capital letters don't matter, and * stands for any text.
+# Players add their own, or switch one of these off, in Quests That Are Background Chatter. Mantella's updates replace this file.
+
+# Heimskr preaching to Talos in Whiterun
+DialogueWhiterunHeimskrPreachScene
+# The wounded soldier and farmer at Whiterun's temple
+DialogueWhiterunTemple
+DialogueWhiterunTempleHealFarmer
+DialogueWhiterunTempleHealSoldier
+DialogueWhiterunTempleTalkFarmer
+DialogueWhiterunTempleTalkSoldier
+# Winterhold's children playing Hunt the Elf
+DialogueWinterhold
+# Ward practice and the lectures at the College of Winterhold
+DialogueWinterholdCollege
+MGCollegeLectureInfos
+# Classes at the Bards College in Solitude
+DialogueSolitudeBardsCollegeClassGiraudScene1
+DialogueSolitudeBardsCollegeClassGiraudScene2
+DialogueSolitudeBardsCollegeClassIngeScene1
+DialogueSolitudeBardsCollegeClassIngeScene2
+DialogueSolitudeBardsCollegeClassPanteaScene1
+DialogueSolitudeBardsCollegeClassPanteaScene2
+# Bards' songs and their introductions, the instrumentals and the audience
+BardSongs
+BardSongsInstrumental
+BardAudienceQuest
+# Instrumental performances on Solstheim
+DLC2dunInstrumentalQST
+# The Khajiit caravans
+Caravans
+# Drunks in taverns
+FavorJobsDrunksScene
+# Followers commenting on caves, sights and danger, also Dawnguard's
+FollowerCommentary01
+FollowerCommentary02
+FollowerCommentary03
+DLC1NPCCommentary01
+DLC1NPCCommentary02
+DLC1NPCCommentary03
+# Soldiers greeting each other, and dogs
+CWDialogueSoldiersHellos
+DialogueGenericDogHellos
+# Bystanders cheering during a brawl: "Fight! Fight!"
+DGIntimidateQuest
+# The Blades sparring at Sky Haven Temple
+MQSkyHavenSparring
+# Adopted children calling each other names: "Horker-face!"
+BYOHRelationshipAdoption
+# The Dark Brotherhood Sanctuary gossiping about each other's contracts
+DarkBrotherhoodSanctuaryConvSystem
+# Solitude's court in the Blue Palace: the war's cost, Haafingar's defences, Tullius's appointment, Sybille's reagents, a parade, taxes
+DialogueSolitudePalaceScene1
+DialogueSolitudePalaceScene2
+DialogueSolitudePalaceScene3
+DialogueSolitudePalaceScene4
+DialogueSolitudePalaceScene5
+DialogueSolitudePalaceScene6
+DialogueSolitudePalaceScene7
+DialogueSolitudePalaceScene8
+DialogueSolitudePalaceScene9
+DialogueSolitudePalaceScene10
+
+# Townsfolk reacting to you or the world
+# The innkeeper's greeting, a call for service when you sit, the walk to your rented room, shopkeepers' welcome
+WITavern
+WIRentRoomWalkTo
+WIGreeting
+# Comments on what you craft at a forge, an enchanter or an alchemy lab
+WICraftItem01
+WICraftItem02
+WICraftItem03
+# Comments when you walk around half dressed or with a weapon out, and "Dragon! Everyone, inside!"
+WIChangeLocation01
+WIChangeLocation02
+WIChangeLocation09
+# Reactions to a dragon killed, a killing and a dead body
+WIDragonKilled
+WIKill05
+WIDeadBody01
+# Reactions to you picking something up or dropping it
+WIAddItem02
+WIRemoveItem03
+WIRemoveItem04
+# A child asking you to make them invisible: "I can't wait to be invisible."
+WICastMagic01
+
+# Single scenes from town quests that also hold story scenes
+# Mikael singing Ragnar the Red in the Bannered Mare: "One more song, what say you?"
+Skyrim.esm:092A31
+# The Battle-Born and Gray-Mane feud in Whiterun: "Someone's been pilfering crops from my farm." and "I've heard you Gray-Manes are collaborating with the Stormcloaks."
+Skyrim.esm:0E3DE3
+Skyrim.esm:0E3DE4
+# Kleppr and Frabbi bickering in Markarth: "What was that you said, venomous wife of mine?"
+Skyrim.esm:035F13

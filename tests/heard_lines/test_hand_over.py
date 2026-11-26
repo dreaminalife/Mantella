@@ -4,8 +4,9 @@ import logging
 
 import pytest
 
-from src.heard_lines.heard_line import GameTime, HandOver, HeardLine, HeardPerson
-from tests.heard_lines.lines import CARLOTTA, MIKAEL, PLAYER, REF, SAADIA, at, hand_over, menu_line, scene_line
+from src.heard_lines.heard_line import GameTime, HandOver, HeardLine, HeardPerson, SceneQuest
+from tests.heard_lines.lines import (CARLOTTA, FOLLOWING_MEETING_QUEST, MEETING_QUEST, MIKAEL, PLAYER, REF, SAADIA, SONG_SCENE, at, hand_over, menu_line,
+                                    scene_line)
 
 
 @pytest.mark.parametrize("text", [None, "", "   ", 42])
@@ -98,7 +99,49 @@ def test_quotes_and_letters_of_other_languages_come_through():
     assert line.words == words
 
 
+def test_a_scene_line_brings_its_quest():
+    [line] = HandOver.parse(hand_over(scene_line("Did you raise your prices, Carlotta?", quest=MEETING_QUEST))).lines
+    assert line.quest == SceneQuest("DialogueWhiterunCarlottaOlfinaScene1", in_journal=False, runs_once=False, npcs_meet=True)
+
+
+def test_without_a_quest_from_an_older_plugin_there_is_none():
+    [scene, menu] = HandOver.parse(hand_over(scene_line("Hello."), menu_line("Any rumors?", "Not today."))).lines
+    assert scene.quest is None and menu.quest is None
+
+
+def test_a_scene_line_brings_its_scene_and_whether_it_follows_a_quest():
+    [line] = HandOver.parse(hand_over(scene_line("I still miss her.", quest=FOLLOWING_MEETING_QUEST, scene_key=SONG_SCENE))).lines
+    assert line.scene_key == SONG_SCENE and line.quest and line.quest.follows_quest
+
+
+def test_from_an_older_plugin_there_is_no_scene_and_no_quest_progress():
+    [scene, menu] = HandOver.parse(hand_over(scene_line("Hello.", quest=MEETING_QUEST), menu_line("Any rumors?", "Not today."))).lines
+    assert scene.scene_key == "" and menu.scene_key == ""
+    assert scene.quest and not scene.quest.follows_quest
+
+
 def test_a_stored_line_reads_back_the_same():
-    for item in (scene_line("Round trip.", to=None), menu_line("Any rumors?", "Not today.")):
+    for item in (scene_line("Round trip.", to=None), menu_line("Any rumors?", "Not today."), scene_line("With a quest.", quest=MEETING_QUEST),
+                 scene_line("With a scene.", quest=FOLLOWING_MEETING_QUEST, scene_key=SONG_SCENE)):
         [line] = HandOver.parse(hand_over(item)).lines
         assert HeardLine.from_dict(json.loads(json.dumps(line.to_dict()))) == line
+
+
+def test_a_line_stored_before_quests_were_sent_reads_without_one():
+    [line] = HandOver.parse(hand_over(scene_line("Old."))).lines
+    stored = line.to_dict()
+    del stored["quest"]
+    del stored["scene_key"]
+    assert HeardLine.from_dict(stored) == line
+
+
+@pytest.mark.parametrize("quest, small_talk", [
+    (SceneQuest("DialogueWhiterunCarlottaOlfinaScene1", False, False, True), True),
+    (SceneQuest("DarkBrotherhoodSanctuaryConvSystem", True, False, True), False), # A quest the player follows
+    (SceneQuest("AModsMeetingScene", False, True, True), False), # Runs once
+    (SceneQuest("DialogueWhiterunHeimskrPreachScene", False, False, False), False), # Doesn't start when two NPCs meet
+    (SceneQuest("MS11WuunferthArrest", False, False, False), False), # A story scene with no journal entry
+    (SceneQuest("DialogueKarthwastenT01EnmonsHouseScene03", False, False, True, True), False), # Only plays after a step of The Heart of Dibella
+])
+def test_only_small_talk_from_two_npcs_meeting_counts(quest, small_talk):
+    assert quest.is_small_talk_when_npcs_meet == small_talk

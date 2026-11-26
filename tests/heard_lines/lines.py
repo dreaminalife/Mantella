@@ -21,12 +21,36 @@ def at(hour: float, day: int = 0) -> dict[str, float]:
     return {"day": START_DAY + day + hour / 24, "hour": hour}
 
 
+# Scenes' quests as Skyrim.esm has them, in the form the plugin sends them
+STORY_QUEST = {"id": "MS11", "journal": True, "runs_once": True, "npcs_meet": False} # Blood on the Ice
+MEETING_QUEST = {"id": "DialogueWhiterunCarlottaOlfinaScene1", "journal": False, "runs_once": False, "npcs_meet": True}
+TOWN_QUEST = {"id": "DialogueWhiterunHeimskrPreachScene", "journal": False, "runs_once": False, "npcs_meet": False} # Starts on a location change
+DIBELLA_QUEST = {"id": "T01", "journal": True, "runs_once": False, "npcs_meet": False} # No journal category, but journal objectives
+JOURNAL_MEETING_QUEST = {"id": "DarkBrotherhoodSanctuaryConvSystem", "journal": True, "runs_once": False, "npcs_meet": True}
+ONCE_MEETING_QUEST = {"id": "AModsMeetingScene", "journal": False, "runs_once": True, "npcs_meet": True}
+ONCE_QUEST = {"id": "DialogueWhiterunArgueScene", "journal": False, "runs_once": True, "npcs_meet": False}
+HELPER_QUEST = {"id": "MS11WuunferthArrest", "journal": False, "runs_once": False, "npcs_meet": False} # A story scene that looks like chatter
+TAVERN_QUEST = {"id": "WITavern", "journal": True, "runs_once": False, "npcs_meet": False} # Chatter filed as a Miscellaneous quest
+# Small talk from two NPCs meeting that only plays after a step of The Heart of Dibella: Enmon and Mena missing their daughter
+FOLLOWING_MEETING_QUEST = {"id": "DialogueKarthwastenT01EnmonsHouseScene03", "journal": False, "runs_once": False, "npcs_meet": True, "follows_quest": True}
+TOWN_STORY_QUEST = {"id": "DialogueWhiterun", "journal": False, "runs_once": False, "npcs_meet": False} # Mikael's song, and the Jarl hearing about the dragon
+
+# Scenes as the plugin names them: the file that added them, and their form id in it
+SONG_SCENE = "Skyrim.esm:092A31" # Mikael singing Ragnar the Red, in DialogueWhiterun
+DRAGON_NEWS_SCENE = "Skyrim.esm:09DCD5" # The Jarl hearing about the dragon, in DialogueWhiterun
+
+
 def scene_line(words: str, speaker=MIKAEL, to=CARLOTTA, heard_by=None, hour: float = 12.0, day: int = 0, time: int = 1000,
-               scene: int = SCENE, place: str = "The Bannered Mare", player_there: bool = True) -> dict[str, Any]:
+               scene: int = SCENE, place: str = "The Bannered Mare", player_there: bool = True, quest: dict[str, Any] | None = None,
+               scene_key: str | None = None) -> dict[str, Any]:
     line = {**at(hour, day), "time": time, "place": place, "scene": scene, "speaker": speaker, "words": words, "asked": "",
             "heard_by": heard_by if heard_by is not None else [MIKAEL, CARLOTTA, SAADIA], "player_there": player_there}
     if to is not None:
         line["to"] = to
+    if quest is not None:
+        line["quest"] = quest
+    if scene_key is not None:
+        line["scene_key"] = scene_key
     return line
 
 
@@ -43,7 +67,10 @@ def hand_over(*lines: dict[str, Any], now: dict[str, float] | None = None, playe
 
 
 def settings(days_kept: int = 3, most: int = 30, menu_only: list[str] | None = None, menu_talk: bool = True, scenes: bool = True,
-             ignored_npcs: list[str] | None = None) -> SimpleNamespace:
+             ignored_npcs: list[str] | None = None, npcs_meet: bool = False, story_quests: list[str] | None = None,
+             chatter_quests: list[str] | None = None) -> SimpleNamespace:
     """The Mantella settings, as ConfigLoader holds them"""
     return SimpleNamespace(heard_lines_days_kept=days_kept, heard_lines_most_per_npc=most, heard_lines_menu_only=menu_only or [],
-                           heard_lines_menu_talk=menu_talk, heard_lines_scenes=scenes, heard_lines_ignored_npcs=ignored_npcs or [])
+                           heard_lines_menu_talk=menu_talk, heard_lines_scenes=scenes, heard_lines_ignored_npcs=ignored_npcs or [],
+                           heard_lines_npcs_meet=npcs_meet, heard_lines_story_quests=story_quests or [],
+                           heard_lines_chatter_quests=chatter_quests or [])
