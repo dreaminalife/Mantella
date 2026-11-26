@@ -5,6 +5,13 @@ from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_string import ConfigValueString
 from src.config.types.config_value_selection import ConfigValueSelection
 from src.config.types.config_value_multi_selection import ConfigValueMultiSelection
+from src.heard_lines.vanilla_dialogue_lists import CHATTER_QUESTS_FILE, LISTS_FOLDER, MENU_CHOICES_FILE, STORY_QUESTS_FILE
+import os
+
+
+def _shipped_list_note(file_name: str) -> str:
+    """Where the player can read Mantella's own list, for a Vanilla Dialogues setting's description"""
+    return f"To see Mantella's whole list, open {os.path.join(LISTS_FOLDER, file_name)} next to Mantella.exe. Don't edit it: Mantella's updates replace it."
 
 
 class OtherDefinitions:
@@ -72,8 +79,9 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_menu_only_config_value() -> ConfigValue:
-        description = """Choices you pick in Skyrim's dialogue menu that NPCs don't remember. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings.
+        description = f"""Choices you pick in Skyrim's dialogue menu that NPCs don't remember. Some choices aren't real talk: they only open something, like the follower commands, a shop or a mod's settings.
                         Mantella already ignores I want you to.. and Goodbye. (Remove from Mantella conversation), and updates its own list. Add yours here.
+                        {_shipped_list_note(MENU_CHOICES_FILE)}
                         When you pick one of these, neither your choice nor the NPC's reply to it is remembered, also by everyone nearby. Only that one reply is left out: if the choice opens more choices, like I want you to.. opening Wait here, what you pick next and the reply to it are kept as usual, unless that choice is on the list too. Scenes NPCs play out with each other are never left out by this list.
                         Type each choice as your dialogue menu shows it, with the same punctuation (the two dots in I want you to..). Capital letters don't matter. Put a comma or a new line between choices, and use * for any text: Rent a room* catches "Rent a room (10 gold)" and "Rent a room (25 gold)".
                         Put - in front of a choice to remember it after all, even when Mantella's own list ignores it: -I want you to.."""
@@ -107,8 +115,9 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_story_quests_config_value() -> ConfigValue:
-        description = """Quests whose scenes NPCs always remember, even with Remember Scenes When NPCs Meet off. For quest scenes that start when two NPCs meet, like the guests' talk at the Thalmor Embassy party.
+        description = f"""Quests whose scenes NPCs always remember, even with Remember Scenes When NPCs Meet off. For quest scenes that start when two NPCs meet, like the guests' talk at the Thalmor Embassy party.
                         Mantella already keeps a list of them, and updates it. Add yours here.
+                        {_shipped_list_note(STORY_QUESTS_FILE)}
                         Type each quest's ID, with a comma or a new line between them. Capital letters don't matter. Use * for any text: MQ201Party* catches every quest whose ID starts with MQ201Party. Put - in front of one of Mantella's to take it off its list: -MQ201Party*.
                         To keep just one scene of a quest, type the scene instead, like Dragonborn.esm:03A320 (Drovas missing Varona). A scene always wins over its quest on the other list.
                         To find a scene's quest ID or the scene, set Vanilla Dialogues to Full in the Log part of the Other tab: each scene line in Mantella's log ends with its quest and its scene."""
@@ -116,8 +125,9 @@ class OtherDefinitions:
 
     @staticmethod
     def get_heard_lines_chatter_quests_config_value() -> ConfigValue:
-        description = """Quests whose scenes NPCs never remember: everyday talk that repeats, which isn't small talk from two NPCs meeting.
+        description = f"""Quests whose scenes NPCs never remember: everyday talk that repeats, which isn't small talk from two NPCs meeting.
                         Mantella already keeps a checked list of them, like Heimskr preaching, the bards' songs and the innkeeper's greeting, and updates it. Add yours here.
+                        {_shipped_list_note(CHATTER_QUESTS_FILE)}
                         Type each quest's ID, with a comma or a new line between them. Capital letters don't matter. Use * for any text. Put - in front of one of Mantella's to take it off its list: -BardSongs, or -* to remember all of them.
                         To leave out just one scene of a quest, type the scene instead, like Skyrim.esm:092A31 (Mikael singing in the Bannered Mare). A scene always wins over its quest on the other list.
                         Quests That Aren't Background Chatter wins when you put the same quest or scene on both. To find a scene's quest ID or the scene, set Vanilla Dialogues to Full in the Log part of the Other tab: each scene line in Mantella's log ends with its quest and its scene."""
