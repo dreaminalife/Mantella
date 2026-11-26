@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.config.config_loader import ConfigLoader
+from src.actions.function_manager import FunctionManager
 from src.config.definitions.action_definitions import ACTION_KINDS, actions_key
 from src.conversation.game_master import GameMasterTurns
 from src.game_manager import GameStateManager
@@ -77,6 +78,7 @@ class ActionGame(FakeGame):
         super().__init__(manager, around)
         self.sent: list[tuple[str, str, list[str]]] = [] # (speaker, line, action identifiers)
         self.typed_actions: list[list[str]] = []
+        self.typed_action_details: list[tuple[str, list[dict[str, Any]]]] = [] # (who does it, the actions with their details)
         self.npc_actions: list[dict[str, Any]] = [] # The actions sent without a line, with their arguments
         self.answers: dict[str, str] = {} # By action identifier: what the game answers
         self.nearby_actors: list[dict[str, Any]] = [] # Sent as mantella_nearby_actors with each continue request
@@ -99,6 +101,7 @@ class ActionGame(FakeGame):
             if request[comm_consts.KEY_REQUESTTYPE] == comm_consts.KEY_REQUESTTYPE_PLAYERINPUT:
                 # The player typed an action's name. MantellaConversation.ProcessNpcAction: the game does the action, then carries on
                 self.typed_actions.append(identifiers)
+                self.typed_action_details.append((action[comm_consts.KEY_ACTOR_SPEAKER], action[comm_consts.KEY_ACTOR_ACTIONS]))
                 self.is_player_turn = True
                 return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_PLAYERTALK}
             # An NPC's actions without a line: ProcessNpcAction, then RequestContinueConversation, with the answer if one answers back
@@ -257,6 +260,34 @@ def test_typing_an_action_whose_word_has_a_space_does_it(game: ActionGame, model
     game.start(HULDA)
     game.say("show wares")
     assert game.typed_actions == [[BARTER]]
+
+
+def test_typing_the_name_of_an_original_action_sends_it_without_details(game: ActionGame, model: ScriptedModel):
+    game.start(HULDA)
+    game.say("Barter")
+    assert game.typed_action_details == [(HULDA.name, [{"identifier": BARTER}])]
+
+
+def test_typing_the_name_of_another_mods_action_sends_who_it_is_with(game: ActionGame, model: ScriptedModel, default_config: ConfigLoader,
+                                                                    monkeypatch):
+    """Expanded Sex Actions' game script only listens for its actions sent with their details, as when an NPC starts its line with one"""
+    sex_with_npc = {"identifier": "mantella_npc_sex_npc", "name": "SexWithNPC", "description": "Initiate a sex scene with another NPC.",
+                    "key": "SexWithNPC", "prompt": "If the NPCs start having sex, begin your response with '{key}:'.",
+                    "one-on-one": False, "multi-npc": True, "radiant": True,
+                    "parameters": {"source": {"type": "array", "description": "The NPC initiating the sex scene.", "items": {"type": "string"},
+                                              "scope": "conversation", "maxItems": 1},
+                                   "target": {"type": "string", "description": "The target NPC receiving the action.", "scope": "conversation"}},
+                    "required": ["source", "target"]}
+    monkeypatch.setitem(FunctionManager._actions, sex_with_npc["identifier"], sex_with_npc)
+    default_config.all_actions = [*default_config.all_actions,
+                                  *(a for a in FunctionManager.get_all_actions() if a.identifier == sex_with_npc["identifier"])]
+    for kind in ACTION_KINDS:
+        setattr(default_config, actions_key(kind), [*getattr(default_config, actions_key(kind)), "SexWithNPC"])
+    game.start(HULDA, MIKAEL)
+    game.say("SexWithNPC")
+    [(speaker, sent)] = game.typed_action_details
+    [other] = {HULDA.name, MIKAEL.name} - {speaker}
+    assert sent == [{"identifier": "mantella_npc_sex_npc", "arguments": {"source": [speaker], "target": other}}]
 
 
 # Advanced Actions: the model picks actions with their details

@@ -891,10 +891,12 @@ class GameStateManager:
                 # if the player response is just the name of an action the NPCs can use here, force the action to trigger
                 # (the game does it with the last NPC who spoke)
                 if action.keyword.lower().replace(' ', '') == typed and action.identifier != LISTEN:
+                    speaker = npcs_in_conversation.last_added_character
+                    # Another mod's action gets its details as when the NPC starts a line with it, or its mod does nothing
                     return {comm_consts.KEY_REPLYTYPE: comm_consts.KEY_REPLYTYPE_NPCACTION,
                             comm_consts.KEY_REPLYTYPE_NPCACTION: {
-                                'mantella_actor_speaker': npcs_in_conversation.last_added_character.name,
-                                'mantella_actor_actions': [{'identifier': action.identifier}],
+                                'mantella_actor_speaker': speaker.name,
+                                'mantella_actor_actions': [FunctionManager.keyword_action(action.identifier, speaker, npcs_in_conversation)],
                                 }
                             }
         
