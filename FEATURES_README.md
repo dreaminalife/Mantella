@@ -40,11 +40,13 @@ Trying my best to explain why I added these features and how to make the most of
 - [Multiple Profile System](#multiple-profile-system)
 - [Prompt Profiles](#prompt-profiles)
 - [Conditional blocks in prompts](#conditional-blocks)
+- [Random LLM Selection](#random-llm-selection)
 - [Sequential LLM Selection](#sequential-llm-selection)
 - [Fallback Model](#fallback-model)
 - [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service)
 - [Decensor Bypass](#decensor-bypass)
 - [LLM Response Timeout](#llm-response-timeout)
+- [Claude Prompt Caching](#claude-prompt-caching)
 
 **Voices**
 
@@ -58,6 +60,7 @@ Trying my best to explain why I added these features and how to make the most of
 - [Conversation Wheel](#conversation-wheel)
 - [Talk, Nearby and Random Events](#talk-nearby-and-random-events)
 - [Drop Last Sentences](#drop-last-sentences)
+- [Replace Braille Blanks](#replace-braille-blanks)
 - [Interrupt Hotkey](#interrupt-hotkey)
 - [Show Them What You See](#show-them-what-you-see)
 - [In-Game Events](#in-game-events)
@@ -89,7 +92,7 @@ When an NPC loads, Mantella appends the matching descriptions to their bio under
 
 Note that there are no correct answers for how to create tags. It is up to your creativity and the story you want to tell.
 
-Enable or disable this feature with **Enable Character Tag Reading** in the LLM settings.
+Enable or disable this feature with **Enable Character Tag Reading** (**Large Language Model** tab → **Feature Toggles**, on by default).
 
 ### Recommended files (Nexus)
 
@@ -796,7 +799,6 @@ The **Tag Editor** tab in the Mantella UI. Skyrim only.
 
 - If **Enable Character Tag Reading** is off, a note at the top of the tab says saved tags won't be used until it's turned back on.
 - Renaming a tag and giving a tag to NPCs from this tab are not supported yet. Use the Bio Editor to give tags.
-- The full design is in [docs/tag_editor.md](docs/tag_editor.md).
 
 ## Lorebook
 
@@ -1061,7 +1063,7 @@ Supported services for profiles: **OpenRouter**, **OpenAI**, and **NanoGPT**.
 
 ### Profiles vs random LLM pools
 
-- **Random LLM pools** pick among different *models*.
+- **[Random LLM pools](#random-llm-selection)** pick among different *models*.
 - **Profiles** pick among different *parameter sets* for a given model.
 
 They can work together: a model is chosen from the pool, then (when random selection is active)
@@ -1085,7 +1087,7 @@ Why a second system:
 
 Named prompt overlays, stored in `data/prompt_profiles.json`. Edited in the **Prompt Profiles** tab.
 
-They are **per prompt type**. Skyrim Prompt, Multi-NPC, Multi-NPC Director, Radiant, the [Game Master](#game-master-mode) prompts (Game Master, Game Master NPC and the three Decision prompts), the five [NPC Initiative](#npc-initiative) prompts, the [NPC Event](#npc-events) Generator and Wind-Down prompts, the [Talk/Nearby/Random Event](#talk-nearby-and-random-events) Generator prompt, the [Shout](#shout) and [Say To Room](#say-something-to-the-room) prompts (Decision Nearby Criteria, Say To Room Decision Nobody Criteria, the four Spoken To / Part Of Event criteria and the Group Answer Note), Memory, Inner Monologue, Personal Reflection, Resummarize, Vision, the radiant start/end prompts, and the two [Decensor Bypass](#decensor-bypass) prompts each have their own named set. Fallout 4 conversation prompts are not overlay types — those still come from the Prompts tab. Shared types (memory, thoughts, reflection, vision, radiant start/end, decensor) apply regardless of game.
+They are **per prompt type**. Skyrim Prompt, Multi-NPC, Multi-NPC Director, Radiant, the [Game Master](#game-master-mode) prompts (Game Master, Game Master NPC and the three Decision prompts), the five [NPC Initiative](#npc-initiative) prompts, the [NPC Event](#npc-events) Generator and Wind-Down prompts, the [Talk/Nearby/Random Event](#talk-nearby-and-random-events) Generator prompt, the [Shout](#shout) and [Say To Room](#say-something-to-the-room) prompts (Decision Nearby Criteria, Say To Room Decision Nobody Criteria, the four Spoken To / Part Of Event criteria and the Group Answer Note), Memory, Inner Monologue, Personal Reflection, Resummarize, Vision, the [Advanced Actions](#npc-actions) Prompt, [Speech-to-Text Names](#names-sent-with-every-line), the radiant start/end prompts, and the two [Decensor Bypass](#decensor-bypass) prompts each have their own named set. Fallout 4 conversation prompts are not overlay types — those still come from the Prompts tab. Shared types (memory, thoughts, reflection, vision, radiant start/end, decensor) apply regardless of game.
 
 Profiles can also reuse blocks of text through [shared sections](#shared-sections).
 
@@ -1250,6 +1252,41 @@ Never write out your reasoning.
 
 Only the display changes: what is saved and sent is the plain text.
 
+## Random LLM Selection
+
+### What it does
+
+Mantella picks the model for you, at random, from a list you write. Each model has its own style, so replies stay varied, and you can try several models without switching by hand. One-on-one and group conversations each have their own list and switches:
+
+- **Per conversation:** one model is picked when a conversation starts and is used for the whole conversation.
+- **Per request:** every NPC reply picks a model again. This wins over the per-conversation pick and over an NPC's own model ([Per-Character LLM and TTS Service](#per-character-llm-and-tts-service)).
+
+Every model in the list has the same chance. To make one come up more often, list it twice. If [Sequential LLM Selection](#sequential-llm-selection) is on for the same kind of conversation, it is used instead of the per-request pick.
+
+### Where to find it
+
+**Large Language Model** tab → **Quality of Life** → **Enable Per-Conversation Random LLM Selection (One-on-One)**, **Enable Per-Conversation Random LLM Selection (Multi-NPC)**, **Enable Per-Request Random LLM (One-on-One)**, **Enable Per-Request Random LLM (Multi-NPC)**, **LLM Pool (One-on-One)** and **LLM Pool (Multi-NPC)**.
+
+### Quick start
+
+1. Fill **LLM Pool (One-on-One)**:
+
+```
+[
+{"service": "OpenRouter", "model": "deepseek/deepseek-v4-pro-0813"},
+{"service": "OpenRouter", "model": "google/gemini-3.8-flash"}
+]
+```
+
+2. Turn on **Enable Per-Conversation Random LLM Selection (One-on-One)**, or **Enable Per-Request Random LLM (One-on-One)** for a new pick with every reply.
+3. Talk to an NPC. With **LLM models and profiles** on Short (see [Log](#log)), the log says which model was picked, for example `Randomly selected LLM for one_on_one: OpenRouter/google/gemini-3.8-flash (without profile)`.
+
+**Notes**
+
+- An empty or broken list uses your normal model.
+- With **Apply Profile for One-on-One Conversations** (or **Multi-NPC**) on, the picked model uses its saved [model profile](#multiple-profile-system), if it has one.
+- Each service needs its usual API key file.
+
 ## Sequential LLM Selection
 
 ### What it does
@@ -1266,7 +1303,7 @@ Sequential selection **takes priority** over per-request random LLM selection. I
 
 ### Use cases
 
-- Add more variety to the conversation. Each new model would bring something new to the conversation. The sequential order can make sure it follows the exact order you want it to be insread of randomly jumping around (random llm selection).
+- Add more variety to the conversation. Each new model would bring something new to the conversation. The sequential order can make sure it follows the exact order you want it to be instead of randomly jumping around ([Random LLM Selection](#random-llm-selection)).
 - **Controlled A/B** — same conversation, model A then B then C, so you can hear the difference without dice rolls.
 - Some models are really not great at opening up a conversation. Don't put that on the top of the list.
 - **Variety without chaos** — rotate two or three models you already like, instead of a large random pool.
@@ -1320,7 +1357,7 @@ It applies to NPC replies in all conversations, NPC Events included. Summaries, 
 
 ### What it does
 
-Lets one NPC use a different model or a different voice service from everyone else. For example, Serana talks through a stronger model and is voiced by xVASynth, while everyone else uses your usual model and Piper.
+Lets one NPC use a different model or a different voice service from everyone else. For example, Serana talks through a stronger model and is voiced by xVASynth, while everyone else uses your usual model and Pocket TTS.
 
 You set it in the character CSV, one row per NPC, with these columns:
 
@@ -1337,7 +1374,7 @@ Leave a cell empty to use your normal setting for that NPC.
 
 - Only used while **Allow Per-Character LLM Overrides** is on, and only in **one-on-one** conversations. In group conversations, the Game Master and NPC Events, the NPC uses the normal models for those.
 - Both cells must be filled. With only one, or with a service Mantella doesn't know, the NPC uses your normal model and the log says why.
-- If a [random or sequential pool](#sequential-llm-selection) picks the model for a reply, the pool wins.
+- If a [random](#random-llm-selection) or [sequential](#sequential-llm-selection) pool picks the model for a reply, the pool wins.
 - With **Apply Profile for One-on-One Conversations** on, the NPC's model uses its saved [model profile](#multiple-profile-system), if it has one. Otherwise it uses your normal LLM parameters.
 - The service needs its usual API key file, the same as when you pick it on the Large Language Model tab.
 
@@ -2003,7 +2040,7 @@ At least **one** sentence is always kept. Set to **0** to disable (default).
 
 [Turn thoughts](#turn-thoughts) are not counted and are never dropped — only spoken sentences are.
 
-**Tradeoff:** Mantella has to generate those extra sentences before it knows which ones to throw away, so a higher N means a longer wait before the NPC starts talking. Setting it to a small number like 1 won't cause any noticable delays.
+**Tradeoff:** Mantella has to generate those extra sentences before it knows which ones to throw away, so a higher N means a longer wait before the NPC starts talking. Setting it to a small number like 1 won't cause any noticeable delays.
 
 ### Where to find it
 
@@ -2016,6 +2053,16 @@ At least **one** sentence is always kept. Set to **0** to disable (default).
 3. Talk to an NPC. Trailing questions / wrap-up lines should disappear from speech and from the live history.
 
 If replies feel clipped, set it back to `0` or combine with a lower **Max Sentences per Response** instead.
+
+## Replace Braille Blanks
+
+### What it does
+
+Some models write an invisible character (the "Braille blank") instead of a normal space. The text looks fine, but Mantella can't tell where one sentence ends and the next begins, so lines get cut in odd places or the voice stumbles. With this on, every Braille blank in a reply is turned into a normal space before anything else happens. Off by default.
+
+### Where to find it
+
+**Large Language Model** tab → **Quality of Life** → **Replace Braille Blanks**.
 
 ## Send Only Bios
 
@@ -2272,7 +2319,7 @@ The handshake and commitment of [Decensor Bypass](#decensor-bypass) are not part
 
 ### Where to find it
 
-The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold, Game Master Message Limit and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained. **NPC Initiative** holds NPC Initiative Threshold, and **Vanilla Dialogues** holds how long NPCs remember Skyrim's own lines they heard (see [Vanilla Dialogues](#vanilla-dialogues)).
+The **Conversation** tab in the Mantella UI (was Live Conversation). The talk settings, which set how much the NPCs say before your turn, are at the end of the same page (see [Talk Level](#talk-level)). The settings are in folded sections: click a title to open it. The page heading links to this documentation. **All Conversations** holds Game Master Spoken To Threshold, Game Master Message Limit and the shared talk settings, then each kind of conversation (Group Conversation, Shout, Director Mode, Conversation Event, Nearby Event, Random Event, Watched NPC Event) has its own section, with its own Max NPC Turns per Player Turn (or the limit that kind uses instead), and where **Use its own settings** shows its own talk settings. Under each choice, what it does is explained. **NPC Initiative** holds NPC Initiative Threshold, **Vanilla Dialogues** holds how long NPCs remember Skyrim's own lines they heard (see [Vanilla Dialogues](#vanilla-dialogues)), and **Actions**, at the end, holds which actions NPCs may use (see [NPC Actions](#npc-actions)).
 
 ### Quick start
 
@@ -2597,7 +2644,7 @@ What your prompts say about you is up to them: variables like `{player_name}` or
 
 ### Quick start
 
-1. **Large Language Model** tab → turn on **Multi Conversation Director Mode** (optionally also [Multi-NPC Game Master Mode](#game-master-mode)).
+1. **Large Language Model** tab → turn on **Multi Conversation Director Mode**. [Multi-NPC Game Master Mode](#game-master-mode) is on by default; turn it off to have one LLM call write every NPC's lines.
 2. Start a conversation with one or more NPCs.
 3. Type a direction, for example *Lydia and Serana sit by the fire after a long day of travel.*
 4. Let the NPCs talk. Send `.` to keep it going, or type a new direction to change the scene.
@@ -2676,7 +2723,6 @@ In game: **Shout** / **Private** on the [Conversation Wheel](#conversation-wheel
 - If someone picked can't join (they walked off or got busy), Mantella's log says why, for example `Shout: Sinmir could not be added to the conversation: in a scene`. With **Show Messages** on, the game shows it too.
 - With [Director Mode](#multi-conversation-director-mode) on, Shout is directed too, and you don't count toward **Most People in Conversation**.
 - [NPC Events](#npc-events) run in Shout from the start, and Nearby and Random Events switch it on.
-- The full rules are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Shout".
 
 ## Say Something to the Room
 
@@ -2839,7 +2885,7 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 
 ### Quick start
 
-1. Turn on [Game Master Mode](#game-master-mode) and start a conversation with three NPCs.
+1. Check that [Game Master Mode](#game-master-mode) is on (it is by default) and start a conversation with three NPCs.
 2. Say *Good evening, everyone.* With the defaults, the line was spoken to all three, so each of them answers before your turn.
 3. Open the **Conversation** page → **All Conversations** and tick **Nobody in particular** under **Who must speak before your turn**.
 4. Say the same again. Now nobody has to answer: one of them answers first, then the Game Master may give you the turn.
@@ -2849,7 +2895,6 @@ The **Conversation** page in the Mantella UI, below the live conversation. The p
 - Changes apply from the next line, also during a conversation.
 - Only conversations with the Game Master use these settings: groups with Game Master Mode on, Shout, saying something to the room, Director Mode with Game Master Mode, events and NPC Events. A one-on-one conversation without Shout is unchanged.
 - If the service refuses the extra "spoken to" questions, or the answer can't be read, the Game Master's pick stands, as before.
-- More examples are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Talk Level".
 
 ## NPC Initiative
 
@@ -3100,7 +3145,7 @@ The events are written by the NPC Event Generator model (**Large Language Model*
 ### Quick start
 
 1. Set up the Game Master model as in [Game Master Mode](#game-master-mode) → **Quick start** step 1, and pick an **NPC Event Generator Model** on the **Large Language Model** tab.
-2. Turn on **Multi-NPC Game Master Mode**.
+2. Check that **Multi-NPC Game Master Mode** is on (it is by default).
 3. In game, start a conversation, hold the wheel key and pick **Talk Event**.
 4. Read what happened, close the box, and listen to the NPCs react.
 
@@ -3112,7 +3157,6 @@ The events are written by the NPC Event Generator model (**Large Language Model*
 - If nothing is written or the request fails, you get the note *Nothing happened* and it's your turn. A Nearby Event with nobody nearby gives *Nobody is nearby*.
 - Ending the conversation while the event is being written cancels it.
 - With [Director Mode](#multi-conversation-director-mode) on, the events are never about you.
-- The full rules are in [docs/conversation_wheel.md](docs/conversation_wheel.md), "Events".
 
 ## NPC Actions
 
@@ -3189,9 +3233,9 @@ How actions fit the kinds of conversation:
 
 ### Where to find it
 
-**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **One-on-one**, **Group**, **Shout**, **NPC Events**, **Director Mode** and **Radiant Conversations (deprecated)**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
+**Conversation** page → **Actions**, at the end of the page, below the conversation settings: one folded list of tick boxes for each kind of conversation (click its title to open it), **Actions: One-on-one and NPC Initiative**, **Actions: Group**, **Actions: Shout**, **Actions: NPC Events**, **Actions: Director Mode** and **Actions: Radiant Conversations (deprecated)**. The other conversations use these: NPC Initiative the One-on-one ones, Say Something to the Room the Shout ones, and Talk, Nearby and Random Events those of the conversation they happen in. Each kind uses its own list however many people are in it: a Shout with one person uses the Shout list. The NPC Events list applies while you watch; once you step in, it's a Shout (or a Group conversation if you went Private), with that list.
 
-**All Conversations**, the first list, turns an action on or off everywhere at once: tick Barter there and it's ticked in all six lists, untick it and it's unticked in all of them. An action shows ticked there only while it's on in every list, so Inventory, on by default only in One-on-one, Group and Shout, shows unticked. Its **Default** button puts every list back to its own defaults.
+**Actions: Global Settings**, the first list, turns an action on or off everywhere at once: tick Barter there and it's ticked in all six lists, untick it and it's unticked in all of them. An action shows ticked there only while it's on in every list, so Inventory, on by default only in One-on-one, Group and Shout, shows unticked. Its **Default** button puts every list back to its own defaults.
 
 **Conversation** page → **Actions** → **Advanced Actions** turns Advanced Actions on. The actions above are in the same tick-box lists, and only work while it's on. While it's on, the prompts' `{actions}` no longer list the actions: the model gets them separately.
 
@@ -3207,7 +3251,7 @@ When you update, your old **Actions** list (Other tab) is moved over once: an ac
 
 ### Quick start
 
-1. Open **Conversation** → **Actions** and tick **Wait** and **Follow** under **One-on-one**.
+1. Open **Conversation** → **Actions** and tick **Wait** and **Follow** under **Actions: One-on-one and NPC Initiative**.
 2. In game, turn on **Allow Follow (Experimental)** in **MCM → Mantella → General → NPC Actions**.
 3. Talk to an NPC and ask them to come with you. They answer with Follow and start following you. Ask them to wait here: they stop where they are.
 
@@ -3487,6 +3531,18 @@ It applies to one-on-one, multi-NPC, summary, private thoughts, personal reflect
 
 **Large Language Model** tab → **Advanced** → **LLM Response Timeout** (seconds, default **120**, range 1–999).
 
+## Claude Prompt Caching
+
+### What it does
+
+Most of what Mantella sends with each reply is the same as last time: the prompt with the bios and memories, then the conversation so far. With this on, Claude and Gemini models on OpenRouter keep that part ready from the previous reply and charge less for it, so long conversations usually cost less. What the NPCs say doesn't change. Off by default.
+
+It only works with **OpenRouter** and a model whose name contains `claude` or `gemini`. With any other service or model, the switch does nothing.
+
+### Where to find it
+
+**Large Language Model** tab → **Quality of Life** → **Enable Claude Prompt Caching**.
+
 ## Which Voice and Speech Service to Pick
 
 ### What it does
@@ -3504,13 +3560,13 @@ Prices are the ones each service lists on its website, per million characters of
 
 | Service | Our pick? | Where it runs | Price per 1M characters | Good to know |
 |---|---|---|---|---|
-| **Pocket TTS** | Our pick on your local  | Your PC, on the processor, so the graphics card stays free for Skyrim | Free | Light and sounds great. Needs a free Hugging Face sign-in once to clone voices (see [Text-to-Speech Services](#text-to-speech-services)). English, French, German, Portuguese, Italian, Spanish and Dutch |
+| **Pocket TTS** | Our pick on your PC | Your PC, on the processor, so the graphics card stays free for Skyrim | Free | Light and sounds great. Needs a free Hugging Face sign-in once to clone voices (see [Text-to-Speech Services](#text-to-speech-services)). English, French, German, Portuguese, Italian, Spanish and Dutch |
 | **Inworld**, Model TTS-2 Flash | Our pick online | Online | $15 | Good enough for most players: good quality and much cheaper than ElevenLabs.|
-| **Inworld**, Model TTS-2 | Only if you want Directions | Online | $25 | During testing it doesn't sound significantly better than the flash model. But it support three different delivery modes that could make a difference. |
+| **Inworld**, Model TTS-2 | Only if you want Directions | Online | $25 | In our tests it doesn't sound much better than TTS-2 Flash, but it supports **Directions** and three **Delivery** modes (Stable, Balanced, Creative) |
 | **HeyGen**, Model Turbo Free | Our pick online, until Nov 30, 2026 | Online | Free until Nov 30, 2026 | The most lively voices, with **Expressiveness** to set how lively (0 is flattest, 1 is HeyGen's own). Free accounts can clone 20 voices a day |
-| **HeyGen**, Model Turbo | Our pick online | Online | $8 | The most lively voices, with **Expressiveness** to set how lively. Personally Prefer it on some NPCs. |
+| **HeyGen**, Model Turbo | Our pick online | Online | $8 | The most lively voices, with **Expressiveness** to set how lively. We prefer it for some NPCs |
 | **Iodine**, Model Iodine v2 | Our pick online | Online | About $7.50 | Among the liveliest voices. No free model, so every line costs. The most ways to set how a line is said: moods, directions, and styles on a few words, such as a whisper |
-| **Boson AI** | Our pick online | Online | $15 | A $10 trial credit you claim once. Also support tone adjustment. |
+| **Boson AI** | Our pick online | Online | $15 | A $10 trial credit you claim once. Also takes moods, such as `[angry]` |
 | ElevenLabs | | Online | $40 | Sounds the best, costs the most |
 | Qwen | | Online | $30 | **Directions** in English only |
 | Piper | | Your PC | Free | Doesn't clone voices. Comes with the original Mantella mod: keep it turned on, with Mantella Remake loading after it |
