@@ -538,7 +538,7 @@ class LLMDefinitions:
                         When disabled, multi-NPC conversations work as before: one LLM call writes the lines of all NPCs.
                         Can be combined with Multi Conversation Director Mode: the Game Master then only picks NPCs, and the player directs the scene.
                         Note: This only affects Skyrim multi-NPC conversations, not radiant or single-NPC conversations."""
-        return ConfigValueBool("multi_npc_game_master_mode", "Multi-NPC Game Master Mode", description, False, tags=[ConfigValueTag.share_row])
+        return ConfigValueBool("multi_npc_game_master_mode", "Multi-NPC Game Master Mode", description, True, tags=[ConfigValueTag.share_row])
 
     @staticmethod
     def get_multi_npc_game_master_director_max_npc_turns_config_value() -> ConfigValue:
