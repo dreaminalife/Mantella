@@ -1,8 +1,9 @@
 """Mantella's own list files in data/Skyrim/vanilla_dialogues, and the player's entries on top of them"""
 import logging
 import os
+import re
 
-from src.heard_lines.vanilla_dialogue_lists import LISTS_FOLDER, EditableList, ShippedLists, read_list
+from src.heard_lines.vanilla_dialogue_lists import LISTS_FOLDER, SCENE_MARK, EditableList, ShippedLists, read_list
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -36,6 +37,21 @@ def test_mantellas_files_ship_with_the_corrections():
     for quest in ("dialoguewhiterun", "dialoguewindhelm", "wigameshideandseek", "wichangelocation04", "wicastmagic02", "wiadditem03"):
         assert quest not in lists.chatter_quests
     assert not any("*" in quest for quest in lists.chatter_quests) # Each named: a wildcard could catch a mod's story quest
+
+
+def test_mantellas_scene_entries_are_written_the_way_the_log_shows_scenes():
+    """A mistyped scene entry never matches, and its scene would quietly go back to its quest's entry"""
+    lists = ShippedLists.load(os.path.join(REPO, LISTS_FOLDER))
+    scenes = [entry for entry in lists.story_quests + lists.chatter_quests if SCENE_MARK in entry]
+    assert scenes
+    assert [entry for entry in scenes if not re.fullmatch(r"[^:*?]+\.es[mpl]:[0-9a-f]{6}", entry)] == []
+
+
+def test_no_entry_on_mantellas_chatter_list_is_cancelled_by_mantellas_story_list():
+    """Quests That Aren't Background Chatter is checked first: a chatter entry it also matches would never leave anything out"""
+    lists = ShippedLists.load(os.path.join(REPO, LISTS_FOLDER))
+    story = EditableList(lists.story_quests)
+    assert [entry for entry in lists.chatter_quests if story.ours_match(entry)] == []
 
 
 def test_mantellas_files_are_shipped_and_tracked():

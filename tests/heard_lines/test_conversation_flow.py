@@ -8,7 +8,7 @@ import pytest
 
 from src.game_manager import GameStateManager
 from src.http.communication_constants import communication_constants as comm_consts
-from tests.heard_lines.lines import CARLOTTA, HULDA, SAADIA, hand_over, menu_line, scene_line
+from tests.heard_lines.lines import CARLOTTA, HULDA, MIKAEL, SAADIA, hand_over, menu_line, scene_line
 from tests.test_conversation_events_flow import FakeGame, FakeModel, PLAYER, HULDA as HULDA_PERSON, MIKAEL as MIKAEL_PERSON, manager, model # noqa: F401 (fixtures)
 
 WORLD = PLAYER.name + "Test1" # The world FakeGame starts its conversations in
@@ -141,6 +141,33 @@ def test_a_scene_that_loops_during_the_conversation_is_given_once_and_remembered
     assert kept(game.manager, "Hulda", "01A66E") == [HEARD, "Thank you, thank you.", "Something new."]
 
 
+def test_a_line_repeated_in_one_message_goes_in_once(game: HeardLinesGame, model: FakeModel):
+    game.start(HULDA_PERSON)
+    now = int(time.time())
+    game.heard = hand_over(scene_line(HEARD, time=now, heard_by=[HULDA]), scene_line(HEARD, time=now + 30, heard_by=[HULDA]))
+    game.say("Did you hear that?")
+    assert model.npc_requests[-1].count(HEARD) == 1
+    game.end()
+    assert kept(game.manager, "Hulda", "01A66E") == [HEARD]
+
+
+def test_the_same_words_from_someone_else_or_after_another_pick_are_given_again(game: HeardLinesGame, model: FakeModel):
+    """Only the same speaker saying the same words, and for menu talk after the same pick, is a repeat"""
+    game.start(HULDA_PERSON)
+    now = int(time.time())
+    game.heard = hand_over(scene_line("Hmph.", time=now, heard_by=[HULDA]),
+                           menu_line("Any rumors?", "Not today.", speaker=SAADIA, heard_by=[SAADIA, HULDA], time=now + 1))
+    game.say("Did you hear that?")
+    game.heard = hand_over(scene_line("Hmph.", speaker=CARLOTTA, to=MIKAEL, time=now + 2, heard_by=[HULDA]),
+                           menu_line("Any work?", "Not today.", speaker=SAADIA, heard_by=[SAADIA, HULDA], time=now + 3),
+                           menu_line("Any rumors?", "Not today.", speaker=SAADIA, heard_by=[SAADIA, HULDA], time=now + 4))
+    game.say("And again.")
+    request = model.npc_requests[-1]
+    assert 'Nearby, Mikael says to Carlotta: "Hmph."' in request and 'Nearby, Carlotta says to Mikael: "Hmph."' in request
+    assert 'Kit asks Saadia: "Any work?" Saadia answers: "Not today."' in request
+    assert request.count('Kit asks Saadia: "Any rumors?"') == 1 # Only from the earlier message
+
+
 @pytest.mark.parametrize("summaries_on", [True, False])
 def test_a_short_conversation_still_remembers_what_was_heard(game: HeardLinesGame, summaries_on: bool):
     """No summary is written for a short conversation, or with summaries off: the lines are kept anyway"""
@@ -156,6 +183,7 @@ def test_lines_caught_before_the_start_become_memory(game: HeardLinesGame, model
     game.heard = hand_over(scene_line(HEARD, time=int(time.time()) - 60, heard_by=[HULDA]))
     game.start(HULDA_PERSON)
     assert kept(game.manager, "Hulda", "01A66E") == [HEARD]
+    game.say("Hello.") # Automatic Greeting is off at first, so her first reply is to the player
     assert "Hulda overheard Mikael say to Carlotta" in model.npc_requests[0] # In her memory
     assert "Nearby, Mikael says" not in model.npc_requests[0]
 

@@ -1,5 +1,6 @@
 """Sorting each line: into the running conversation, or kept as a heard line"""
 import logging
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from src.heard_lines.heard_line import GameTime, HeardLine, HeardPerson
 from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver
 from src.heard_lines.heard_lines_store import HeardLinesStore
-from src.heard_lines.vanilla_dialogue_lists import ShippedLists
+from src.heard_lines.vanilla_dialogue_lists import LISTS_FOLDER, ShippedLists
 from tests.heard_lines.lines import (CARLOTTA, DIBELLA_QUEST, DRAGON_NEWS_SCENE, FOLLOWING_MEETING_QUEST, HELPER_QUEST, HULDA, JOURNAL_MEETING_QUEST,
                                     MEETING_QUEST, MIKAEL, ONCE_MEETING_QUEST, ONCE_QUEST, PLAYER, REF, SAADIA, SONG_SCENE, STORY_QUEST, TAVERN_QUEST,
                                     TOWN_QUEST, TOWN_STORY_QUEST, WORLD, at, hand_over, menu_line, scene_line, settings)
@@ -393,6 +394,32 @@ def test_a_minus_switches_off_mantellas_scene_entry(store, off):
     assert store.kept["Saadia"] == ["One more song, what say you?", "And you're sure?"]
 
 
+def test_mantellas_chatter_scene_wins_over_the_players_story_quest_until_they_switch_it_off(store):
+    """Scene entries decide first: the player keeping a whole quest still leaves out Mantella's chatter scene in it"""
+    lists = ShippedLists(chatter_quests=("skyrim.esm:092a31",))
+    receive(store, song_and_dragon_news(), config=settings(story_quests=["dialoguewhiterun"]), lists=lists)
+    assert store.kept["Saadia"] == ["And you're sure?"]
+    store.kept.clear()
+    receive(store, song_and_dragon_news(), config=settings(story_quests=["dialoguewhiterun"], chatter_quests=["-skyrim.esm:092a31"]), lists=lists)
+    assert store.kept["Saadia"] == ["One more song, what say you?", "And you're sure?"]
+
+
+VARONA_QUEST = {"id": "DLC2TelMithrynDrovasElyneaScene01", "journal": False, "runs_once": False, "npcs_meet": True} # Starts when two NPCs meet
+VARONA_SCENE = "Dragonborn.esm:03A320" # "I miss Varona", the one story scene of its kind in Tel Mithryn
+
+
+@pytest.mark.parametrize("config, lists, kept", [
+    (settings(), ShippedLists(), False),                                                           # Small talk from two NPCs meeting
+    (settings(story_quests=["dragonborn.esm:03a320"]), ShippedLists(), True),                      # The player's scene entry keeps it
+    (settings(), ShippedLists(story_quests=("dragonborn.esm:03a320",)), True),                     # So does Mantella's
+    (settings(story_quests=["-dragonborn.esm:03a320"]), ShippedLists(story_quests=("dragonborn.esm:03a320",)), False), # Switched off: back to the rule
+    (settings(chatter_quests=["dragonborn.esm:03a320"]), ShippedLists(story_quests=("dragonborn.esm:03a320",)), False), # The player's entry wins
+])
+def test_a_story_scene_entry_keeps_one_scene_from_two_npcs_meeting(store, config, lists, kept):
+    receive(store, hand_over(scene_line("I miss Varona.", quest=VARONA_QUEST, scene_key=VARONA_SCENE)), config=config, lists=lists)
+    assert (store.kept != {}) == kept
+
+
 def test_a_line_without_a_scene_is_decided_by_its_quest(store):
     receive(store, hand_over(scene_line("Welcome.", quest=TAVERN_QUEST)), config=settings(chatter_quests=["skyrim.esm:*"]))
     assert store.kept["Saadia"] == ["Welcome."]
@@ -460,6 +487,52 @@ def test_at_full_menu_talk_shows_the_question_and_a_left_out_pick_says_why(store
     kept, left_out = sorted(written(), key=lambda text: "Left out" in text)
     assert 'Hulda, answering Kit\'s "Heard any rumors?": "Plenty."' in kept and kept.endswith("Kept by all 1 as a heard line.")
     assert '"I want you to.."' in left_out and "Left out: the pick only opens a menu" in left_out
+
+
+def quest(quest_id: str, journal: bool = False, runs_once: bool = False, npcs_meet: bool = False, follows_quest: bool = False) -> dict:
+    """A quest as the plugin sends it"""
+    return {"id": quest_id, "journal": journal, "runs_once": runs_once, "npcs_meet": npcs_meet, "follows_quest": follows_quest}
+
+
+# Scenes from Skyrim and its DLCs as the plugin reads them from the game's files: the words, the quest's facts and the scene
+SHIPPED_CASES = [
+    # Story, or story we can't be sure of
+    ("And you're sure?", quest("DialogueWhiterun"), "Skyrim.esm:09DCD5", True), # The Jarl hearing about the dragon
+    ("Are you all right, dear? I thought I saw a tear in your eye a moment ago.", # Enmon and Mena, only after a step of The Heart of Dibella
+     quest("DialogueKarthwastenT01EnmonsHouseScene03", npcs_meet=True, follows_quest=True), "Skyrim.esm:063B2E", True),
+    ("Are you feeling any stronger?", quest("DLC2MHBujoldKuvarReclaimScene02", npcs_meet=True), "Dragonborn.esm:025203", True), # Thirsk, retaken
+    ("I don't want to get comfortable here. We need to be back up there.", quest("DLC2MHBujoldKuvarScene01", npcs_meet=True), "Dragonborn.esm:01A540",
+     True), # Thirsk, before you retake it
+    ("They've laughed at me, Aphia.", quest("DLC2RRCresciusHouseScene01", npcs_meet=True), "Dragonborn.esm:019936", True), # After The Final Descent
+    ("Gralnach! I told you not to go through your father's things!", quest("DialogueHeartwoodMillScene01", npcs_meet=True), "Skyrim.esm:0302C3", True),
+    ("I miss Varona. She used to help me with the gardening.", quest("DLC2TelMithrynDrovasElyneaScene01", npcs_meet=True), "Dragonborn.esm:03A320", True),
+    ("Can you believe we're here? Saarthal, of all places.", quest("DialogueSaarthalExteriorConvoScene1", npcs_meet=True), "Skyrim.esm:037DD2", True),
+    ("You. You're coming with me. We're finally going to arrest the Butcher.", quest("MS11WuunferthArrest"), "Skyrim.esm:0D2CB0", True),
+    ("It was Mara that first gave birth to all of creation.", quest("RelationshipMarriageWedding"), "Skyrim.esm:074791", True), # Your wedding
+    # Chatter
+    ("Thank you, thank you. No, please, hold your applause.", quest("DialogueWhiterun"), "Skyrim.esm:092A31", False), # Mikael's song, same quest as the dragon news
+    ("Someone's been pilfering crops from my farm.", quest("DialogueWhiterun"), "Skyrim.esm:0E3DE3", False), # The Battle-Born and Gray-Mane feud
+    ("Steward, when is my appointment to meet with General Tullius?", # Court talk, which only checks MS05 to pause during the festival
+     quest("DialogueSolitudePalaceScene3", npcs_meet=True, follows_quest=True), "Skyrim.esm:0367FD", False),
+    ("I think I may wait until the Burning of King Olaf to have and Spiced Wine.", # Only its lines check MS05, which the plugin doesn't read
+     quest("DialogueSolitudeMarketplaceJawananEvetteScene1", npcs_meet=True), "Skyrim.esm:0C7D11", False),
+    ("How are your ears, Talvas?", quest("DLC2TelMithrynDrovasTalvasScene01", npcs_meet=True), "Dragonborn.esm:03A31E", False), # Tel Mithryn household talk
+    ("Come on. Let's see what you're made of.", quest("DGIntimidateQuest"), "Skyrim.esm:02C5B1", False), # Bystanders at a brawl
+    ("Oh wow. This is gorgeous.  I'm glad you're here with me.", quest("DLC1NPCCommentary02"), "Dawnguard.esm:015AB2", False), # Dawnguard follower commentary
+    ("Oh yeah? Well, I've seen mudcrabs that're smarter than you!", quest("BYOHRelationshipAdoption"), "HearthFires.esm:01652E", False),
+    ("Astrid, I've been hearing some, er... interesting things.", quest("DarkBrotherhoodSanctuaryConvSystem", journal=True, npcs_meet=True),
+     "Skyrim.esm:034952", False),
+    # Miscellaneous without objectives, so the plugin says it's not in the journal. Its scene's words aren't in the master file: these stand in
+    ("Another round, please.", quest("WITavernServerPatronSceneA", npcs_meet=True), "Skyrim.esm:0DEE9C", False),
+]
+
+
+@pytest.mark.parametrize("words, scene_quest, scene_key, kept", SHIPPED_CASES, ids=[case[1]["id"] + ":" + case[2] for case in SHIPPED_CASES])
+def test_mantellas_shipped_lists_keep_quest_scenes_and_leave_out_chatter(store, words, scene_quest, scene_key, kept):
+    """With Mantella's own list files and the default settings"""
+    lists = ShippedLists.load(os.path.join(os.path.dirname(__file__), "..", "..", LISTS_FOLDER))
+    receive(store, hand_over(scene_line(words, quest=scene_quest, scene_key=scene_key)), lists=lists)
+    assert (store.kept != {}) == kept
 
 
 def test_below_full_no_line_is_written_out(store, caplog):

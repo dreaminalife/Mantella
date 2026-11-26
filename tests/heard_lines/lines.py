@@ -69,8 +69,10 @@ def hand_over(*lines: dict[str, Any], now: dict[str, float] | None = None, playe
 def settings(days_kept: int = 3, most: int = 30, menu_only: list[str] | None = None, menu_talk: bool = True, scenes: bool = True,
              ignored_npcs: list[str] | None = None, npcs_meet: bool = False, story_quests: list[str] | None = None,
              chatter_quests: list[str] | None = None) -> SimpleNamespace:
-    """The Mantella settings, as ConfigLoader holds them"""
-    return SimpleNamespace(heard_lines_days_kept=days_kept, heard_lines_most_per_npc=most, heard_lines_menu_only=menu_only or [],
-                           heard_lines_menu_talk=menu_talk, heard_lines_scenes=scenes, heard_lines_ignored_npcs=ignored_npcs or [],
-                           heard_lines_npcs_meet=npcs_meet, heard_lines_story_quests=story_quests or [],
-                           heard_lines_chatter_quests=chatter_quests or [])
+    """The Mantella settings, as ConfigLoader holds them: list entries trimmed and in lower case"""
+    def entries(values: list[str] | None) -> list[str]:
+        return [v.strip().lower() for v in values or [] if v.strip()]
+    return SimpleNamespace(heard_lines_days_kept=days_kept, heard_lines_most_per_npc=most, heard_lines_menu_only=entries(menu_only),
+                           heard_lines_menu_talk=menu_talk, heard_lines_scenes=scenes, heard_lines_ignored_npcs=entries(ignored_npcs),
+                           heard_lines_npcs_meet=npcs_meet, heard_lines_story_quests=entries(story_quests),
+                           heard_lines_chatter_quests=entries(chatter_quests))
