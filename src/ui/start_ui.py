@@ -46,6 +46,9 @@ log = get_topic_logger(LogTopic.SETTINGS_PAGE)
 memories_log = get_topic_logger(LogTopic.MEMORIES)
 startup_log = get_topic_logger(LogTopic.STARTUP)
 
+HANDBOOK_URL = "https://github.com/dreaminalife/Mantella/blob/personal_use/README.md" # The Mantella Remake Handbook
+FEATURE_GUIDE_URL = "https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md"
+
 class StartUI(routeable):
     BANNER = "docs/_static/img/mantella_banner.png"
     def __init__(self, config: ConfigLoader) -> None:
@@ -62,9 +65,9 @@ class StartUI(routeable):
             #     self.__generate_character_editor_page()
 
             with gr.Row(elem_classes="custom-footer"):
-                gr.HTML("""
+                gr.HTML(f"""
                     <div class="custom-footer">
-                        <a href="https://art-from-the-machine.github.io/Mantella/" target="_blank">Mantella Installation Guide</a>
+                        <a href="{HANDBOOK_URL}#part-1-quick-start" target="_blank">Mantella Installation Guide</a>
                     </div>
                 """)
         return main_block
@@ -107,12 +110,13 @@ class StartUI(routeable):
         return gr.Column()
 
     def __generate_documentation_page(self):
-        docs_url = "https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md"
         gr.Markdown(
             "# Documentation\n\n"
-            "Features Walkthrough and best practices "
-            f"See the full feature docs here:\n\n"
-            f"**[{docs_url}]({docs_url})**"
+            f"- **[Installation guide]({HANDBOOK_URL}#part-1-quick-start):** install Mantella and talk to your first NPC.\n"
+            f"- **[Fine-tuning guide]({HANDBOOK_URL}#part-2-fine-tune-your-experience):** pick the microphone service, the voices and the AI models that suit you, "
+            "and get to know the kinds of conversation, tags, the lorebook and what NPCs can do.\n"
+            f"- **[A closer look]({HANDBOOK_URL}#part-3-how-mantella-works):** what happens behind the scenes when you talk to someone.\n"
+            f"- **[Feature guide]({FEATURE_GUIDE_URL}):** every feature, why it's there and how to make the most of it."
         )
 
     def __generate_live_conversation_page(self):
