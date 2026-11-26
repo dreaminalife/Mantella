@@ -12,6 +12,7 @@ from src.actions.function_manager import FunctionManager
 from src.characters_manager import Characters
 from src.conversation.action import Action
 from src.llm.output.actions_parser import actions_parser
+from src.llm.output.change_character_parser import change_character_parser
 from src.llm.output.output_parser import sentence_generation_settings
 from src.llm.sentence_content import SentenceContent, SentenceTypeEnum
 
@@ -212,3 +213,21 @@ def test_an_action_done_together_needs_enough_people():
 @pytest.mark.parametrize("text, identifier", [("Sex: Fine.", "mantella_npc_sex_old"), ("Attack: How dare you!", "mantella_npc_offended")])
 def test_the_original_actions_for_mantella_and_the_original_mantellas_actions_go_as_before(text: str, identifier: str):
     assert say(text, conversation("Lydia")).actions == [{"identifier": identifier}]
+
+
+# An action's name ending in "Player" isn't the player starting to speak
+
+@pytest.mark.parametrize("text", ["SexWithPlayer: Come here, then.", "GroupSexWithPlayer: All of us, then."])
+def test_an_action_ending_in_player_keeps_the_npcs_line(text: str):
+    characters = conversation("Lydia")
+    settings = sentence_generation_settings(characters.get_character_by_name("Lydia"))
+    sentence, rest = change_character_parser(characters).cut_sentence(text, settings)
+    assert sentence is None and rest == text and not settings.stop_generation
+
+
+@pytest.mark.parametrize("text", ["Player: Let's go.", "Yuji: Let's go."])
+def test_the_npc_still_cant_speak_for_the_player(text: str):
+    characters = conversation("Lydia")
+    settings = sentence_generation_settings(characters.get_character_by_name("Lydia"))
+    change_character_parser(characters).cut_sentence(text, settings)
+    assert settings.stop_generation

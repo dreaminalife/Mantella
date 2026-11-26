@@ -14,6 +14,15 @@ went on with the game's answer after CheckDirections, Inventory and ReportCrime,
 about (ShareConversation), and takes that memory out of your playthrough's files again. Emote isn't checked: a script can't see an
 animation play.
 
+With --other-mods, it tests the actions of Actions For Mantella - Expanded Sex Actions instead, whose own script does them in the game:
+the NPC takes their clothes off and puts them back on (Undress, Redress), and OStim starts a scene with you (SexWithPlayer), with you and
+two NPCs (GroupSexWithPlayer, in a group conversation with someone else nearby) and between the two NPCs (SexWithNPC). The mod also does
+something on Mantella's own Unfollow (it stops Mantella's follower quest), so the NPC follows, stops, follows again and stops. Without
+--advanced the NPC starts its line with the action's name, and you also type just each of the mod's action names; with it, the model
+picks them. The mod's game script also listens for a Trade action, but the mod has no action file for it, so Mantella never sends it.
+The game sees OStim's scenes start by OStim's own signal, and ends the ones with you with OStim's End key. It needs that mod and OStim
+on, and the mod's five action files in the data/actions folder of the Mantella that runs.
+
 So that each action happens on cue, MantellaSoftware talks to a stand-in AI service this script runs on your PC instead of a real model.
 The stand-in answers each of the player's lines with the action its cue asks for, e.g. "ACTIONTEST_follow Come with me." gets
 "Follow: Right behind you.", and with Advanced Actions on "ACTIONTEST_tmoveto@Saadia Go over to Saadia." gets "Alright." with MoveTo
@@ -22,6 +31,7 @@ The NPCs' lines are voiced with a moment of silence (tests/ingame/silent_voice.p
 
     python tests/ingame/actions/actions_ingame.py run --game "<Skyrim folder>"
     python tests/ingame/actions/actions_ingame.py run --advanced --game "<Skyrim folder>"
+    python tests/ingame/actions/actions_ingame.py run --other-mods [--advanced] --game "<Skyrim folder>"
 
 then follow the steps it prints. It saves your config.ini and points every model at the stand-in, then waits. When the game notes
 "Action test: done", press Enter: it reads the game's results from Papyrus.0.log, prints PASS or FAIL for each check, and puts your
@@ -54,6 +64,10 @@ BATCH_LINES = [
 ]
 ADVANCED_BATCH = "mtaa"
 ADVANCED_BATCH_LINES = BATCH_LINES[:2] + ["setpqv MantellaQuest actionTestRun 2"] # 2: the run with Advanced Actions on
+OTHER_MODS_BATCH = "mtao"
+OTHER_MODS_BATCH_LINES = BATCH_LINES[:2] + ["setpqv MantellaQuest actionTestRun 3"] # 3: other mods' actions
+OTHER_MODS_ADVANCED_BATCH = "mtaoa"
+OTHER_MODS_ADVANCED_BATCH_LINES = BATCH_LINES[:2] + ["setpqv MantellaQuest actionTestRun 4"] # 4: other mods' actions, Advanced Actions on
 REQUEST_LOG = "action_test_requests.jsonl" # In Mantella's folder: each request the stand-in got, for the checks of the advanced run
 START_FILE = "action_test_start.txt"  # In Mantella's folder: when the run started
 BACKUP_FILE = "config.ini.bak-action-test"  # In Mantella's folder: your config.ini before the run
@@ -78,6 +92,12 @@ ANSWERS = {
     "flee": "Flee: I'm getting out of here!",
     "offended": "Attack: How dare you!",
     "forgiven": "StandDown: Fine. Let's forget it.",
+    # Other mods' actions (--other-mods): Actions For Mantella - Expanded Sex Actions
+    "undress": "Undress: If you insist.",
+    "redress": "Redress: Back into my clothes, then.",
+    "sexplayer": "SexWithPlayer: Come here, then.",
+    "groupsex": "GroupSexWithPlayer: All of us, then.",
+    "sexnpc": "SexWithNPC: Come here, you.",
 }
 # The actions switched on for one-on-one conversations during the test. Loot stays off
 ONE_ON_ONE_ACTIONS = "Follow, Unfollow, Wait, Inventory, Barter, Teleport, MoveTo, Brawl, Flee, Attack, StandDown"
@@ -110,6 +130,14 @@ TOOL_CUES: dict[str, tuple[str, dict[str, Any]]] = {
     "tabsolve": ("AbsolveCrime", {"crime_gold": 10}),
     "tadd": ("AddToConversation", {"source": ["$1"]}),
 }
+# Other mods' actions with Advanced Actions on (--other-mods --advanced). "player" is the player's name to Mantella
+OTHER_MODS_TOOL_CUES: dict[str, tuple[str, dict[str, Any]]] = {
+    "tundress": ("Undress", {}),
+    "tredress": ("Redress", {}),
+    "tsexplayer": ("SexWithPlayer", {"target": "player"}),
+    "tgroupsex": ("GroupSexWithPlayer", {"source": ["$1", "$2"]}), # Both NPCs, whichever of them answers
+    "tsexnpc": ("SexWithNPC", {"target": "$1"}),
+}
 TOOL_CUE = re.compile(r"ACTIONTEST_(t[a-z]+)(?:@(\S+))?", re.IGNORECASE)
 PLAYER_LINE = re.compile(r"([^.:()*\n]+): ACTIONTEST_") # Who says the cues: the player, as the conversation so far shows them
 # Ticked for one-on-one and group conversations in the advanced run (ReportCrime and AddToConversation make it a group)
@@ -128,9 +156,17 @@ CHECKS = ["follow-off", "inventory-off", "offended-off", "follow-on", "unfollow-
 ADVANCED_CHECKS = ["follow-tool", "unfollow-tool", "wait-tool", "inventory-tool", "barter-tool", "moveto-npc", "flee-npc", "teleport-tool",
                    "travelto-tool", "canceltravel-tool", "leadto-tool", "loot-tool", "collectingredients-tool", "castspell-known", "castspell-tool", "brawl-tool",
                    "standdown-tool", "attack-tool", "reportcrime-tool", "absolvecrime-tool", "addtoconversation-tool"]
+# Other mods' actions: ticked for one-on-one and group conversations, and the runs' checks (-line without Advanced Actions, -tool with)
+OTHER_MODS_ONE_ON_ONE = "Undress, Redress, SexWithPlayer, Follow, Unfollow" # The mod also does something on Mantella's Unfollow
+OTHER_MODS_GROUP = "Undress, Redress, SexWithPlayer, GroupSexWithPlayer, SexWithNPC"
+OTHER_MODS_CHECKS = ["undress-line", "redress-line", "undress-typed", "redress-typed", "follow-line", "unfollow-line", "follow-again-line",
+                     "unfollow-again-line", "sexwithplayer-line", "sexwithplayer-typed", "groupsexwithplayer-line", "groupsexwithplayer-typed",
+                     "sexwithnpc-typed", "sexwithnpc-line"]
+OTHER_MODS_ADVANCED_CHECKS = ["undress-tool", "redress-tool", "follow-tool", "unfollow-tool", "follow-again-tool", "unfollow-again-tool",
+                              "sexwithplayer-tool", "groupsexwithplayer-tool", "sexwithnpc-tool"]
 
 
-def settings_for_test(port: int, advanced: bool = False) -> dict[str, str]:
+def settings_for_test(port: int, advanced: bool = False, other_mods: bool = False) -> dict[str, str]:
     url = f"http://127.0.0.1:{port}/v1"
     services = ["llm_api", "multi_npc_llm_api", "game_master_llm_api", "summary_llm_api", "thoughts_llm_api", "reflection_llm_api",
                 "npc_event_llm_api", "fallback_llm_api", "bio_llm_api", "vision_llm_api", "advanced_actions_llm_api"]
@@ -146,10 +182,17 @@ def settings_for_test(port: int, advanced: bool = False) -> dict[str, str]:
            "apply_profile_reflection", "apply_profile_npc_event", "apply_profile_fallback", "apply_profile_advanced_actions",
            "advanced_actions_own_model"]
     advanced_values = {"advanced_actions_enabled": str(advanced)}
-    if advanced:
+    if other_mods:
+        # Game Master Mode: each NPC answers on their own, so a line starts with the action's name, not with who says it
+        advanced_values.update({"actions_one_on_one": OTHER_MODS_ONE_ON_ONE, "actions_group": OTHER_MODS_GROUP, "multi_npc_game_master_mode": "True"})
+        # The words the stand-in starts its lines with. A config.ini from the original Actions For Mantella keeps its "Sex" for SexWithPlayer
+        advanced_values.update({"undress_npc_response": "Undress", "redress_npc_response": "Redress", "sex_npc_response": "SexWithPlayer",
+                                "sex_group_npc_response": "GroupSexWithPlayer", "sex_npc_npc_response": "SexWithNPC"})
+    elif advanced:
         advanced_values.update({"actions_one_on_one": ADVANCED_ACTIONS, "actions_group": ADVANCED_ACTIONS})
     return {**{key: url for key in services}, **{key: MODEL for key in models}, **{key: "False" for key in off},
             "custom_token_count": "64000", "multi_npc_custom_token_count": "64000", # A local model counts as small, so long prompts would be cut
+            "game_master_custom_token_count": "64000",
             "actions_one_on_one": ONE_ON_ONE_ACTIONS,
             "follow_npc_response": "Follow", "unfollow_npc_response": "Unfollow", "wait_npc_response": "Wait",
             "inventory_npc_response": "Inventory", "barter_npc_response": "Barter", "brawl_npc_response": "Brawl",
@@ -196,9 +239,10 @@ def tool_call_for(request: dict[str, Any]) -> dict[str, Any] | None:
     if not offered or not found:
         return None
     cue, values_text = found[-1]
-    if cue.lower() not in TOOL_CUES:
+    cues = {**TOOL_CUES, **OTHER_MODS_TOOL_CUES}
+    if cue.lower() not in cues:
         return None
-    name, template = TOOL_CUES[cue.lower()]
+    name, template = cues[cue.lower()]
     if name not in offered:
         return {"not_offered": name}
     values = [value.replace("_", " ") for value in values_text.split("+")] if values_text else []
@@ -365,7 +409,13 @@ def share_result(mantella_folder: str, since: datetime) -> str:
     return f"FAIL share-remembered: no memory of the shared conversation in {SHARED_WITH}'s files"
 
 
-def check(mantella_folder: str, papyrus_log: str, advanced: bool = False) -> bool:
+def batch_for(advanced: bool, other_mods: bool) -> tuple[str, list[str]]:
+    if other_mods:
+        return (OTHER_MODS_ADVANCED_BATCH, OTHER_MODS_ADVANCED_BATCH_LINES) if advanced else (OTHER_MODS_BATCH, OTHER_MODS_BATCH_LINES)
+    return (ADVANCED_BATCH, ADVANCED_BATCH_LINES) if advanced else (BATCH, BATCH_LINES)
+
+
+def check(mantella_folder: str, papyrus_log: str, advanced: bool = False, other_mods: bool = False) -> bool:
     start_path = os.path.join(mantella_folder, START_FILE)
     if not os.path.exists(start_path):
         print(f"Nothing to check: the test wasn't run ({start_path} not found)")
@@ -378,7 +428,7 @@ def check(mantella_folder: str, papyrus_log: str, advanced: bool = False) -> boo
         return False
     notes = game_notes(papyrus_log)
     if notes is None:
-        batch = ADVANCED_BATCH if advanced else BATCH
+        batch = batch_for(advanced, other_mods)[0]
         print(f"No \"Action test: starting\" in {papyrus_log}. Did the test run (bat {batch}), and is Papyrus logging on (bEnableLogging=1 and bEnableTrace=1 in Skyrim.ini and SkyrimCustom.ini)?")
         return False
     results: dict[str, str] = {}
@@ -389,8 +439,17 @@ def check(mantella_folder: str, papyrus_log: str, advanced: bool = False) -> boo
             results[check_id] = f"{match.group(1).upper()} {check_id}: {match.group(3)}"
         elif note.lower() != "starting":
             print(f"INFO {note}")
-    checks = list(ADVANCED_CHECKS if advanced else CHECKS)
-    if advanced:
+    if other_mods:
+        checks = list(OTHER_MODS_ADVANCED_CHECKS if advanced else OTHER_MODS_CHECKS)
+    else:
+        checks = list(ADVANCED_CHECKS if advanced else CHECKS)
+    if other_mods:
+        if advanced:
+            not_offered = sorted({r["not_offered"] for r in read_requests(mantella_folder) if r.get("not_offered")})
+            if not_offered: # Not in Mantella's action files, or not ticked
+                results["tools-offered"] = f"FAIL tools-offered: not offered to the model when its cue came: {', '.join(not_offered)}"
+                checks.append("tools-offered")
+    elif advanced:
         requests = read_requests(mantella_folder)
         not_offered = sorted({r["not_offered"] for r in requests if r.get("not_offered")})
         if not_offered:
@@ -427,20 +486,20 @@ def check(mantella_folder: str, papyrus_log: str, advanced: bool = False) -> boo
 
 # Setting up and putting back
 
-def setup(game_folder: str, mantella_folder: str, port: int, advanced: bool = False):
+def setup(game_folder: str, mantella_folder: str, port: int, advanced: bool = False, other_mods: bool = False):
     config_path = os.path.join(mantella_folder, "config.ini")
     backup_path = os.path.join(mantella_folder, BACKUP_FILE)
     if os.path.exists(backup_path):
         print(f"{backup_path} already exists: run cleanup first, so your own config.ini is put back")
         sys.exit(1)
     shutil.copyfile(config_path, backup_path)
-    missing = write_settings(config_path, {**settings_for_test(port, advanced), **LOG_SETTINGS})
+    missing = write_settings(config_path, {**settings_for_test(port, advanced, other_mods), **LOG_SETTINGS})
     if missing:
         shutil.copyfile(backup_path, config_path)
         os.remove(backup_path)
         print(f"These settings are not in config.ini, so nothing was changed. Start the new Mantella once so it writes them, close it, then run again: {missing}")
         sys.exit(1)
-    batch, lines = (ADVANCED_BATCH, ADVANCED_BATCH_LINES) if advanced else (BATCH, BATCH_LINES)
+    batch, lines = batch_for(advanced, other_mods)
     with open(os.path.join(game_folder, f"{batch}.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write("\n".join(lines) + "\n")
     with open(os.path.join(mantella_folder, START_FILE), "w", encoding="utf-8") as f:
@@ -459,13 +518,13 @@ def cleanup(game_folder: str | None, mantella_folder: str):
         print("Put your config.ini back. Restart Mantella so it reads it.")
     paths = [os.path.join(mantella_folder, START_FILE)]
     if game_folder:
-        paths += [os.path.join(game_folder, f"{batch}.txt") for batch in (BATCH, ADVANCED_BATCH)]
+        paths += [os.path.join(game_folder, f"{batch}.txt") for batch in (BATCH, ADVANCED_BATCH, OTHER_MODS_BATCH, OTHER_MODS_ADVANCED_BATCH)]
     for path in paths:
         if os.path.exists(path):
             os.remove(path)
 
 
-def run(game_folder: str, mantella_folder: str, papyrus_log: str, port: int, advanced: bool = False) -> bool:
+def run(game_folder: str, mantella_folder: str, papyrus_log: str, port: int, advanced: bool = False, other_mods: bool = False) -> bool:
     try:
         server = start_stand_in(port, os.path.join(mantella_folder, STAND_IN_LOG), os.path.join(mantella_folder, REQUEST_LOG))
     except OSError as e:
@@ -477,8 +536,17 @@ def run(game_folder: str, mantella_folder: str, papyrus_log: str, port: int, adv
         server.shutdown()
         print(f"Can't start the silent voice ({e}). Is another in-game test still running?")
         return False
-    setup(game_folder, mantella_folder, port, advanced)
-    if advanced:
+    setup(game_folder, mantella_folder, port, advanced, other_mods)
+    if other_mods:
+        what_happens = """Hulda (or the nearest NPC) takes her clothes off and puts them back on, follows you, stops, follows again and stops,
+     then OStim starts a scene with you, which the test ends with OStim's End key. Then a group conversation with someone else nearby: a
+     scene with you and both of them, ended the same way, and one between the two of them (shortened to 15 seconds for the test).
+     Without --advanced each scene comes twice: once from the NPC's line, once from typing the action's name. Have Actions For Mantella - Expanded Sex Actions and OStim on, and its five
+     action files in Mantella's data/actions folder. During the test, OStim picks no furniture and asks nothing about it or about
+     people nearby (put back after). If it still asks something, e.g. which role you take, answer it quickly."""
+        with_advanced = ", with Advanced Actions on" if advanced else ""
+        steps_batch = f"bat {batch_for(advanced, other_mods)[0]} (moves you next to Hulda in the Bannered Mare at 8 pm and starts the test of other mods' actions{with_advanced})"
+    elif advanced:
         what_happens = """Hulda (or the nearest NPC) follows you and stops, waits, opens her inventory and her shop, looks up the way to Riverwood,
      walks over to someone across the room and runs from them, appears next to you, sets off for Riverwood and is called back, leads you,
      loots, collects ingredients, heals you with Healing Hands, starts a fistfight, stops, attacks you and stops, tells Ysolda about the
@@ -501,7 +569,7 @@ Now:
     try:
         input()
         time.sleep(2) # The game writes its script log a moment later
-        return check(mantella_folder, papyrus_log, advanced)
+        return check(mantella_folder, papyrus_log, advanced, other_mods)
     finally:
         server.shutdown()
         voice.shutdown()
@@ -513,6 +581,7 @@ def main():
     parser.add_argument("command", choices=["run", "check", "cleanup"])
     parser.add_argument("--game", help="Skyrim's folder, where the console reads batch files (run, cleanup)")
     parser.add_argument("--advanced", action="store_true", help="Test the actions with Advanced Actions on (run, check)")
+    parser.add_argument("--other-mods", action="store_true", help="Test other mods' actions: Actions For Mantella - Expanded Sex Actions (run, check)")
     parser.add_argument("--mantella-folder", default=default_mantella_folder(), help="Mantella's user folder (default: Documents/My Games/Mantella)")
     parser.add_argument("--papyrus-log", default=default_papyrus_log(), help="The game's script log (default: Documents/My Games/Skyrim Special Edition/Logs/Script/Papyrus.0.log)")
     parser.add_argument("--port", type=int, default=PORT, help=f"Where the stand-in AI service listens (default: {PORT})")
@@ -520,9 +589,9 @@ def main():
     if args.command == "run":
         if not args.game:
             parser.error("run needs --game")
-        sys.exit(0 if run(args.game, args.mantella_folder, args.papyrus_log, args.port, args.advanced) else 1)
+        sys.exit(0 if run(args.game, args.mantella_folder, args.papyrus_log, args.port, args.advanced, args.other_mods) else 1)
     elif args.command == "check":
-        sys.exit(0 if check(args.mantella_folder, args.papyrus_log, args.advanced) else 1)
+        sys.exit(0 if check(args.mantella_folder, args.papyrus_log, args.advanced, args.other_mods) else 1)
     else:
         cleanup(args.game, args.mantella_folder)
 

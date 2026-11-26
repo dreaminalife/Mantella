@@ -42,6 +42,8 @@ class change_character_parser(output_parser):
         for name, character in self.__dict_name_permutations.items():
             if parts[0].lower().endswith(name.lower()):
                 character_switch_removed = parts[0][:-len(name)]
+                if character_switch_removed and (character_switch_removed[-1].isalnum() or character_switch_removed[-1] == "_"):
+                    continue # Only the end of a longer word: "SexWithPlayer:" is another mod's action, not the player speaking
                 cleaned_prefix_rest = character_switch_removed.strip()
                 if not len(cleaned_prefix_rest) == 0: #Special case where there is still text in front of a character change that needs to be processed first somehow
                     rest = str.join("", [name, ":", parts[1]])
