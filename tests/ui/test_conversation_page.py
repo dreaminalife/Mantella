@@ -6,6 +6,7 @@ from gradio.state_holder import SessionState
 import pytest
 
 from src.config.config_loader import ConfigLoader
+from src.config.definitions.action_definitions import ACTION_KINDS, GLOBAL_SETTINGS_KEY, actions_key
 from src.config.definitions.conversation_definitions import CONVERSATION_PAGE
 from src.ui.start_ui import StartUI
 
@@ -153,6 +154,31 @@ def test_what_cant_change_anything_is_greyed_out_after_each_change_and_on_load(d
     on_load = [handler for handler in handlers_of(blocks, blocks, "load") if name_of(handler) == "talk_greying" and handler.outputs == outputs]
     assert len(on_load) == 1
     assert [update["interactive"] for update in on_load[0].fn(ticked, at_limit, rounds)] == expected
+
+
+def test_global_actions_tick_every_list_and_each_list_updates_it(default_config: ConfigLoader):
+    blocks, shown = built_page(default_config)
+    every, every_ui = shown[GLOBAL_SETTINGS_KEY]
+    kind_uis = [shown[actions_key(kind)][1] for kind in ACTION_KINDS]
+    assert accordions_of(every_ui) == ["Actions: Global Settings"]
+
+    on_every = handlers_of(blocks, every_ui, "input")
+    assert len(on_every) == 1 and on_every[0].outputs == [every_ui, *kind_uis]
+    updates = on_every[0].fn([*every.value, "Wait"])
+    assert all("Wait" in update["value"] for update in updates)
+
+    one_on_one, one_on_one_ui = shown[actions_key(ACTION_KINDS[0])]
+    on_kind = handlers_of(blocks, one_on_one_ui, "input")
+    assert len(on_kind) == 1 and on_kind[0].outputs == [one_on_one_ui, every_ui]
+    kind_update, every_update = on_kind[0].fn([n for n in one_on_one.value if n != "Wait"])
+    assert "Wait" not in kind_update["value"] and "Wait" not in every_update["value"]
+    assert "Wait" in shown[actions_key(ACTION_KINDS[1])][0].value # the other lists keep it
+
+    # Default: Global Settings puts every list back to its own defaults; a kind's Default also updates Global Settings
+    for trigger, outputs in ((every_ui, [every_ui, *kind_uis]), (one_on_one_ui, [one_on_one_ui, every_ui])):
+        default = next(handler for handler in blocks.fns if handler.outputs == outputs and any(target[1] == "click" for target in handler.targets))
+        default.fn()
+    assert all(shown[actions_key(kind)][0].value == shown[actions_key(kind)][0].default_value for kind in ACTION_KINDS)
 
 
 def test_the_line_under_who_still_speaks_says_who_that_is_with_the_boxes_ticked_now(default_config: ConfigLoader):

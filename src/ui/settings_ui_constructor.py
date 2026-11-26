@@ -21,6 +21,7 @@ from src.config.types.config_value_int import ConfigValueInt
 from src.config.types.config_value_visitor import ConfigValueVisitor
 from src.config.definitions.conversation_definitions import (AT_REPLY_LIMIT, EXTRA_ROUNDS, REPLIES_IN_BETWEEN, SHARED, TALK_KINDS, WHO_MUST_SPEAK,
                                                              greyed_choices, talk_key, who_still_speaks_now)
+from src.config.definitions.action_definitions import ConfigValueActionTicks, ConfigValueAllActionTicks
 from src.config.definitions.tts_definitions import (HEAR_IT_PART, NPC_VOICES_PART, ONLINE_SERVICE_GROUPS, POCKET_TTS_GROUP,
                                                     SERVICE_PARTS, SERVICE_VOLUMES, SPEED_PART, VOICE_EFFECTS_GROUP, VOICE_SETUPS_PART,
                                                     WORD_LISTS_GROUP, TTSDefinitions, every_npc_part, service_part_id, sound_part_id)
@@ -59,6 +60,10 @@ def part_of_service(value: str | None) -> str:
     if info is not None and info.is_setup:
         return VOICE_SETUPS_PART
     return info.name if info is not None and info.name in SERVICE_PARTS else POCKET_TTS_GROUP
+
+def is_action_list(config_value: ConfigValue) -> bool:
+    """One of the Actions section's lists (a kind's, or Actions: Global Settings), which update each other"""
+    return isinstance(config_value, ConfigValueActionTicks)
 
 def two_by_two(settings: list[ConfigValue]) -> list[list[ConfigValue]]:
     """Settings in rows of two, kept in their order: tick boxes side by side, the others side by side, and a tick box and another
@@ -115,6 +120,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
         self.__prompt_profile_manager: PromptProfileManager | None = None
         self.__picked_option_description_ui: dict[str, gr.Markdown] = {} # By identifier: the line under a setting's choices
         self.__inside_setting: dict[str, Callable[[], None]] = {} # By identifier: draws more inside that setting's box, under its controls
+        self.__action_list_defaults: dict[str, Any] = {} # By identifier: the Default button of each Actions list, wired by __link_action_lists
         self.__second_in_row = False # The setting drawn now is the right one of two side by side: its help opens to the left
 
     @property
@@ -378,7 +384,9 @@ class SettingsUIConstructor(ConfigValueVisitor):
                         log.error(f"Failed to connect button '{btn_label}' click event: {e}")
             if not additional_buttons:
                 reset_button = gr.Button("Default", size='sm')
-                if hasattr(reset_button, "_id"):
+                if is_action_list(config_value):
+                    self.__action_list_defaults[config_value.identifier] = reset_button # also updates Actions: Global Settings
+                elif hasattr(reset_button, "_id"):
                     reset_button.click(
                         lambda: self.__on_reset_click(config_value, create_input_component),
                         outputs = [input_ui, error_message]
@@ -395,6 +403,8 @@ class SettingsUIConstructor(ConfigValueVisitor):
                              update_on_submit: bool,
                              update_on_blur: bool) -> None:
         """Sets up the event handlers for an input component"""
+        if is_action_list(config_value):
+            return # __link_action_lists, once every list is drawn: a click in one updates Actions: Global Settings, or every list
         if hasattr(input_ui, "_id") and isinstance(config_value, ConfigValueMultiSelection) and ConfigValueTag.tick_boxes in config_value.tags:
             # Tick boxes: some can't be ticked together, so a click can untick another. Only a click saves, not the update that follows it
             def on_ticks(ticked: list[str] | None):
@@ -1494,6 +1504,7 @@ class SettingsUIConstructor(ConfigValueVisitor):
         
         for name, settings in folded_parts.items():
             self.__render_folded_part(name, settings, config_value.folded_part_intros.get(name))
+        self.__link_action_lists(config_value)
         if has_advanced_values:
             self.__render_folded_part("Advanced", advanced_settings)
 
@@ -1736,6 +1747,47 @@ class SettingsUIConstructor(ConfigValueVisitor):
                 return updates[0] if count == 1 else updates
             for component in dict.fromkeys(components): # each setting once, even when two conditions look at it
                 component.change(show_or_hide, components, columns, show_progress="hidden")
+
+    def __link_action_lists(self, group: ConfigValueGroup):
+        """The Actions section: a click or Default in Actions: Global Settings changes every kind's list, and one in a kind's list shows
+        again what is on in every list"""
+        every = next((cf for cf in group.value if isinstance(cf, ConfigValueAllActionTicks)), None)
+        if every is None:
+            return
+        every_ui = self.__config_value_to_ui_element.get(every)
+        kind_uis = [self.__config_value_to_ui_element.get(kind) for kind in every.kinds]
+        if every_ui is None or any(ui is None or not hasattr(ui, "_id") for ui in [every_ui, *kind_uis]):
+            return
+
+        def every_list() -> list[Any]:
+            return [gr.update(value=every.value)] + [gr.update(value=kind.value) for kind in every.kinds]
+
+        def on_every_ticks(ticked: list[str] | None) -> list[Any]:
+            self.__on_change(every, list(ticked or []))
+            return every_list()
+
+        def on_every_default() -> list[Any]:
+            every.reset()
+            return every_list()
+
+        every_ui.input(on_every_ticks, every_ui, [every_ui, *kind_uis], show_progress="hidden")
+        every_default = self.__action_list_defaults.get(every.identifier)
+        if every_default is not None and hasattr(every_default, "_id"):
+            every_default.click(on_every_default, None, [every_ui, *kind_uis], show_progress="hidden")
+
+        for kind, kind_ui in zip(every.kinds, kind_uis):
+            def on_kind_ticks(ticked: list[str] | None, kind=kind) -> list[Any]:
+                self.__on_change(kind, kind.resolve_ticks(list(kind.value), list(ticked or [])))
+                return [gr.update(value=kind.value), gr.update(value=every.value)]
+
+            def on_kind_default(kind=kind) -> list[Any]:
+                self.__on_change(kind, list(kind.default_value))
+                return [gr.update(value=kind.value), gr.update(value=every.value)]
+
+            kind_ui.input(on_kind_ticks, kind_ui, [kind_ui, every_ui], show_progress="hidden")
+            kind_default = self.__action_list_defaults.get(kind.identifier)
+            if kind_default is not None and hasattr(kind_default, "_id"):
+                kind_default.click(on_kind_default, None, [kind_ui, every_ui], show_progress="hidden")
 
     def __grey_out_talk_settings(self, group: ConfigValueGroup):
         """The talk settings of each set in the section: "who still speaks", Replies in between and Extra rounds are greyed out (not hidden)

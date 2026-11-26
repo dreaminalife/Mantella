@@ -65,6 +65,8 @@ class ConfigFileWriter(ConfigValueVisitor):
         self.write_setting_block_to_file(lines_to_write)
 
     def visit_ConfigValueMultiSelection(self, config_value: ConfigValueSelection):
+        if not getattr(config_value, "is_saved", True): # a shortcut on the settings page only, e.g. Actions: Global Settings
+            return
         lines_to_write = self.__generate_name_and_description_lines(config_value)
         lines_to_write.append(f";   Options: {', '.join(config_value.options[:])}{self.NEWLINE}")
         lines_to_write.append(f";   default = {', '.join(config_value.default_value[:])}{self.NEWLINE}")

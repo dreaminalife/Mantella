@@ -8,8 +8,9 @@ import pytest
 
 from src.actions.action_rules import INVOLVE_PLAYER, actions_for, offers_look, tool_actions_for
 from src.config.config_loader import ConfigLoader
-from src.config.definitions.action_definitions import (ACTION_KINDS, ADVANCED_ACTIONS_DEFAULT_MODEL, DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE, ORIGINAL_ACTIONS, RADIANT, SHOUT,
-                                                       WITHOUT_PLAYER, actions_key, carried_over_ticks, default_ticks)
+from src.config.definitions.action_definitions import (ACTION_KINDS, ADVANCED_ACTIONS_DEFAULT_MODEL, GLOBAL_SETTINGS_KEY, DIRECTOR, GROUP, NPC_EVENT, ONE_ON_ONE,
+                                                       ORIGINAL_ACTIONS, RADIANT, SHOUT, WITHOUT_PLAYER, ActionDefinitions, actions_key, carried_over_ticks,
+                                                       default_ticks)
 from src.config.definitions.game_definitions import GameEnum
 from src.config.definitions.language_definitions import LanguageDefinitions
 from src.config.definitions.prompt_definitions import PromptDefinitions
@@ -295,6 +296,52 @@ def test_an_action_whose_file_is_gone_is_dropped_without_failing_the_settings(tm
     config = ConfigLoader(str(tmp_path))
     assert config.actions_one_on_one == ["Wait"]
     assert not [f for f in os.listdir(tmp_path) if f.startswith("config_backup")]
+
+
+# Actions: Global Settings, a shortcut for every kind's list
+
+def every_list(actions: list[Action]):
+    kinds = [ActionDefinitions.get_actions_config_value(actions, kind) for kind in ACTION_KINDS]
+    return ActionDefinitions.get_global_actions_config_value(actions, kinds), kinds
+
+
+def test_global_settings_shows_ticked_only_what_is_on_in_every_list(loaded: list[Action]):
+    every, kinds = every_list(loaded)
+    assert "Attack" in every.value # on by default everywhere
+    assert "Inventory" not in every.value # on by default in One-on-one, Group and Shout only
+    assert every.default_value == every.value
+    kinds[0].value = [n for n in kinds[0].value if n != "Attack"]
+    assert "Attack" not in every.value
+
+
+def test_ticking_or_unticking_in_global_settings_changes_only_that_action_in_every_list(loaded: list[Action]):
+    every, kinds = every_list(loaded)
+    before = {kind.identifier: set(kind.value) for kind in kinds}
+    every.value = [*every.value, "Inventory"]
+    assert "Inventory" in every.value
+    assert all(set(kind.value) == before[kind.identifier] | {"Inventory"} for kind in kinds)
+    every.value = [n for n in every.value if n != "Attack"]
+    assert all(set(kind.value) == (before[kind.identifier] | {"Inventory"}) - {"Attack"} for kind in kinds)
+
+
+def test_default_in_global_settings_puts_every_list_back_to_its_own_defaults(loaded: list[Action]):
+    every, kinds = every_list(loaded)
+    every.value = []
+    assert all(kind.value == [] for kind in kinds)
+    every.reset()
+    assert [kind.value for kind in kinds] == [kind.default_value for kind in kinds]
+    assert "Inventory" in kinds[0].value # One-on-one's own default, not what Global Settings showed
+
+
+def test_config_ini_keeps_only_each_kinds_list(tmp_path):
+    write_config(tmp_path, "[ConversationActions]\nactions_global_settings = Wait\n")
+    config = ConfigLoader(str(tmp_path))
+    assert "Wait" not in config.actions_one_on_one # a line for Global Settings changes nothing
+    assert not [f for f in os.listdir(tmp_path) if f.startswith("config_backup")]
+    config.definitions.get_config_value_definition(GLOBAL_SETTINGS_KEY).value = ["Wait"]
+    text = read_config(tmp_path)
+    assert GLOBAL_SETTINGS_KEY not in text
+    assert all("Wait" in getattr(ConfigLoader(str(tmp_path)), actions_key(kind)) for kind in ACTION_KINDS)
 
 
 @pytest.mark.parametrize("identifier, key", [

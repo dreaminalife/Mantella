@@ -88,6 +88,46 @@ class ConfigValueActionTicks(ConfigValueMultiSelection):
         return ConfigValueConstraintResult()
 
 
+GLOBAL_SETTINGS_KEY = "actions_global_settings"
+
+
+class ConfigValueAllActionTicks(ConfigValueActionTicks):
+    """Actions: Global Settings, a shortcut on the settings page for every kind's switches. Not a setting of its own: an action is ticked in
+    it while it is on in every kind, and ticking or unticking it there does so in every kind. config.ini doesn't keep it"""
+    is_saved = False
+
+    def __init__(self, identifier: str, name: str, description: str, options: list[str], kinds: list[ConfigValueActionTicks]):
+        self.__kinds = kinds
+        default = [o for o in options if all(o in kind.default_value for kind in kinds)]
+        super().__init__(identifier, name, description, default, options, tags=[ConfigValueTag.tick_boxes])
+
+    @property
+    def kinds(self) -> list[ConfigValueActionTicks]:
+        return self.__kinds
+
+    @property
+    def value(self) -> list[str]:
+        return [o for o in self.options if all(o in kind.value for kind in self.__kinds)]
+
+    @value.setter
+    def value(self, value: list[str]):
+        before, after = set(self.value), set(value)
+        added, removed = after - before, before - after
+        for kind in self.__kinds:
+            ticked = [o for o in self.options if (o in kind.value or o in added) and o not in removed]
+            if ticked != kind.value:
+                kind.value = ticked
+
+    def reset(self):
+        """Default: every kind back to its own defaults"""
+        for kind in self.__kinds:
+            if kind.value != kind.default_value:
+                kind.value = list(kind.default_value)
+
+    def parse(self, config_value: str) -> ConfigValueConstraintResult:
+        return ConfigValueConstraintResult() # Not kept in config.ini: the kinds' own lists are
+
+
 class ActionDefinitions:
     # Its own part of the Conversation page, at the end, after the conversation sections: hence the heading
     SECTION_DESCRIPTION = ("### Actions\n"
@@ -141,3 +181,12 @@ class ActionDefinitions:
         options = [a.name for a in actions]
         return ConfigValueActionTicks(actions_key(kind), f"Actions: {KIND_NAMES[kind]}", description, default_ticks(actions, kind), options,
                                       tags=[ConfigValueTag.tick_boxes])
+
+    GLOBAL_SETTINGS_DESCRIPTION = ("Turns an action on or off in every kind of conversation at once: ticking it here ticks it in all the lists below, "
+                                     "unticking it unticks it in all of them. An action is ticked here only while it is on in every list, so one "
+                                     "that is on in only some of them shows unticked. Default puts every list back to its own defaults.")
+
+    @staticmethod
+    def get_global_actions_config_value(actions: list[Action], kinds: list[ConfigValueActionTicks]) -> ConfigValueAllActionTicks:
+        return ConfigValueAllActionTicks(GLOBAL_SETTINGS_KEY, "Actions: Global Settings", ActionDefinitions.GLOBAL_SETTINGS_DESCRIPTION,
+                                         [a.name for a in actions], kinds)

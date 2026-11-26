@@ -455,8 +455,9 @@ class MantellaConfigValueDefinitionsNew:
         actions_section = ConfigValueGroup("ConversationActions", "Actions", ActionDefinitions.section_description(actions), on_value_change_callback,
                                            page=CONVERSATION_PAGE)
         actions_section.add_config_value(ActionDefinitions.get_advanced_actions_enabled_config_value())
-        for kind in ACTION_KINDS: # each kind's list folded, under its own name
-            kind_actions = ActionDefinitions.get_actions_config_value(actions, kind)
+        kinds = [ActionDefinitions.get_actions_config_value(actions, kind) for kind in ACTION_KINDS]
+        global_actions = ActionDefinitions.get_global_actions_config_value(actions, kinds) # first, a shortcut for every list
+        for kind_actions in [global_actions, *kinds]: # each list folded, under its own name
             actions_section.add_config_value(kind_actions.in_folded_part(kind_actions.name))
 
         def own_talk_settings(target: ConfigValueGroup, kind: str):
