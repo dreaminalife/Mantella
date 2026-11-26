@@ -45,6 +45,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sys
 import threading
 import time
@@ -73,6 +74,7 @@ START_FILE = "action_test_start.txt"  # In Mantella's folder: when the run start
 BACKUP_FILE = "config.ini.bak-action-test"  # In Mantella's folder: your config.ini before the run
 STAND_IN_LOG = "action_test_stand_in.log"  # In Mantella's folder: what the stand-in was asked and answered
 PORT = 5123
+MANTELLA_PORT = 4999 # Where Mantella listens when config.ini doesn't say
 MODEL = "stand-in"
 
 # The stand-in's answer to a line with each cue. The action names are the keywords the test settings give the actions
@@ -510,12 +512,36 @@ def setup(game_folder: str, mantella_folder: str, port: int, advanced: bool = Fa
             os.remove(path)
 
 
+def mantella_port(mantella_folder: str) -> int:
+    """The port Mantella listens on, from config.ini (the test doesn't change it)"""
+    with open(os.path.join(mantella_folder, "config.ini"), encoding="utf-8", errors="replace") as f:
+        found = re.search(r"^port = (\d+)", f.read(), re.MULTILINE)
+    return int(found.group(1)) if found else MANTELLA_PORT
+
+
+def is_mantella_running(mantella_folder: str) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", mantella_port(mantella_folder)), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def wait_for_mantella_to_stop(mantella_folder: str):
+    """A running Mantella still has the test's settings, and writes them over config.ini again when it saves its settings, so your own
+    config.ini only goes back once it is stopped"""
+    while is_mantella_running(mantella_folder):
+        print("Mantella is still running. Stop it (close its window), then press Enter here.")
+        input()
+
+
 def cleanup(game_folder: str | None, mantella_folder: str):
     backup_path = os.path.join(mantella_folder, BACKUP_FILE)
     if os.path.exists(backup_path):
+        wait_for_mantella_to_stop(mantella_folder)
         shutil.copyfile(backup_path, os.path.join(mantella_folder, "config.ini"))
         os.remove(backup_path)
-        print("Put your config.ini back. Restart Mantella so it reads it.")
+        print("Put your config.ini back. Start Mantella again when you want to play.")
     paths = [os.path.join(mantella_folder, START_FILE)]
     if game_folder:
         paths += [os.path.join(game_folder, f"{batch}.txt") for batch in (BATCH, ADVANCED_BATCH, OTHER_MODS_BATCH, OTHER_MODS_ADVANCED_BATCH)]
@@ -565,7 +591,7 @@ Now:
   4. Watch the notes "Action test: ...". It says your lines itself. It takes a few minutes, until "Action test: done".
      {what_happens}
      The NPCs' lines are silent, only their subtitles flash.
-  5. Press Enter here. It checks the results and puts your config.ini back. Then restart Mantella.""")
+  5. Stop Mantella (close its window), then press Enter here. It checks the results and puts your config.ini back.""")
     try:
         input()
         time.sleep(2) # The game writes its script log a moment later
