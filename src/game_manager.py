@@ -1,3 +1,4 @@
+import os
 import re
 from typing import Any, Hashable, TYPE_CHECKING
 import regex
@@ -29,6 +30,7 @@ from src.config.definitions.prompt_definitions import PromptDefinitions
 from src.config.definitions.game_definitions import GameEnum
 from src.games.fallout4 import Fallout4
 from src.games.skyrim import Skyrim
+from src.games import new_npc_bios
 from src.llm.sonnet_cache_connector import SonnetCacheConnector
 from src.quest_tags.tracker import QuestTagTracker
 from src.heard_lines.heard_lines_receiver import GameHeardLinesReceiver, HeardLinesReceiver
@@ -172,6 +174,7 @@ class GameStateManager:
 
         self.__talk: Conversation | None = None
         self.__voices_readied: tuple[Conversation | None, set[str]] = (None, set()) # the NPCs whose voices were got ready, in which conversation
+        self.__bios_saved_for_new_npcs: set[tuple[str, str]] = set() # NPCs with no bio whose bio was saved (or tried) this session, by name and base ID
         self.__heard_lines_world_id: str = "default" # Vanilla Dialogues: the playthrough of the latest request that named one
         self.__npc_initiative_client: "ClientBase | None" = None # Created on the first NPC Initiative check
         self.__npc_event_clients: "dict[int, AIClient]" = {} # The event generator, by model profile slot (0 for no profile). Created on first use
@@ -1607,13 +1610,16 @@ class GameStateManager:
         if self.__talk:
             if json.__contains__(comm_consts.KEY_ACTORS):
                 actors_in_json: list[Character] = []
+                loaded_from: list[tuple[dict[str, Any], Character]] = []
                 for actorJson in json[comm_consts.KEY_ACTORS]:
                     if comm_consts.KEY_ACTOR_BASEID in actorJson:
                         actor: Character | None = self.load_character(actorJson, self.__talk.context.world_id)
                         if actor:
                             actors_in_json.append(actor)
+                            loaded_from.append((actorJson, actor))
                 self.__talk.add_or_update_character(actors_in_json)
                 self.__get_voices_ready(actors_in_json)
+                self.__save_bios_for_new_npcs(loaded_from)
             
             location = None
             time = None
@@ -1660,6 +1666,37 @@ class GameStateManager:
             talk.output_manager.get_voices_ready(joined, one_on_one=not talk.context.npcs_in_conversation.contains_multiple_npcs())
         except Exception as e: # their first line still gets their voice ready, as before
             log.warning(f"Could not get the voices of {', '.join(a.name for a in joined)} ready: {e}")
+
+    def __save_bios_for_new_npcs(self, loaded_from: list[tuple[dict[str, Any], Character]]):
+        """The first time the player talks to a one-of-a-kind NPC with no bio, save the short bio they got to the Bio Editor's file,
+        so they show up there. Skyrim only. Skips NPCs shared by many (Bandit), and those the game didn't say are one of a kind (an older add-on)"""
+        if not isinstance(self.__game, Skyrim) or not self.__talk or not self.__talk.context.npcs_in_conversation.get_player_character():
+            return
+        try:
+            if not self.__config.definitions.get_bool_value(new_npc_bios.SETTING):
+                return
+            path = new_npc_bios.bio_editor_file(self.__config.definitions.get_string_value("bio_override_csv_path"),
+                                                os.path.join(self.__config.save_folder, "data", "Skyrim", "character_overrides"))
+        except Exception as e:
+            characters_log.warning(f"Could not find the Bio Editor's file to save bios for NPCs who have none: {e}")
+            return
+        for actor_json, actor in loaded_from:
+            if actor.is_player_character or not actor.is_generic_npc or not actor_json.get(comm_consts.KEY_ACTOR_ISUNIQUE, False):
+                continue
+            name = str(actor_json[comm_consts.KEY_ACTOR_NAME])
+            raw_base_id = utils.convert_to_skyrim_hex_format(str(actor_json[comm_consts.KEY_ACTOR_BASEID]))
+            if raw_base_id.startswith("FF"): # made while the game runs: the ID is different each time, so it wouldn't find them again
+                continue
+            key = (name.lower(), actor.base_id)
+            if key in self.__bios_saved_for_new_npcs: # tried once this session, saved or not
+                continue
+            self.__bios_saved_for_new_npcs.add(key)
+            try:
+                if self.__game.save_bio_for_new_npc(name, actor.base_id, actor.ref_id, actor.race, actor.gender,
+                                                    str(actor_json[comm_consts.KEY_ACTOR_VOICETYPE]), path):
+                    characters_log.info(f"{name} had no bio, so their short bio was saved to {path}. Edit it in the Bio Editor")
+            except Exception as e:
+                characters_log.warning(f"Could not save a bio for {name} to {path}, so the file was left as it was: {e}")
 
     @utils.time_it
     def load_character(self, json: dict[str, Any], world_id: str | None = None) -> Character | None:

@@ -27,6 +27,9 @@ from src.ui.tab_reorder import (
 )
 from src.ui.tag_editor_page import build_tag_editor_page
 from src.ui import bio_voice_effect
+from src.games import new_npc_bios
+from src.ui import bio_new_npc
+from src.ui import bio_override_file
 from src.ui.prompt_highlight import PROMPT_HIGHLIGHT_JS
 from src.ui.conversation_table import DELETE_BUTTON_ELEM_ID, HEADERS, TABLE_JS, TABLE_ELEM_ID, apply_rows_to_json, delete_selected_rows, json_to_rows
 from src.ui.bio_editor_memory_files import (
@@ -331,7 +334,7 @@ class StartUI(routeable):
                     if ext == '.csv':
                         try:
                             enc = utils.get_file_encoding(full_path)
-                            odf = pd.read_csv(full_path, engine='python', encoding=enc)
+                            odf = pd.read_csv(full_path, engine='python', encoding=enc, dtype=str)  # text: 013385 stays 013385, so the NPC isn't listed twice
                             if odf is None or odf.empty:
                                 continue
                             # Minimal columns
@@ -429,7 +432,7 @@ class StartUI(routeable):
                     base_df[c] = base_df[c].fillna('').astype(str)
                 if ext == '.csv':
                     enc = utils.get_file_encoding(full_path)
-                    odf = pd.read_csv(full_path, engine='python', encoding=enc)
+                    odf = pd.read_csv(full_path, engine='python', encoding=enc, dtype=str)  # text: 013385 stays 013385, so the NPC isn't listed twice
                     if odf is None or odf.empty:
                         return base_df
                     for c in key_cols:
@@ -536,40 +539,9 @@ class StartUI(routeable):
             - If a file path is provided, preserve its extension; default to `.csv` if none.
             - If the file path has no directory, place it inside the personal override folder.
             - If nothing provided or any error occurs, default to `<personal>/character_overrides.csv`.
+            The same file the bios of NPCs who had none are saved to.
             """
-            folder = _get_personal_override_dir()
-            if user_csv_path:
-                path = user_csv_path.strip()
-                try:
-                    # Directory input or trailing separator → default filename inside it
-                    if path.endswith(os.sep) or os.path.isdir(path):
-                        target_dir = path if os.path.isdir(path) else path.rstrip(os.sep)
-                        if target_dir:
-                            os.makedirs(target_dir, exist_ok=True)
-                        return os.path.join(target_dir or folder, 'character_overrides.csv')
-                    # Treat as file path
-                    target_dir = os.path.dirname(path)
-                    filename = os.path.basename(path)
-                    if not target_dir:
-                        target_dir = folder
-                        final_path = os.path.join(target_dir, filename)
-                    else:
-                        final_path = path
-                    if target_dir:
-                        os.makedirs(target_dir, exist_ok=True)
-                    # Preserve extension if provided; default to .csv
-                    _, final_ext = os.path.splitext(final_path)
-                    if not final_ext:
-                        final_path = final_path + '.csv'
-                    return final_path
-                except Exception:
-                    pass
-            # Default fallback
-            try:
-                os.makedirs(folder, exist_ok=True)
-            except Exception:
-                pass
-            return os.path.join(folder, 'character_overrides.csv')
+            return new_npc_bios.bio_editor_file(user_csv_path, _get_personal_override_dir())
 
         def _save_bio_to_user_path(label: str, bio_text: str, label_to_key: dict[str, str], user_csv_path: str | None, optional_values: dict[str, str | None], override_tags: str | None = None) -> str:
             key = label_to_key.get(label, '')
@@ -580,169 +552,13 @@ class StartUI(routeable):
             # Always save to user-defined path, ignoring provenance
             target_path = _choose_default_personal_csv(user_csv_path)
             
+            # Read every cell as its exact text, back the file up, write it through a temporary file, and leave a file
+            # that can't be read as it is (bio_override_file). Raises bio_override_file.NotSaved then
             try:
-                # Determine file type based on extension
-                filename, extension = os.path.splitext(target_path)
-                ext = extension.lower()
-                
-                def _clean(v) -> str:
-                    if v is None:
-                        return ''
-                    try:
-                        if pd.isna(v):
-                            return ''
-                    except Exception:
-                        pass
-                    if not isinstance(v, str):
-                        v = str(v)
-                    return v.strip()
-                
-                def _append_csv(existing: str, incoming: str) -> str:
-                    existing = _clean(existing)
-                    incoming = _clean(incoming)
-                    if not incoming:
-                        return existing
-                    if not existing:
-                        return incoming
-                    return f"{existing},{incoming}"
-                
-                if ext == '.json':
-                    # Handle JSON file
-                    if os.path.exists(target_path):
-                        with open(target_path, 'r', encoding='utf-8') as fp:
-                            try:
-                                obj = json.load(fp)
-                            except json.JSONDecodeError:
-                                obj = []
-                    else:
-                        obj = []
-                    
-                    # Convert to list if single object
-                    was_single = isinstance(obj, dict)
-                    items = [obj] if was_single else obj if isinstance(obj, list) else []
-                    
-                    # Find and update existing entry or add new one
-                    updated = False
-                    for content in items:
-                        if not isinstance(content, dict):
-                            continue
-                        if (str(content.get('name', '')) == name and 
-                            str(content.get('base_id', '')) == base_id and 
-                            str(content.get('race', '')) == race):
-                            content['bio'] = bio_text
-                            if optional_values.get('ref_id') is not None:
-                                content['ref_id'] = optional_values['ref_id']
-                            if optional_values.get('tags_overwrite') is not None:
-                                content['tags_overwrite'] = optional_values['tags_overwrite']
-                            if optional_values.get(bio_voice_effect.COLUMN) is not None:
-                                content[bio_voice_effect.COLUMN] = optional_values[bio_voice_effect.COLUMN]
-                            # Write override tags from the tags editor when provided;
-                            # otherwise keep existing `tags` unchanged.
-                            if override_tags is not None:
-                                content['tags'] = override_tags
-                            elif 'tags' in content:
-                                content['tags'] = content.get('tags', '')
-                            updated = True
-                            break
-                    
-                    if not updated:
-                        # Add new entry at the end
-                        new_entry = {'name': name, 'base_id': base_id, 'race': race, 'bio': bio_text}
-                        if optional_values.get('ref_id') is not None:
-                            new_entry['ref_id'] = optional_values['ref_id']
-                        if optional_values.get('tags_overwrite') is not None:
-                            new_entry['tags_overwrite'] = optional_values['tags_overwrite']
-                        if optional_values.get(bio_voice_effect.COLUMN) is not None:
-                            new_entry[bio_voice_effect.COLUMN] = optional_values[bio_voice_effect.COLUMN]
-                        if override_tags is not None:
-                            new_entry['tags'] = override_tags
-                        elif optional_values.get('tags') is not None:
-                            new_entry['tags'] = optional_values['tags']
-                        items.append(new_entry)
-                    
-                    # Preserve single-object format only if it was originally single and remains single
-                    to_write = items[0] if was_single and len(items) == 1 else items
-                    
-                    # Ensure directory exists (guard empty dirname)
-                    _dir = os.path.dirname(target_path)
-                    if _dir:
-                        os.makedirs(_dir, exist_ok=True)
-                    
-                    with open(target_path, 'w', encoding='utf-8') as fp:
-                        json.dump(to_write, fp, ensure_ascii=False, indent=2)
-                    return target_path
-                    
-                else:
-                    # Handle CSV file (default)
-                    cols = ['name','base_id','race','bio']
-                    if os.path.exists(target_path):
-                        encoding = utils.get_file_encoding(target_path)
-                        df = pd.read_csv(target_path, engine='python', encoding=encoding)
-                    else:
-                        df = pd.DataFrame(columns=cols)
-                    
-                    # Ensure required columns exist
-                    for c in cols:
-                        if c not in df.columns:
-                            df[c] = ''
-                    
-                    # Handle optional columns in a generic way
-                    # For each optional column, preserve it if it exists or add it if we have a value
-                    for col_name, col_value in optional_values.items():
-                        if col_name in df.columns:
-                            # Column already exists, ensure it's preserved
-                            pass
-                        elif col_value is not None:
-                            # Only add column if we have a value for it
-                            df.insert(len(df.columns), col_name, '')
-                    
-                    # Find matching row
-                    m = ((df['name'].fillna('').astype(str) == name) & 
-                         (df['base_id'].fillna('').astype(str) == base_id) & 
-                         (df['race'].fillna('').astype(str) == race))
-                    
-                    # Ensure `tags` column exists when we have override tags to write
-                    if override_tags is not None and 'tags' not in df.columns:
-                        df.insert(len(df.columns), 'tags', '')
-
-                    if m.any():
-                        # Update existing entry
-                        df.loc[m, 'bio'] = bio_text
-                        # Write override tags from the tags editor when provided
-                        if override_tags is not None and 'tags' in df.columns:
-                            df.loc[m, 'tags'] = override_tags
-                        # Update optional columns only if we have new values, otherwise preserve existing
-                        for col_name, col_value in optional_values.items():
-                            if col_value is not None and col_name in df.columns:
-                                if col_name == 'tags':
-                                    # Tags are handled explicitly above via override_tags;
-                                    # preserve existing value here.
-                                    existing_val = df.loc[m, col_name].iloc[0]
-                                    df.loc[m, col_name] = existing_val if override_tags is None else override_tags
-                                else:
-                                    df.loc[m, col_name] = col_value
-                    else:
-                        # Add new entry at the end
-                        new_row = {'name': name, 'base_id': base_id, 'race': race, 'bio': bio_text}
-                        if override_tags is not None:
-                            new_row['tags'] = override_tags
-                        # Add optional columns only if we have values for them
-                        for col_name, col_value in optional_values.items():
-                            if col_value is not None and col_name in df.columns:
-                                if col_name == 'tags' and override_tags is not None:
-                                    pass  # already handled above
-                                else:
-                                    new_row[col_name] = col_value
-                        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    
-                    # Ensure directory exists (guard empty dirname)
-                    _dir = os.path.dirname(target_path)
-                    if _dir:
-                        os.makedirs(_dir, exist_ok=True)
-                    
-                    df.to_csv(target_path, index=False, encoding='utf-8')
-                    return target_path
-                    
+                bio_override_file.save_npc(target_path, name, base_id, race, bio_text, optional_values, override_tags)
+                return target_path
+            except bio_override_file.NotSaved:
+                raise
             except Exception as e:
                 log.error(f"Bio Editor: failed to save to user-defined path '{target_path}': {e}")
                 return ''
@@ -776,9 +592,10 @@ class StartUI(routeable):
         def _split_key(value: str) -> tuple[str, str, str]:
             try:
                 name, base_id, race = value.split('§', 2)
-                return name, base_id, race
             except Exception:
                 return "", "", ""
+            # The list shows an empty cell as `nan` (Bandit has no base ID or race); it's matched as empty, like the game does
+            return tuple("" if part.strip().lower() in ("nan", "none") else part for part in (name, base_id, race))
 
         def _key_from_label(label: str, label_to_key: dict[str, str]) -> str:
             return label_to_key.get(label, "")
@@ -894,48 +711,10 @@ class StartUI(routeable):
                 return ""
             name, base_id, race = _split_key(key)
             target_path = _choose_default_personal_csv(user_csv_path)
+            # Found the way Save finds the row (bio_override_file), so what this shows is what Save writes over:
+            # read differently, a base ID like 013385 was missed, the box came up empty and Save emptied their tags
             try:
-                if not target_path or not os.path.exists(target_path):
-                    return ""
-                _, ext = os.path.splitext(target_path)
-                ext = ext.lower()
-                if ext == '.json':
-                    with open(target_path, 'r', encoding='utf-8') as fp:
-                        obj = json.load(fp)
-                    items = obj if isinstance(obj, list) else [obj]
-                    for content in items:
-                        if not isinstance(content, dict):
-                            continue
-                        if (str(content.get('name', '')).strip() == name and
-                                str(content.get('base_id', '')).strip() == base_id and
-                                str(content.get('race', '')).strip() == race):
-                            raw = content.get('tags', '')
-                            if raw is None:
-                                return ""
-                            return str(raw).strip()
-                    return ""
-                else:
-                    if not os.path.exists(target_path):
-                        return ""
-                    enc = utils.get_file_encoding(target_path)
-                    odf = pd.read_csv(target_path, engine='python', encoding=enc)
-                    if odf is None or odf.empty:
-                        return ""
-                    if 'tags' not in odf.columns:
-                        return ""
-                    for c in ['name', 'base_id', 'race']:
-                        if c not in odf.columns:
-                            odf[c] = ''
-                        odf[c] = odf[c].fillna('').astype(str)
-                    m = ((odf['name'] == name) &
-                         (odf['base_id'] == base_id) &
-                         (odf['race'] == race))
-                    if m.any():
-                        val = odf.loc[m, 'tags'].iloc[0]
-                        if val is None or (isinstance(val, float) and pd.isna(val)):
-                            return ""
-                        return str(val).strip()
-                    return ""
+                return bio_override_file.read_cell(target_path, name, base_id, race, 'tags')
             except Exception as e:
                 log.warning(f"Bio Editor: failed to load override tags: {e}")
                 return ""
@@ -1148,8 +927,24 @@ class StartUI(routeable):
                 )
 
             with gr.Accordion(label="Bio Editor", open=True):
-                gr.Markdown("Manually edit character bios, conversation summaries, private thoughts, personal reflections, and your own notes. Select an NPC from the dropdown, modify their bio, summary, thoughts, reflections, or notes, and save your changes.")
+                gr.Markdown("Manually edit character bios, conversation summaries, private thoughts, personal reflections, and your own notes. Select an NPC from the dropdown, modify their bio, summary, thoughts, reflections, or notes, and save your changes. "
+                            "To give a bio to an NPC who has none, type their name next to **Create**.")
+                save_new_npc_bios = gr.Checkbox(value=config.definitions.get_bool_value(new_npc_bios.SETTING), label="Save a bio for NPCs who don't have one",
+                                                info="The first time you talk to an NPC with no bio, their one-line bio is added to this list so you can edit it. "
+                                                     "Crowds that share a name, like Bandit or Whiterun Guard, are left out.")
                 npc_dropdown = gr.Dropdown(choices=labels, label="NPC", multiselect=False, allow_custom_value=False)
+                # A new NPC, made from what the Bio, Tags and Voice effect fields below show (like the Tag Editor's Create)
+                with gr.Row(equal_height=True):
+                    new_npc_name = gr.Text(label="Name of the new NPC", max_lines=1, scale=3,
+                                           placeholder="Name as shown in game, e.g. Whiterun Guard")
+                    new_npc_base_id = gr.Text(label="Base ID (optional)", max_lines=1, scale=2,
+                                              placeholder="e.g. 0001A694. Needed if another NPC has this name")
+                    new_npc_race = gr.Dropdown(choices=bio_new_npc.race_choices(resolved_df), value=None, label="Race (optional)",
+                                               filterable=True, allow_custom_value=True, scale=2)
+                    create_npc_btn = gr.Button("Create", variant="secondary", scale=0, min_width=110)
+                new_npc_message = gr.Markdown(value="")
+                # The bio, tags and voice effect as the open NPC was loaded, to tell if Create took unsaved edits
+                state_opened = gr.State(value={})
                 bio_editor = gr.Text(value="", lines=12, label="Bio")
                 tags_editor = gr.Text(value="", lines=2, label='Tags ("tags" column in override csv file only)', placeholder="Comma-separated tags from your personal override file")
                 runtime_tags_display = gr.Text(value="", lines=2, label="Runtime Tags (read-only, all sources merged)", interactive=False, placeholder="Select an NPC to see its effective runtime tags")
@@ -1265,18 +1060,22 @@ class StartUI(routeable):
                                    value=bio_voice_effect.picked_value(config.save_folder, written_effect))
                 return bio, summary, thoughts, reflections, notes, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), int(time.time()), effect
 
-            def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, voice_effect: str | None = None):
+            def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, voice_effect: str | None = None,
+                        df: pd.DataFrame | None = None):
+                # The list as this page has it now (NPCs added with Create, Refresh bios), not as it was when Mantella started:
+                # rebuilt from that, the list lost every NPC added since
+                table = df if isinstance(df, pd.DataFrame) else state_df.value
                 # Try to infer optional column values from current df row, if present
                 optional_values = {}
                 try:
                     key = l2k.get(label, '')
                     n, b, r = _split_key(key)
-                    if n and b:
-                        rowmask = (state_df.value['name'].fillna('').astype(str) == n) & \
-                                  (state_df.value['base_id'].fillna('').astype(str) == b) & \
-                                  (state_df.value['race'].fillna('').astype(str) == r)
+                    if n: # also an NPC with no base ID (Bandit, or one added with Create)
+                        rowmask = (table['name'].fillna('').astype(str) == n) & \
+                                  (table['base_id'].fillna('').astype(str) == b) & \
+                                  (table['race'].fillna('').astype(str) == r)
                         if rowmask.any():
-                            row0 = state_df.value.loc[rowmask].iloc[0]
+                            row0 = table.loc[rowmask].iloc[0]
                             
                             # Get all columns that are not the required ones
                             required_columns = {'name', 'base_id', 'race', 'bio'}
@@ -1298,14 +1097,21 @@ class StartUI(routeable):
                 override_tags = tags_text.strip() if isinstance(tags_text, str) else None
                 if voice_effect is not None: # from the Voice effect list; a save from the LLM part keeps what the NPC has
                     optional_values[bio_voice_effect.COLUMN] = str(voice_effect).strip()
-                path = _save_bio_to_user_path(label, bio_text, l2k, user_csv, optional_values, override_tags=override_tags)
+                save_problem = ""
+                try:
+                    path = _save_bio_to_user_path(label, bio_text, l2k, user_csv, optional_values, override_tags=override_tags)
+                except bio_override_file.NotSaved as e:
+                    path, save_problem = "", str(e)
+                    log.warning(f"Bio Editor: {e}")
+                # Only what was saved goes into the running game: an unsaved bio would be gone after a restart
+                saved = bool(path)
                 # Fast refresh: avoid heavy reload when game isn't running
-                new_df = state_df.value if isinstance(state_df.value, pd.DataFrame) else _get_resolved_character_df()
+                new_df = table if isinstance(table, pd.DataFrame) else _get_resolved_character_df()
                 # Apply the saved bio into in-memory df for immediate UI feedback
                 try:
                     key = l2k.get(label, '')
                     name, base_id, race = _split_key(key)
-                    if name and base_id:
+                    if saved and name:
                         mask = (new_df['name'].fillna('').astype(str) == name) & \
                                (new_df['base_id'].fillna('').astype(str) == base_id) & \
                                (new_df['race'].fillna('').astype(str) == race)
@@ -1333,7 +1139,7 @@ class StartUI(routeable):
                 try:
                     key_for_runtime = l2k.get(label, '')
                     rn, rb, rr = _split_key(key_for_runtime)
-                    if rn and rb:
+                    if saved and rn:
                         _update_runtime_bio_if_possible(rn, rb, rr, bio_text)
                 except Exception as e:
                     log.warning(f"Bio Editor: runtime update after manual save failed: {e}")
@@ -1341,7 +1147,7 @@ class StartUI(routeable):
                 try:
                     key_for_cached = l2k.get(label, '')
                     cn, cb, cr = _split_key(key_for_cached)
-                    if cn and cb:
+                    if saved and cn:
                         _update_cached_game_df_if_possible(cn, cb, cr, bio_text)
                         if voice_effect is not None:
                             from src.ui import settings_ui_constructor as sui
@@ -1359,7 +1165,7 @@ class StartUI(routeable):
                 # Preserve selection by key
                 current_key = l2k.get(label, '')
                 keep_label = new_k2l.get(current_key, None) if current_key else None
-                info = f"Saved to: {path}" if path else "Save failed. Check logs."
+                info = f"Saved to: {path}" if path else (save_problem or "Save failed. Check logs.")
                 return (
                     info,
                     new_df,
@@ -1737,20 +1543,13 @@ class StartUI(routeable):
                         characters = talk.context.npcs_in_conversation.get_all_characters()
                     except Exception:
                         characters = []
-                    # First filter by base_id
+                    # The NPCs with this name, and this base ID when the NPC has one. Never by base ID alone:
+                    # another NPC can end in the same digits, and their bio would be replaced
                     try:
-                        base_matches = [ch for ch in characters if _normalize_id(getattr(ch, 'base_id', "")) == _normalize_id(base_id)]
+                        candidates = [ch for ch in characters if str(getattr(ch, 'name', "")).strip().lower() == str(name).strip().lower()
+                                      and (not base_id or _normalize_id(getattr(ch, 'base_id', "")) == _normalize_id(base_id))]
                     except Exception:
-                        base_matches = []
-                    candidates = base_matches
-                    # If multiple remain, refine with name/race where possible
-                    try:
-                        if len(candidates) > 1:
-                            refined = [ch for ch in candidates if (not name or str(getattr(ch, 'name', "")) == str(name)) and (not race or str(getattr(ch, 'race', "")) == str(race))]
-                            if refined:
-                                candidates = refined
-                    except Exception:
-                        pass
+                        candidates = []
                     for ch in candidates:
                         try:
                             ch.bio = new_bio or ""
@@ -1788,42 +1587,34 @@ class StartUI(routeable):
                         gdf.loc[exact_mask, 'bio'] = new_bio
                         updated = True
                     else:
-                        # Fallback: normalize base_id to last 6 (strip plugin ID) and compare case-insensitive
-                        try:
-                            def _norm_id_series(s: pd.Series) -> pd.Series:
-                                ss = s.fillna('').astype(str).str.upper()
-                                # Remove FE prefix handling by taking last 6 chars
-                                return ss.apply(lambda v: (v[-3:].rjust(6, '0') if v.startswith('FE') else v[-6:]))
-                            df_norm = _norm_id_series(gdf['base_id'])
-                            target_norm = (str(base_id or '').upper())
-                            target_norm = (target_norm[-3:].rjust(6,'0') if target_norm.startswith('FE') else target_norm[-6:])
-                            id_mask = df_norm == target_norm
-                        except Exception:
-                            id_mask = None
-                        if isinstance(id_mask, pd.Series) and id_mask.any():
-                            # If multiple rows, prefer those matching name/race
+                        name_mask = gdf['name'].fillna('').astype(str).str.strip().str.lower() == str(name).strip().lower()
+                        # Same NPC with their base ID written differently (leading zeros, plugin prefix). Never by base ID
+                        # alone: an NPC from another mod can end in the same digits, and with no base ID every NPC without one matches
+                        if base_id:
                             try:
-                                name_mask = gdf['name'].fillna('').astype(str) == str(name)
-                                race_mask = gdf['race'].fillna('').astype(str) == str(race)
-                                refined = id_mask & name_mask & race_mask
-                                if refined.any():
-                                    gdf.loc[refined, 'bio'] = new_bio
-                                    updated = True
-                                else:
-                                    gdf.loc[id_mask, 'bio'] = new_bio
-                                    updated = True
+                                def _norm_id_series(s: pd.Series) -> pd.Series:
+                                    ss = s.fillna('').astype(str).str.upper()
+                                    return ss.apply(lambda v: (v[-3:].rjust(6, '0') if v.startswith('FE') else v[-6:]))
+                                target_norm = str(base_id).upper()
+                                target_norm = (target_norm[-3:].rjust(6, '0') if target_norm.startswith('FE') else target_norm[-6:])
+                                id_mask = (_norm_id_series(gdf['base_id']) == target_norm) & name_mask
                             except Exception:
+                                id_mask = None
+                            if isinstance(id_mask, pd.Series) and id_mask.any():
                                 gdf.loc[id_mask, 'bio'] = new_bio
                                 updated = True
+                        if not updated and name_mask.any():
+                            # A second row with a name the game already has would make it unsure which is meant, and
+                            # everyone with that name would lose their bio. The saved file reaches the game on Reload Character Data
+                            log.debug(f"Bio Editor: {name} not updated in the running game: their row there doesn't match")
+                            updated = True
                     if not updated:
-                        # Append minimal row so new conversations can find it
+                        # Append a row so new conversations can find them, at an index no row has yet
                         try:
-                            gdf.loc[len(gdf)] = {
-                                'name': str(name),
-                                'base_id': str(base_id),
-                                'race': str(race),
-                                'bio': new_bio
-                            }
+                            with new_npc_bios._write_lock: # an NPC met in game is added from another thread
+                                next_index = (int(gdf.index.max()) + 1) if len(gdf.index) else 0
+                                gdf.loc[next_index] = pd.Series({column: '' for column in gdf.columns} | {
+                                    'name': str(name), 'base_id': str(base_id), 'race': str(race), 'bio': new_bio})
                         except Exception:
                             pass
                 except Exception as e:
@@ -1975,8 +1766,9 @@ class StartUI(routeable):
                                 s = str(val or "").upper()
                                 return s[-3:].rjust(6, "0") if s.startswith('FE') else s[-6:]
                             for ch in characters:
-                                if _normalize_id(getattr(ch, 'base_id', "")) == _normalize_id(base_id):
-                                    if (not name or str(getattr(ch, 'name', "")) == str(name)):
+                                # Matched like the bio update before it: by name, and by base ID when the NPC has one (Bandit has none)
+                                if not base_id or _normalize_id(getattr(ch, 'base_id', "")) == _normalize_id(base_id):
+                                    if str(getattr(ch, 'name', "")).strip().lower() == str(name).strip().lower():
                                         # Re-read the base bio from character_df (before tag expansion)
                                         if isinstance(exact_mask, pd.Series) and exact_mask.any():
                                             raw_bio = _clean(gdf.loc[exact_mask, 'bio'].iloc[0])
@@ -1993,9 +1785,95 @@ class StartUI(routeable):
                 except Exception as e:
                     log.debug(f"Bio Editor: runtime tags refresh skipped: {e}")
 
-            def on_save_from_llm(label: str, response_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str):
+            def on_save_from_llm(label: str, response_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, df: pd.DataFrame | None = None):
                 # Reuse existing save logic (already updates runtime)
-                return on_save(label, response_text, tags_text, l2k, k2l, user_csv)
+                return on_save(label, response_text, tags_text, l2k, k2l, user_csv, None, df)
+
+            def remember_opened(label: str | None, bio_text: str, tags_text: str, voice_effect: str | None) -> dict:
+                """The fields as the NPC was loaded, so Create can tell whether it took unsaved edits"""
+                return {"label": label or "", "bio": bio_text or "", "tags": tags_text or "", "voice_effect": voice_effect or ""}
+
+            def on_create(name: str, base_id: str, race: str, open_label: str | None, bio_text: str, tags_text: str,
+                          voice_effect: str | None, opened: dict, df: pd.DataFrame, l2k: dict[str, str], user_csv: str):
+                """A new NPC from what the Bio, Tags and Voice effect fields show now: empty, or a copy of the open NPC.
+                Only ever adds one row (see bio_new_npc): no existing row, in a file or in memory, is changed"""
+                npc_name = bio_new_npc.clean_name(name)
+                if not npc_name:
+                    return {new_npc_message: "Type the NPC's name first."}
+                npc_race = (race or "").strip()
+                if "§" in npc_name or "§" in npc_race:
+                    return {new_npc_message: "A name or race can't contain §."}
+                try:
+                    npc_base_id = bio_new_npc.clean_base_id(base_id)
+                except ValueError:
+                    return {new_npc_message: "A base ID is made of 0–9 and A–F, e.g. 0001A694."}
+
+                table = df if isinstance(df, pd.DataFrame) else _get_resolved_character_df()
+                try:
+                    from src.ui import settings_ui_constructor as sui
+                    game = getattr(getattr(sui, '_game_manager_ref', None), 'game', None)
+                    game_df = game.character_df if game is not None else None
+                except Exception:
+                    game_df = None
+                # Checked against the list shown here and the running game's list: either can be newer
+                for checked in (table, game_df):
+                    problem = bio_new_npc.clash_problem(checked, npc_name, npc_base_id, npc_race)
+                    if problem:
+                        return {new_npc_message: problem}
+
+                row = bio_new_npc.new_row(npc_name, npc_base_id, npc_race, bio_text, tags_text, voice_effect or "")
+                target = _choose_default_personal_csv(user_csv)
+                try:
+                    backed_up = bio_new_npc.add_row_to_file(target, row)
+                except bio_new_npc.NotSaved as e:
+                    return {new_npc_message: str(e)}
+                except Exception as e:
+                    log.error(f"Bio Editor: could not add {npc_name} to '{target}': {e}")
+                    return {new_npc_message: f"Couldn't add `{npc_name}`: {e}. Nothing else was changed."}
+
+                # In memory: only add the row. Never the base-ID-only matching of the Save path, which could change other NPCs
+                new_df = pd.concat([table, pd.DataFrame([row])], ignore_index=True)
+                try:
+                    added = False
+                    # One change to the running game's list at a time: an NPC met in game is added to it from another thread,
+                    # and two rows added at once would both take the same place
+                    with new_npc_bios._write_lock:
+                        if game_df is not None and bio_new_npc.clash_problem(game_df, npc_name, npc_base_id, npc_race) is None:
+                            for column in row:
+                                if column not in game_df.columns:
+                                    game_df[column] = "" # an empty cell adds nothing to the NPCs already there
+                            # A label no row has yet, so no row is written over
+                            next_index = (int(game_df.index.max()) + 1) if len(game_df.index) else 0
+                            game_df.loc[next_index] = pd.Series({column: row.get(column, "") for column in game_df.columns})
+                            added = True
+                    if added:
+                        if row.get("tags"):
+                            _refresh_runtime_tags_for_npc(npc_name, npc_base_id, npc_race, row["tags"])
+                except Exception as e:
+                    log.warning(f"Bio Editor: {npc_name} was saved, but the running game gets them only after Reload Character Data: {e}")
+
+                new_labels, new_l2k, new_k2l = _build_labels_and_map(new_df)
+                new_label = new_k2l.get(f"{npc_name}§{npc_base_id}§{npc_race}")
+                file_name = os.path.basename(target)
+                kept = f" The file as it was is kept as `{os.path.basename(backed_up)}`." if backed_up else ""
+                lines = [f"Added `{npc_name}` to `{file_name}`.{kept} They use this bio from their next conversation."]
+                opened = opened or {}
+                if open_label and opened.get("label") == open_label and (
+                        (bio_text or "") != opened.get("bio", "") or (tags_text or "") != opened.get("tags", "")
+                        or (voice_effect or "") != opened.get("voice_effect", "")):
+                    open_name, _, _ = _split_key(l2k.get(open_label, ""))
+                    lines.append(f"`{open_name or open_label}` wasn't changed: your edits went into the new NPC.")
+                return {
+                    new_npc_message: "\n\n".join(lines),
+                    state_df: new_df,
+                    state_labels: new_labels,
+                    state_label_to_key: new_l2k,
+                    state_key_to_label: new_k2l,
+                    npc_dropdown: gr.Dropdown(choices=new_labels, value=new_label),
+                    new_npc_name: "",
+                    new_npc_base_id: "",
+                    new_npc_race: gr.Dropdown(choices=bio_new_npc.race_choices(new_df), value=npc_race or None),
+                }
 
             # Persist Bio LLM UI selections into config.ini so they survive restarts
             def on_service_change_persist(new_service: str):
@@ -2066,6 +1944,18 @@ class StartUI(routeable):
                 except Exception:
                     pass
 
+            def on_save_new_npc_bios_change(new_val: bool):
+                try:
+                    cv = config.definitions.get_config_value_definition(new_npc_bios.SETTING)
+                    cv.value = bool(new_val)
+                    try:
+                        config._ConfigLoader__write_config_state(config.definitions)
+                    except Exception:
+                        pass
+                    config.update_config_loader_with_changed_config_values()
+                except Exception:
+                    pass
+
             def on_omit_stop_change_persist(new_val: bool):
                 try:
                     cv = config.definitions.get_config_value_definition("bio_llm_omit_stop")
@@ -2079,8 +1969,12 @@ class StartUI(routeable):
                     pass
 
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[], show_progress="hidden")
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts, voice_effect_ui], show_progress="hidden")
-            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, voice_effect_ui], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
+            save_new_npc_bios.change(on_save_new_npc_bios_change, inputs=[save_new_npc_bios], outputs=[], show_progress="hidden")
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts, voice_effect_ui], show_progress="hidden").then(
+                remember_opened, inputs=[npc_dropdown, bio_editor, tags_editor, voice_effect_ui], outputs=[state_opened], show_progress="hidden")
+            create_npc_btn.click(on_create, inputs=[new_npc_name, new_npc_base_id, new_npc_race, npc_dropdown, bio_editor, tags_editor, voice_effect_ui, state_opened, state_df, state_label_to_key, override_csv_path],
+                                 outputs=[new_npc_message, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, new_npc_name, new_npc_base_id, new_npc_race])
+            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, voice_effect_ui, state_df], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
             _memory_refresh_outputs = [info_line, summary_editor, thoughts_editor, reflections_editor, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn]
             refresh_summaries_btn.click(on_refresh_memory, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=_memory_refresh_outputs)
@@ -2108,7 +2002,7 @@ class StartUI(routeable):
             temp_override.change(on_temp_override_persist, inputs=[temp_override], outputs=[], show_progress="hidden")
             max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[], show_progress="hidden")
             send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, omit_stop_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
-            save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
+            save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, state_df], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
             refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
 
     def __get_theme(self):

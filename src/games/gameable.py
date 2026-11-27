@@ -300,13 +300,22 @@ class Gameable(ABC):
         log.debug(f"No unique match for name='{character_name}', base_id(last6)='{full_id_search}', race='{race}'. See debug match counts above.")
         return None
 
+    @staticmethod
+    def race_name(race: str) -> str:
+        """The race as the character file names it ("Nord"), from the game's text for it ("[Race <NordRace (00013746)>]")"""
+        try:
+            return race.split('<')[1].split('Race ')[0]
+        except Exception:
+            return str(race)
+
+    def _note_added_npc(self, name: str, file: str) -> None:
+        """An NPC was added to an override file while Mantella runs, so the log names that file as where their bio comes from"""
+        self.__note_override_file(name, file)
+
     @utils.time_it
     def find_character_info(self, base_id: str, character_name: str, race: str, gender: int, ingame_voice_model: str):
         log.debug(f"find_character_info input: name='{character_name}', base_id='{base_id}', race_raw='{race}', gender={gender}, ingame_voice_model='{ingame_voice_model}'")
-        try:
-            character_race = race.split('<')[1].split('Race ')[0]
-        except Exception:
-            character_race = str(race)
+        character_race = self.race_name(race)
         try:
             log.debug(f"find_character_info normalized race: '{character_race}'")
         except Exception:

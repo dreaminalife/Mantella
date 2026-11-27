@@ -64,6 +64,14 @@ class MantellaConfigValueDefinitionsNew:
         from src.config.types.config_value_int import ConfigValueInt
         from src.config.types.config_value_float import ConfigValueFloat
         from src.config.types.config_value_bool import ConfigValueBool
+        # Set with the switch on the Bio Editor page
+        hidden_category.add_config_value(ConfigValueBool(
+            "save_bios_for_new_npcs",
+            "Save a bio for NPCs who don't have one",
+            "The first time you talk to a one-of-a-kind NPC who has no bio, their short bio is saved to the Bio Editor's file, so you can edit it there.",
+            True,
+            []
+        ))
         hidden_category.add_config_value(ConfigValueSelection(
             "bio_llm_api",
             "Bio LLM Service",

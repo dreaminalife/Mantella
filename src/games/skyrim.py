@@ -9,6 +9,7 @@ from src.config.config_loader import ConfigLoader
 from src.llm.sentence import Sentence
 from src.games.external_character_info import external_character_info
 from src.games.gameable import Gameable
+from src.games import new_npc_bios
 import src.utils as utils
 from src.config.definitions.tts_definitions import TTSEnum
 from src.bio_template_manager import BioTemplateManager, effective_tags, split_tags
@@ -289,7 +290,35 @@ class Skyrim(Gameable):
         }
 
         return character_info
-    
+
+    def save_bio_for_new_npc(self, name: str, base_id: str, ref_id: str, race: str, gender: int, ingame_voice_model: str, path: str) -> bool:
+        """Save the short bio an NPC with no bio gets ("You are a female Breton Aveline.") to the override file at path, and add them to the
+        character list now, so they load from it and show up in the Bio Editor. False when they have a bio by now or the file already has them.
+        Raises if the file can't be read or written"""
+        race_name = self.race_name(race)
+        if self._get_matching_df_rows_matcher(base_id, name, race_name) is not None: # added since they were loaded, e.g. in the Bio Editor
+            return False
+        info = self.load_unnamed_npc(name, race_name, gender, ingame_voice_model)
+        # The voice model is left empty: it's picked for the voice service in use each time, as for NPCs with no bio
+        entry = {
+            'name': name,
+            'base_id': base_id,
+            'race': race_name,
+            'bio': info['bio'],
+            'gender': 'Male' if gender == 0 else 'Female',
+            'ref_id': ref_id,
+            'skyrim_voice_folder': info['skyrim_voice_folder'],
+            'voice_accent': info['voice_accent'],
+        }
+        if not new_npc_bios.add_entry(path, entry):
+            return False
+        df = self.character_df
+        with new_npc_bios._write_lock: # the Bio Editor adds rows here too, under the same lock, so two new rows can't take the same place
+            new_index = int(df.index.max()) + 1 if len(df.index) else 0 # past the last row, so no row is written over
+            df.loc[new_index] = [entry.get(str(column), '') for column in df.columns]
+        self._note_added_npc(name, os.path.basename(path))
+        return True
+
     @utils.time_it
     def prepare_sentence_for_game(self, queue_output: Sentence, context_of_conversation: Context, config: ConfigLoader, topicID: int, isFirstLine: bool = False):
         """Save voicelines and subtitles to the correct game folders"""
