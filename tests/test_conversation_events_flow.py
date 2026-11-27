@@ -203,6 +203,7 @@ class FakeGame:
 
     def __clear_shout(self):
         self.is_shouting = False
+        self.is_shout_scan_pending = False # Shout was just switched on: who is nearby is still being looked for
         self.shout_sent: list[Person] = []
         self.add_failed: list[tuple[int, str]] = []
 
@@ -254,11 +255,16 @@ class FakeGame:
         """MantellaShout.FindNearby: who is around and not in the conversation, nearest first"""
         return sorted((p for p in self.around if p not in self.participants), key=lambda p: p.distance)
 
-    def add_shout_values(self, request: dict[str, Any]):
-        """AddShoutValues"""
+    def add_shout_values(self, request: dict[str, Any], waits_for_scan: bool = False):
+        """AddShoutValues. Right after Shout was switched on, who is nearby is still being looked for: the request goes without it,
+        except the player's line, which waits for it (WaitForShoutScan). The scan is taken to finish only then, the slowest case"""
         request[comm_consts.KEY_SHOUT_ENABLED] = self.is_shouting
         if not self.is_shouting:
             return
+        if self.is_shout_scan_pending and not waits_for_scan:
+            request.update(self.shout_settings)
+            return
+        self.is_shout_scan_pending = False
         nearby = self.shout_nearby()
         request[comm_consts.KEY_SHOUT_NEARBY_REFIDS] = [0] + [p.ref_id for p in nearby]
         request[comm_consts.KEY_SHOUT_NEARBY_NAMES] = [""] + [p.name for p in nearby]
@@ -366,7 +372,7 @@ class FakeGame:
         self.is_player_turn = False
         request: dict[str, Any] = {comm_consts.KEY_REQUESTTYPE: comm_consts.KEY_REQUESTTYPE_PLAYERINPUT, comm_consts.KEY_REQUESTTYPE_PLAYERINPUT: text,
                                    comm_consts.KEY_ACTORS: self.actors(), comm_consts.KEY_CONTEXT: self.context()}
-        self.add_shout_values(request)
+        self.add_shout_values(request, waits_for_scan=True)
         reply = self.send(request)
         if reply[comm_consts.KEY_REPLYTYPE] == comm_consts.KEY_REQUESTTYPE_TTS: # What the player said into the microphone
             self.say(reply[comm_consts.KEY_TRANSCRIBE])
@@ -460,6 +466,7 @@ class FakeGame:
             return
         if is_on:
             self.is_shouting = True
+            self.is_shout_scan_pending = True # StartRoomScan: looked for on another thread
             self.shout_sent = []
             return
         leaving: list[Person] = []
@@ -736,6 +743,26 @@ def test_private_after_shouting_sends_away_who_joined(game: FakeGame, model: Fak
     assert sorted(in_conversation(game.manager)) == sorted([PLAYER.name, HULDA.name, MIKAEL.name])
     assert "now speaking privately with Hulda and Mikael." in model.npc_requests[-1] # Named after the game's update: without Ysolda
     assert game.lines[-1][0] == HULDA.name
+
+
+def test_shout_switched_on_while_the_npcs_talk_lets_them_finish_and_the_players_line_brings_who_is_nearby(game: FakeGame, model: FakeModel):
+    """Shout on while Hulda speaks: Mikael still answers, then it is the player's turn. The game was still looking for who is nearby,
+    so the Game Master offered nobody new until the player's line brought the list, and Ysolda joins"""
+    game.start(HULDA, MIKAEL)
+    model.picks = [HULDA.name, MIKAEL.name]
+    lines_before = len(game.lines)
+    asked_before = len(model.game_master_choices)
+    game.at_line[lines_before + 1] = lambda: game.set_shout(True)
+    game.say("Tell me about Whiterun.")
+
+    assert game.speakers(lines_before) == [HULDA.name, MIKAEL.name]
+    assert game.is_player_turn
+    assert shout_state(game.manager) and not shout_state(game.manager).nearby
+    assert all(YSOLDA.name not in choices for choices in model.game_master_choices[asked_before:])
+
+    model.picks = [YSOLDA.name]
+    game.say("Anyone else seen the cart?")
+    assert game.shout_joiners == [YSOLDA] and YSOLDA.name in in_conversation(game.manager)
 
 
 def test_private_in_a_room_conversation_keeps_everyone_then_sends_away_who_joins_later(game: FakeGame, model: FakeModel):

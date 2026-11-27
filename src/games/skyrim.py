@@ -163,8 +163,14 @@ class Skyrim(Gameable):
         return refreshed
 
     @utils.time_it
-    def load_external_character_info(self, base_id: str, name: str, race: str, gender: int, ingame_voice_model: str, tag_outcomes: dict[str, tuple[int, int]] | None = None) -> external_character_info:
+    def load_external_character_info(self, base_id: str, name: str, race: str, gender: int, ingame_voice_model: str, tag_outcomes: dict[str, tuple[int, int]] | None = None,
+                                     crowd_name: str = "") -> external_character_info:
         character_info, is_generic_npc = self.find_character_info(base_id, name, race, gender, ingame_voice_model)
+        if is_generic_npc and crowd_name:
+            crowd = self.crowd_bio(name, crowd_name, base_id, self.race_name(race), character_info['bio'])
+            if crowd:
+                character_info = {**character_info, **crowd}
+                characters_log.info(f"{name} has no bio of their own, so they use the bio of {crowd_name}")
         actor_voice_model_name = ingame_voice_model.split('<')[1].split(' ')[0]
 
         # Process bio with tags if they exist
@@ -291,25 +297,56 @@ class Skyrim(Gameable):
 
         return character_info
 
-    def save_bio_for_new_npc(self, name: str, base_id: str, ref_id: str, race: str, gender: int, ingame_voice_model: str, path: str) -> bool:
+    def crowd_bio(self, name: str, crowd_name: str, base_id: str, race_name: str, one_line: str) -> dict[str, str] | None:
+        """The bio of someone a mod or quest renamed ("Njordunn the Fox, Whiterun Guard"), from the people built like them (Whiterun Guard):
+        the one line they'd get, then that bio, with its tags. The row is the one an NPC called crowd_name with the same base and race
+        gets, so a renamed Imperial soldier gets the row for their kind of soldier. None when there's no such row, or it has no bio"""
+        crowd_name = (crowd_name or "").strip()
+        if not crowd_name or crowd_name.lower() == name.strip().lower():
+            return None
+        matcher = self._get_matching_df_rows_matcher(base_id, crowd_name, race_name)
+        if matcher is None:
+            return None
+        row = self.character_df.loc[matcher].iloc[0]
+        if _filled(row.get('name', '')).lower() != crowd_name.lower(): # found by the ID alone: another person's row
+            return None
+        bio = _filled(row.get('bio', ''))
+        if not bio:
+            return None
+        return {'bio': f"{one_line}\n{crowd_name}: {bio}", 'tags': _filled(row.get('tags', '')), 'tags_overwrite': _filled(row.get('tags_overwrite', ''))}
+
+    def save_bio_for_new_npc(self, name: str, base_id: str, ref_id: str, race: str, gender: int, ingame_voice_model: str, path: str,
+                             own_name: bool = False, crowd_name: str = "") -> bool:
         """Save the short bio an NPC with no bio gets ("You are a female Breton Aveline.") to the override file at path, and add them to the
         character list now, so they load from it and show up in the Bio Editor. False when they have a bio by now or the file already has them.
+        own_name: a mod or quest named this one person, but their base is shared by many (every Whiterun guard). They're saved without
+        the base ID, so they're found by their name alone and no other guard can get their bio by the shared ID.
+        crowd_name: the name of the people built like them (Whiterun Guard). The bio they got from them is what's saved, with its tags,
+        since their own row is used from then on.
         Raises if the file can't be read or written"""
         race_name = self.race_name(race)
         if self._get_matching_df_rows_matcher(base_id, name, race_name) is not None: # added since they were loaded, e.g. in the Bio Editor
             return False
+        if own_name and (self.character_df['name'].astype(str).str.strip().str.lower() == name.strip().lower()).any():
+            # A name that's on the character list already (Bandit, Hired Thug) is a crowd's, not this person's
+            characters_log.info(f"{name} has a name that's already on the character list, so no bio was saved for them")
+            return False
         info = self.load_unnamed_npc(name, race_name, gender, ingame_voice_model)
+        crowd = self.crowd_bio(name, crowd_name, base_id, race_name, info['bio']) if crowd_name else None
         # The voice model is left empty: it's picked for the voice service in use each time, as for NPCs with no bio
         entry = {
             'name': name,
-            'base_id': base_id,
+            'base_id': '' if own_name else base_id,
             'race': race_name,
-            'bio': info['bio'],
+            'bio': crowd['bio'] if crowd else info['bio'],
             'gender': 'Male' if gender == 0 else 'Female',
             'ref_id': ref_id,
             'skyrim_voice_folder': info['skyrim_voice_folder'],
             'voice_accent': info['voice_accent'],
         }
+        for column in ('tags', 'tags_overwrite'): # only when there are some, so a file without these columns isn't rewritten for nothing
+            if crowd and crowd[column]:
+                entry[column] = crowd[column]
         if not new_npc_bios.add_entry(path, entry):
             return False
         df = self.character_df

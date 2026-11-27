@@ -1132,8 +1132,10 @@ class GameStateManager:
                 loaded_names.append(character.name)
         if loaded_names:
             game_master_log.info(f"Shout: new nearby, the game sent the bios and memories of {', '.join(loaded_names)}. Kept until Shout is switched off, so they are not sent again")
-        # The game starts both lists with a 0 and an empty name, so they are never empty and "nobody nearby" still arrives
-        shout_state.update_nearby(self.__label_nearby(input_json.get(comm_consts.KEY_SHOUT_NEARBY_REFIDS, []), input_json.get(comm_consts.KEY_SHOUT_NEARBY_NAMES, [])))
+        # The game starts both lists with a 0 and an empty name, so they are never empty and "nobody nearby" still arrives.
+        # No list while the game is still looking, right after Shout was switched on: the last one is kept
+        if comm_consts.KEY_SHOUT_NEARBY_REFIDS in input_json:
+            shout_state.update_nearby(self.__label_nearby(input_json[comm_consts.KEY_SHOUT_NEARBY_REFIDS], input_json.get(comm_consts.KEY_SHOUT_NEARBY_NAMES, [])))
         failed_refids = input_json.get(comm_consts.KEY_SHOUT_ADDFAILED_REFIDS, [])
         failed_reasons = input_json.get(comm_consts.KEY_SHOUT_ADDFAILED_REASONS, [])
         for index, refid in enumerate(failed_refids):
@@ -1669,7 +1671,8 @@ class GameStateManager:
 
     def __save_bios_for_new_npcs(self, loaded_from: list[tuple[dict[str, Any], Character]]):
         """The first time the player talks to a one-of-a-kind NPC with no bio, save the short bio they got to the Bio Editor's file,
-        so they show up there. Skyrim only. Skips NPCs shared by many (Bandit), and those the game didn't say are one of a kind (an older add-on)"""
+        so they show up there. Skyrim only. Also an NPC a mod or quest gave a name of their own ("Njordunn the Fox, Whiterun Guard"), saved
+        without their shared base ID. Skips NPCs shared by many (Bandit), and everyone when the game doesn't say who is one of a kind (an older add-on)"""
         if not isinstance(self.__game, Skyrim) or not self.__talk or not self.__talk.context.npcs_in_conversation.get_player_character():
             return
         try:
@@ -1681,19 +1684,32 @@ class GameStateManager:
             characters_log.warning(f"Could not find the Bio Editor's file to save bios for NPCs who have none: {e}")
             return
         for actor_json, actor in loaded_from:
-            if actor.is_player_character or not actor.is_generic_npc or not actor_json.get(comm_consts.KEY_ACTOR_ISUNIQUE, False):
+            if actor.is_player_character or not actor.is_generic_npc or comm_consts.KEY_ACTOR_ISUNIQUE not in actor_json:
                 continue
             name = str(actor_json[comm_consts.KEY_ACTOR_NAME])
-            raw_base_id = utils.convert_to_skyrim_hex_format(str(actor_json[comm_consts.KEY_ACTOR_BASEID]))
-            if raw_base_id.startswith("FF"): # made while the game runs: the ID is different each time, so it wouldn't find them again
+            if not name.strip(): # no name to save them under, or to find them by
                 continue
             key = (name.lower(), actor.base_id)
             if key in self.__bios_saved_for_new_npcs: # tried once this session, saved or not
                 continue
             self.__bios_saved_for_new_npcs.add(key)
+            is_unique = bool(actor_json.get(comm_consts.KEY_ACTOR_ISUNIQUE, False))
+            raw_base_id = utils.convert_to_skyrim_hex_format(str(actor_json[comm_consts.KEY_ACTOR_BASEID]))
+            # A base ID made while the game runs is different each time, so a row with it wouldn't find them again
+            keeps_base_id = is_unique and not raw_base_id.startswith("FF")
+            renamed = not keeps_base_id and bool(actor_json.get(comm_consts.KEY_ACTOR_HASOWNNAME, False))
+            # A renamed person the game made while it runs (a spawned bandit) is gone once they die, and the next one gets a new name
+            # (Real Names - Extended), so a row for them would never be used again. Townsfolk keep their name and their reference
+            raw_ref_id = utils.convert_to_skyrim_hex_format(str(actor_json[comm_consts.KEY_ACTOR_REFID]))
+            own_name = renamed and not raw_ref_id.startswith("FF")
+            if not keeps_base_id and not own_name:
+                reason = "is one of many alike, like Bandit or Whiterun Guard" if not is_unique and not renamed else "was made while the game runs"
+                characters_log.info(f"{name} {reason}, so no bio was saved for them")
+                continue
             try:
                 if self.__game.save_bio_for_new_npc(name, actor.base_id, actor.ref_id, actor.race, actor.gender,
-                                                    str(actor_json[comm_consts.KEY_ACTOR_VOICETYPE]), path):
+                                                    str(actor_json[comm_consts.KEY_ACTOR_VOICETYPE]), path, own_name=own_name,
+                                                    crowd_name=str(actor_json.get(comm_consts.KEY_ACTOR_CROWDNAME, "") or "").strip()):
                     characters_log.info(f"{name} had no bio, so their short bio was saved to {path}. Edit it in the Bio Editor")
             except Exception as e:
                 characters_log.warning(f"Could not save a bio for {name} to {path}, so the file was left as it was: {e}")
@@ -1763,7 +1779,10 @@ class GameStateManager:
                         custom_values['mantella_dynamic_tag_events'] = prev_dynamic
             elif not is_player_character :#If this is not the player and the character has not already been loaded. Also used by the NPC Initiative check, outside a conversation
                 tag_outcomes = self.__quest_tags.get_outcomes(self.__game, world_id) if world_id else None
-                external_info: external_character_info = self.__game.load_external_character_info(base_id, character_name, race, gender, actor_voice_model, tag_outcomes)
+                # Someone a mod or quest renamed: the name of the people built like them, whose bio they get when they have none. Only Skyrim's add-on sends it
+                crowd_name = str(json.get(comm_consts.KEY_ACTOR_CROWDNAME, "") or "").strip()
+                external_info: external_character_info = self.__game.load_external_character_info(base_id, character_name, race, gender, actor_voice_model, tag_outcomes,
+                                                                                                   **({"crowd_name": crowd_name} if crowd_name else {}))
                 
                 bio = external_info.bio
                 tts_voice_model = external_info.tts_voice_model

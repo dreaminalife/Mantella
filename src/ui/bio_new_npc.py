@@ -1,4 +1,6 @@
-"""Adding a new NPC in the Bio Editor: a name (and, if you have them, a base ID and race) that gets its own bio.
+"""Adding a new NPC in the Bio Editor: a name (and, if you have them, a base ID, ref ID and race) that gets its own bio.
+The ref ID is only saved with the NPC; it doesn't keep two NPCs with the same name apart, since the game matches bios
+by name, base ID and race.
 
 Nothing that's already there is ever changed or lost:
 - a new NPC is refused when the game would merge it into an NPC that already has a bio (same name, and a matching
@@ -39,6 +41,11 @@ def clean_base_id(text: str | None) -> str:
     if value and not _HEX.match(value):
         raise ValueError(value)
     return value
+
+
+def clean_ref_id(text: str | None) -> str:
+    """The ref ID, cleaned like a base ID. It's only saved with the NPC: the game matches bios by name, base ID and race"""
+    return clean_base_id(text)
 
 
 def race_choices(df: pd.DataFrame | None) -> List[str]:
@@ -124,13 +131,13 @@ def clash_problem(df: pd.DataFrame | None, name: str, base_id: str, race: str, f
     return None
 
 
-def new_row(name: str, base_id: str, race: str, bio: str, tags: str, voice_effect: str) -> Dict[str, str]:
-    """The cells of the new NPC's row. Tags and voice effect only when they say something"""
+def new_row(name: str, base_id: str, race: str, bio: str, tags: str, voice_effect: str, tts_service: str = "",
+            ref_id: str = "") -> Dict[str, str]:
+    """The cells of the new NPC's row. Ref ID, tags, voice effect and voice service only when they say something"""
     row = {"name": name, "base_id": base_id, "race": race, "bio": bio or ""}
-    if (tags or "").strip():
-        row["tags"] = tags.strip()
-    if (voice_effect or "").strip():
-        row["voice_effect"] = voice_effect.strip()
+    for column, value in (("ref_id", ref_id), ("tags", tags), ("voice_effect", voice_effect), ("tts_service", tts_service)):
+        if (value or "").strip():
+            row[column] = value.strip()
     return row
 
 

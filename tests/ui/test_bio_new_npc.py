@@ -165,6 +165,27 @@ def test_create_copies_the_open_npc_and_leaves_them_unchanged(tmp_path):
     assert saved.iloc[1]["bio"] == "Housecarl, edited."
 
 
+def test_create_saves_the_ref_id_with_the_new_npc(tmp_path):
+    on_create = _on_create(tmp_path)
+    override = tmp_path / "my_overrides.csv"
+    result = on_create("Whiterun Guard", "", "Nord", None, "Keeps the peace.", "", "", {}, _table(LYDIA), {}, str(override),
+                       None, " 0x000a2c94 ")
+    assert "Added `Whiterun Guard`" in _messages(result)
+    saved = pd.read_csv(override, dtype=str, keep_default_na=False)
+    assert saved.iloc[0]["ref_id"] == "000A2C94"
+
+
+def test_create_refuses_a_ref_id_that_isnt_a_hex_number(tmp_path):
+    on_create = _on_create(tmp_path)
+    override = tmp_path / "my_overrides.csv"
+    result = on_create("Whiterun Guard", "", "Nord", None, "", "", "", {}, _table(LYDIA), {}, str(override), None, "12G4")
+    assert "ref ID is made of" in _messages(result) and not override.exists()
+
+
+def test_no_ref_id_adds_no_ref_id_cell():
+    assert "ref_id" not in _guard()
+
+
 def test_create_refuses_a_name_that_already_has_a_bio(tmp_path):
     on_create = _on_create(tmp_path)
     override = tmp_path / "my_overrides.csv"

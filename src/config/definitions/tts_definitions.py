@@ -105,7 +105,7 @@ If you have trouble installing the xVASynth version from Nexus, try installing i
     def get_tts_service_config_value() -> ConfigValue:
         description = """The TTS service used by Mantella as default.
 
-Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Need to add a new column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
+Support TTS service selection for each character. (for example, Xvasynth for Serana and Piper for the rest). Pick it in the Bio Editor's Voice service list, or add a column "tts_service" in the main/override CSV file. When leaving empty, use the default option (whichever is selected in the UI)
 
 Example values in the 'tts_service' column: 'piper', 'xtts', 'xvasynth', or 'xva' (both can refer to the Xvasynth), 'pocket tts', 'elevenlabs', 'inworld', 'heygen', 'qwen', 'boson', 'iodine', or the name of one of your voice setups.
 

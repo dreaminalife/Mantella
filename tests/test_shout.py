@@ -447,7 +447,47 @@ def test_turning_shout_on_marks_where_it_started():
     assert isinstance(state, ShoutState) and state.max_people == 4
     assert state.start_marker is not None
     assert getattr(thread.get_persistent_messages()[-1], "shout_marker") == state.start_marker
-    assert conversation.context.have_actors_changed
+
+
+def test_turning_shout_on_while_the_npcs_speak_lets_them_finish():
+    conversation = shout_conversation(None)
+    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
+    conversation.context.have_actors_changed = False
+    conversation.start_shout(None)
+    with patch.object(conversation, "_Conversation__update_conversation_type") as update, \
+         patch.object(conversation, "_Conversation__cancel_game_master_turn") as cancel:
+        conversation.update_context(None, 12, [], "", {})
+        conversation.update_context(None, 12, [], "", {})
+    update.assert_called_once_with(keep_npc_turn=True) # Only once: the next update has nothing new
+    cancel.assert_not_called()
+
+
+def test_turning_shout_on_when_someone_also_joined_starts_the_turn_again():
+    conversation = shout_conversation(None)
+    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
+    conversation.start_shout(None)
+    conversation.context.have_actors_changed = True
+    with patch.object(conversation, "_Conversation__update_conversation_type") as update:
+        conversation.update_context(None, 12, [], "", {})
+    update.assert_called_once_with()
+
+
+def test_keeping_the_npcs_turn_does_not_stop_what_they_are_saying():
+    conversation = shout_conversation(None)
+    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
+    sentences = conversation._Conversation__sentences = MagicMock()
+    with patch.object(conversation, "_Conversation__cancel_game_master_turn") as cancel, \
+         patch.object(conversation, "_Conversation__stop_generation") as stop, \
+         patch.object(conversation, "_Conversation__select_conversation_type", return_value=MagicMock()), \
+         patch.object(conversation, "reload_and_cull_thread"):
+        conversation._Conversation__update_conversation_type(keep_npc_turn=True)
+        cancel.assert_not_called()
+        stop.assert_not_called()
+        sentences.clear.assert_not_called()
+        conversation._Conversation__update_conversation_type()
+        cancel.assert_called_once()
+        stop.assert_called_once()
+        sentences.clear.assert_called_once()
 
 
 def test_shout_joiner_gets_the_overheard_note_where_shouting_started():

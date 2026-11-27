@@ -2,7 +2,9 @@
 ("You are a female Breton Aveline.") in the file the Bio Editor saves to. They then show up in the Bio Editor, and an edit there sticks.
 
 Only NPCs the game marks as one of a kind are saved: names shared by many people (Bandit, Whiterun Guard) are skipped, so editing
-one entry never changes a whole crowd.
+one entry never changes a whole crowd. So is one person a mod or quest gave a name of their own ("Njordunn the Fox, Whiterun Guard"):
+their base is shared by every Whiterun guard, so they're saved without its ID and found by their name alone. A name that's already
+on the character list is never saved this way.
 
 The file is only ever added to: an existing row is never changed, and nothing is written when the file can't be read.
 """

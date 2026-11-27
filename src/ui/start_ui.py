@@ -27,6 +27,7 @@ from src.ui.tab_reorder import (
 )
 from src.ui.tag_editor_page import build_tag_editor_page
 from src.ui import bio_voice_effect
+from src.ui import bio_voice_service
 from src.games import new_npc_bios
 from src.ui import bio_new_npc
 from src.ui import bio_override_file
@@ -929,29 +930,32 @@ class StartUI(routeable):
             with gr.Accordion(label="Bio Editor", open=True):
                 gr.Markdown("Manually edit character bios, conversation summaries, private thoughts, personal reflections, and your own notes. Select an NPC from the dropdown, modify their bio, summary, thoughts, reflections, or notes, and save your changes. "
                             "To give a bio to an NPC who has none, type their name next to **Create**.")
-                save_new_npc_bios = gr.Checkbox(value=config.definitions.get_bool_value(new_npc_bios.SETTING), label="Save a bio for NPCs who don't have one",
-                                                info="The first time you talk to an NPC with no bio, their one-line bio is added to this list so you can edit it. "
-                                                     "Crowds that share a name, like Bandit or Whiterun Guard, are left out.")
                 npc_dropdown = gr.Dropdown(choices=labels, label="NPC", multiselect=False, allow_custom_value=False)
-                # A new NPC, made from what the Bio, Tags and Voice effect fields below show (like the Tag Editor's Create)
+                # A new NPC, made from what the Bio, Tags and voice fields below show (like the Tag Editor's Create)
                 with gr.Row(equal_height=True):
                     new_npc_name = gr.Text(label="Name of the new NPC", max_lines=1, scale=3,
                                            placeholder="Name as shown in game, e.g. Whiterun Guard")
                     new_npc_base_id = gr.Text(label="Base ID (optional)", max_lines=1, scale=2,
                                               placeholder="e.g. 0001A694. Needed if another NPC has this name")
+                    new_npc_ref_id = gr.Text(label="Ref ID (optional)", max_lines=1, scale=2,
+                                             placeholder="e.g. 000A2C94. Saved with the NPC")
                     new_npc_race = gr.Dropdown(choices=bio_new_npc.race_choices(resolved_df), value=None, label="Race (optional)",
                                                filterable=True, allow_custom_value=True, scale=2)
                     create_npc_btn = gr.Button("Create", variant="secondary", scale=0, min_width=110)
                 new_npc_message = gr.Markdown(value="")
-                # The bio, tags and voice effect as the open NPC was loaded, to tell if Create took unsaved edits
+                # The bio, tags and voice fields as the open NPC was loaded, to tell if Create took unsaved edits
                 state_opened = gr.State(value={})
                 bio_editor = gr.Text(value="", lines=12, label="Bio")
                 tags_editor = gr.Text(value="", lines=2, label='Tags ("tags" column in override csv file only)', placeholder="Comma-separated tags from your personal override file")
                 runtime_tags_display = gr.Text(value="", lines=2, label="Runtime Tags (read-only, all sources merged)", interactive=False, placeholder="Select an NPC to see its effective runtime tags")
-                voice_effect_ui = gr.Dropdown(choices=bio_voice_effect.effect_choices(config.save_folder), value=bio_voice_effect.AUTOMATIC,
-                                              label="Voice effect", allow_custom_value=True,
-                                              info="An effect on this NPC's voice. Only effects ticked under Voice Effects on the Text-to-Speech tab are heard. "
-                                                   "Saved with Save, used from their next conversation.")
+                with gr.Row(equal_height=True):
+                    voice_service_ui = gr.Dropdown(choices=bio_voice_service.service_choices(), value=bio_voice_service.DEFAULT,
+                                                   label="Voice service", allow_custom_value=False, # only names a voice service has
+                                                   info="Who voices this NPC. Saved with Save, used from their next conversation.")
+                    voice_effect_ui = gr.Dropdown(choices=bio_voice_effect.effect_choices(config.save_folder), value=bio_voice_effect.AUTOMATIC,
+                                                  label="Voice effect", allow_custom_value=True,
+                                                  info="An effect on this NPC's voice. Only effects ticked under Voice Effects on the Text-to-Speech tab are heard. "
+                                                       "Saved with Save, used from their next conversation.")
                 
                 info_line = gr.Markdown(value="", visible=True)
                 # Optional: user-chosen path for base-only NPCs; persisted in hidden config key
@@ -1058,10 +1062,13 @@ class StartUI(routeable):
                 written_effect = bio_voice_effect.effect_of_row(df, *_split_key(l2k.get(label, ''))) if label else ""
                 effect = gr.update(choices=bio_voice_effect.effect_choices(config.save_folder, written_effect),
                                    value=bio_voice_effect.picked_value(config.save_folder, written_effect))
-                return bio, summary, thoughts, reflections, notes, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), int(time.time()), effect
+                npc = _split_key(l2k.get(label, '')) if label else None
+                written_service = bio_voice_effect.effect_of_row(df, *npc, column=bio_voice_service.SERVICE_COLUMN) if npc else ""
+                service = gr.update(choices=bio_voice_service.service_choices(written_service), value=bio_voice_service.picked_service(written_service))
+                return bio, summary, thoughts, reflections, notes, override_tags, runtime_tags, "", gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), gr.Button(interactive=can_save), int(time.time()), effect, service
 
             def on_save(label: str, bio_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, voice_effect: str | None = None,
-                        df: pd.DataFrame | None = None):
+                        df: pd.DataFrame | None = None, tts_service: str | None = None):
                 # The list as this page has it now (NPCs added with Create, Refresh bios), not as it was when Mantella started:
                 # rebuilt from that, the list lost every NPC added since
                 table = df if isinstance(df, pd.DataFrame) else state_df.value
@@ -1095,8 +1102,10 @@ class StartUI(routeable):
                 # Pass it explicitly so _save_bio_to_user_path writes it
                 # to the override file's `tags` column.
                 override_tags = tags_text.strip() if isinstance(tags_text, str) else None
-                if voice_effect is not None: # from the Voice effect list; a save from the LLM part keeps what the NPC has
-                    optional_values[bio_voice_effect.COLUMN] = str(voice_effect).strip()
+                # From the voice lists; a save from the LLM part keeps what the NPC has
+                picked_voice = {column: str(value).strip() for column, value in ((bio_voice_effect.COLUMN, voice_effect),
+                                (bio_voice_service.SERVICE_COLUMN, tts_service)) if value is not None}
+                optional_values.update(picked_voice)
                 save_problem = ""
                 try:
                     path = _save_bio_to_user_path(label, bio_text, l2k, user_csv, optional_values, override_tags=override_tags)
@@ -1149,12 +1158,13 @@ class StartUI(routeable):
                     cn, cb, cr = _split_key(key_for_cached)
                     if saved and cn:
                         _update_cached_game_df_if_possible(cn, cb, cr, bio_text)
-                        if voice_effect is not None:
+                        if picked_voice:
                             from src.ui import settings_ui_constructor as sui
                             game = getattr(getattr(sui, '_game_manager_ref', None), 'game', None)
-                            if game is not None and game.character_df is not None and game.character_df is not new_df:
-                                bio_voice_effect.set_in_table(game.character_df, cn, cb, cr, str(voice_effect).strip())
-                            bio_voice_effect.set_in_table(new_df, cn, cb, cr, str(voice_effect).strip())
+                            for column, value in picked_voice.items():
+                                if game is not None and game.character_df is not None and game.character_df is not new_df:
+                                    bio_voice_effect.set_in_table(game.character_df, cn, cb, cr, value, column=column)
+                                bio_voice_effect.set_in_table(new_df, cn, cb, cr, value, column=column)
                         # Refresh runtime tags for this NPC so the next conversation
                         # picks up the new combined tags without a full reload.
                         if override_tags is not None:
@@ -1227,7 +1237,8 @@ class StartUI(routeable):
                     gr.Text(value=""),
                     gr.Text(value=""),
                     gr.Button(interactive=False),
-                    gr.update(value=bio_voice_effect.AUTOMATIC)
+                    gr.update(value=bio_voice_effect.AUTOMATIC),
+                    gr.update(choices=bio_voice_service.service_choices(), value=bio_voice_service.DEFAULT)
                 )
 
             def on_refresh_memory(label: str, l2k: dict[str, str], world_id: str):
@@ -1787,15 +1798,18 @@ class StartUI(routeable):
 
             def on_save_from_llm(label: str, response_text: str, tags_text: str, l2k: dict[str, str], k2l: dict[str, str], user_csv: str, df: pd.DataFrame | None = None):
                 # Reuse existing save logic (already updates runtime)
-                return on_save(label, response_text, tags_text, l2k, k2l, user_csv, None, df)
+                return on_save(label, response_text, tags_text, l2k, k2l, user_csv, None, df, None)
 
-            def remember_opened(label: str | None, bio_text: str, tags_text: str, voice_effect: str | None) -> dict:
+            def remember_opened(label: str | None, bio_text: str, tags_text: str, voice_effect: str | None,
+                                tts_service: str | None = None) -> dict:
                 """The fields as the NPC was loaded, so Create can tell whether it took unsaved edits"""
-                return {"label": label or "", "bio": bio_text or "", "tags": tags_text or "", "voice_effect": voice_effect or ""}
+                return {"label": label or "", "bio": bio_text or "", "tags": tags_text or "", "voice_effect": voice_effect or "",
+                        "tts_service": tts_service or ""}
 
             def on_create(name: str, base_id: str, race: str, open_label: str | None, bio_text: str, tags_text: str,
-                          voice_effect: str | None, opened: dict, df: pd.DataFrame, l2k: dict[str, str], user_csv: str):
-                """A new NPC from what the Bio, Tags and Voice effect fields show now: empty, or a copy of the open NPC.
+                          voice_effect: str | None, opened: dict, df: pd.DataFrame, l2k: dict[str, str], user_csv: str,
+                          tts_service: str | None = None, ref_id: str | None = None):
+                """A new NPC from what the Bio, Tags and voice fields show now: empty, or a copy of the open NPC.
                 Only ever adds one row (see bio_new_npc): no existing row, in a file or in memory, is changed"""
                 npc_name = bio_new_npc.clean_name(name)
                 if not npc_name:
@@ -1807,6 +1821,10 @@ class StartUI(routeable):
                     npc_base_id = bio_new_npc.clean_base_id(base_id)
                 except ValueError:
                     return {new_npc_message: "A base ID is made of 0–9 and A–F, e.g. 0001A694."}
+                try:
+                    npc_ref_id = bio_new_npc.clean_ref_id(ref_id)
+                except ValueError:
+                    return {new_npc_message: "A ref ID is made of 0–9 and A–F, e.g. 000A2C94."}
 
                 table = df if isinstance(df, pd.DataFrame) else _get_resolved_character_df()
                 try:
@@ -1821,7 +1839,8 @@ class StartUI(routeable):
                     if problem:
                         return {new_npc_message: problem}
 
-                row = bio_new_npc.new_row(npc_name, npc_base_id, npc_race, bio_text, tags_text, voice_effect or "")
+                row = bio_new_npc.new_row(npc_name, npc_base_id, npc_race, bio_text, tags_text, voice_effect or "", tts_service or "",
+                                          npc_ref_id)
                 target = _choose_default_personal_csv(user_csv)
                 try:
                     backed_up = bio_new_npc.add_row_to_file(target, row)
@@ -1860,7 +1879,7 @@ class StartUI(routeable):
                 opened = opened or {}
                 if open_label and opened.get("label") == open_label and (
                         (bio_text or "") != opened.get("bio", "") or (tags_text or "") != opened.get("tags", "")
-                        or (voice_effect or "") != opened.get("voice_effect", "")):
+                        or (voice_effect or "") != opened.get("voice_effect", "") or (tts_service or "") != opened.get("tts_service", "")):
                     open_name, _, _ = _split_key(l2k.get(open_label, ""))
                     lines.append(f"`{open_name or open_label}` wasn't changed: your edits went into the new NPC.")
                 return {
@@ -1872,6 +1891,7 @@ class StartUI(routeable):
                     npc_dropdown: gr.Dropdown(choices=new_labels, value=new_label),
                     new_npc_name: "",
                     new_npc_base_id: "",
+                    new_npc_ref_id: "",
                     new_npc_race: gr.Dropdown(choices=bio_new_npc.race_choices(new_df), value=npc_race or None),
                 }
 
@@ -1944,18 +1964,6 @@ class StartUI(routeable):
                 except Exception:
                     pass
 
-            def on_save_new_npc_bios_change(new_val: bool):
-                try:
-                    cv = config.definitions.get_config_value_definition(new_npc_bios.SETTING)
-                    cv.value = bool(new_val)
-                    try:
-                        config._ConfigLoader__write_config_state(config.definitions)
-                    except Exception:
-                        pass
-                    config.update_config_loader_with_changed_config_values()
-                except Exception:
-                    pass
-
             def on_omit_stop_change_persist(new_val: bool):
                 try:
                     cv = config.definitions.get_config_value_definition("bio_llm_omit_stop")
@@ -1969,13 +1977,12 @@ class StartUI(routeable):
                     pass
 
             override_csv_path.change(on_user_csv_change, inputs=[override_csv_path], outputs=[], show_progress="hidden")
-            save_new_npc_bios.change(on_save_new_npc_bios_change, inputs=[save_new_npc_bios], outputs=[], show_progress="hidden")
-            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts, voice_effect_ui], show_progress="hidden").then(
-                remember_opened, inputs=[npc_dropdown, bio_editor, tags_editor, voice_effect_ui], outputs=[state_opened], show_progress="hidden")
-            create_npc_btn.click(on_create, inputs=[new_npc_name, new_npc_base_id, new_npc_race, npc_dropdown, bio_editor, tags_editor, voice_effect_ui, state_opened, state_df, state_label_to_key, override_csv_path],
-                                 outputs=[new_npc_message, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, new_npc_name, new_npc_base_id, new_npc_race])
-            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, voice_effect_ui, state_df], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
+            npc_dropdown.change(on_select, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, override_csv_path], outputs=[bio_editor, summary_editor, thoughts_editor, reflections_editor, notes_editor, tags_editor, runtime_tags_display, info_line, save_btn, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn, save_notes_btn, state_selected_ts, voice_effect_ui, voice_service_ui], show_progress="hidden").then(
+                remember_opened, inputs=[npc_dropdown, bio_editor, tags_editor, voice_effect_ui, voice_service_ui], outputs=[state_opened], show_progress="hidden")
+            create_npc_btn.click(on_create, inputs=[new_npc_name, new_npc_base_id, new_npc_race, npc_dropdown, bio_editor, tags_editor, voice_effect_ui, state_opened, state_df, state_label_to_key, override_csv_path, voice_service_ui, new_npc_ref_id],
+                                 outputs=[new_npc_message, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, new_npc_name, new_npc_base_id, new_npc_ref_id, new_npc_race])
+            save_btn.click(on_save, inputs=[npc_dropdown, bio_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, voice_effect_ui, state_df, voice_service_ui], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
+            refresh_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui, voice_service_ui])
             _memory_refresh_outputs = [info_line, summary_editor, thoughts_editor, reflections_editor, save_summary_btn, save_thoughts_btn, save_reflections_btn, generate_reflection_btn]
             refresh_summaries_btn.click(on_refresh_memory, inputs=[npc_dropdown, state_label_to_key, state_world_id], outputs=_memory_refresh_outputs)
             save_summary_btn.click(on_save_summary, inputs=[npc_dropdown, summary_editor, state_label_to_key, state_world_id], outputs=[info_line])
@@ -2003,7 +2010,7 @@ class StartUI(routeable):
             max_tokens_override.change(on_max_tokens_override_persist, inputs=[max_tokens_override], outputs=[], show_progress="hidden")
             send_request_btn.click(on_send_llm_request, inputs=[npc_dropdown, state_df, state_label_to_key, state_world_id, prompt_editor, bio_editor, summary_editor, params_editor, apply_profile_checkbox, omit_stop_checkbox, temp_override, max_tokens_override, service_dropdown, model_dropdown], outputs=[info_line, llm_response_editor, save_from_llm_btn])
             save_from_llm_btn.click(on_save_from_llm, inputs=[npc_dropdown, llm_response_editor, tags_editor, state_label_to_key, state_key_to_label, override_csv_path, state_df], outputs=[llm_info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown])
-            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui])
+            refresh_llm_btn.click(on_refresh, inputs=[override_csv_path], outputs=[info_line, state_df, state_labels, state_label_to_key, state_key_to_label, npc_dropdown, bio_editor, tags_editor, runtime_tags_display, save_btn, voice_effect_ui, voice_service_ui])
 
     def __get_theme(self):
         return gr.themes.Soft(primary_hue="green",

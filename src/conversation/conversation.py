@@ -57,6 +57,7 @@ class Conversation:
     DIRECTOR_CONTINUE_TEXT: str = "The scene continues."
     __shout_count: int = 0 # Each time Shout is switched on gets its own marker token
     __announce_private: bool = False # Shout was switched off: says who is left, once the game's updated list of people has arrived
+    __is_shout_switched_on: bool = False # Shout was switched on: the conversation type is chosen again with the next context update, without stopping the NPCs' turn
     __event_count: int = 0 # Each Conversation, Nearby or Random Event gets its own marker, so someone who joins right after it is known to react to it
     EVENT_MARKER_ATTRIBUTE: str = "event_marker" # Set on the event's message. Kept when the thread is reloaded, which copies every message
     """Controls the flow of a conversation."""
@@ -308,7 +309,7 @@ class Conversation:
         shout_state = ShoutState(start_marker=token if self.__messages.mark_last_persistent_message(token) else None)
         shout_state.apply_settings(settings)
         self.__context.shout = shout_state
-        self.__context.have_actors_changed = True # Selects the conversation type again
+        self.__is_shout_switched_on = True # Selects the conversation type again. Nobody joined yet, so the NPCs' turn goes on
         game_master_log.info("Shout: the player is shouting. Anyone nearby can answer or join in")
 
     def __add_private_event(self):
@@ -404,9 +405,10 @@ class Conversation:
         # Show: the replies to the event don't get the picture shown with the line before it. One shown since then still waits for the next line
         self.__messages.forget_shown_pictures()
         self.__messages.add_message(event_message)
-        if self.__context.have_actors_changed: # Shout was switched on
+        if self.__context.have_actors_changed or self.__is_shout_switched_on: # Shout was switched on. The event starts a new turn anyway
             self.__update_conversation_type()
             self.__context.have_actors_changed = False
+            self.__is_shout_switched_on = False
         if isinstance(self.__conversation_type, multi_npc_game_master):
             self.__start_generating_npc_sentences(allow_player_first=True)
         elif self.__does_npc_react_first():
@@ -860,16 +862,24 @@ class Conversation:
         if self.__context.have_actors_changed:
             self.__update_conversation_type()
             self.__context.have_actors_changed = False
+        elif self.__is_shout_switched_on:
+            # Switched on while the NPCs speak: they finish their turn, then it is the player's. Shout applies from the next pick of who speaks
+            self.__update_conversation_type(keep_npc_turn=True)
+        self.__is_shout_switched_on = False
 
     @utils.time_it
-    def __update_conversation_type(self):
+    def __update_conversation_type(self, keep_npc_turn: bool = False):
         """This changes between pc_to_npc, multi_npc and radiant conversation_types based on the current state of the context
+
+        Args:
+            keep_npc_turn (bool): the NPCs' turn goes on with what they are saying. Only when nobody joined or left, e.g. Shout was switched on
         """
         # If the conversation can proceed for the first time, it starts and we add the system_message with the prompt
         if not self.__has_already_ended:
-            self.__cancel_game_master_turn()
-            self.__stop_generation()
-            self.__sentences.clear()
+            if not keep_npc_turn:
+                self.__cancel_game_master_turn()
+                self.__stop_generation()
+                self.__sentences.clear()
 
             self.__conversation_type = self.__select_conversation_type(self.__context.config)
             self.__was_directed = self.__was_directed or self.is_directed()

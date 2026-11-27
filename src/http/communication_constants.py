@@ -129,6 +129,11 @@ class communication_constants:
     KEY_ACTOR_LOCALID: str = PREFIX + "actor_localid"
     KEY_ACTOR_ISGHOST: str = PREFIX + "actor_is_ghost" # for the voice effect: ghosts share their race with the living
     KEY_ACTOR_ISUNIQUE: str = PREFIX + "actor_is_unique" # one of a kind in the game, not one of many with the same name (Bandit): gets a bio saved when they have none
+    # a mod or quest gave this one person a name of their own ("Njordunn the Fox, Whiterun Guard") though their base is shared:
+    # gets a bio saved under that name, without the shared base ID
+    KEY_ACTOR_HASOWNNAME: str = PREFIX + "actor_has_own_name"
+    # the name of the people built like a renamed person (Whiterun Guard): their bio is used when the renamed person has none
+    KEY_ACTOR_CROWDNAME: str = PREFIX + "actor_crowd_name"
     KEY_ACTOR_ISINCOMBAT: str = PREFIX + "actor_is_in_combat"
     KEY_ACTOR_ISENEMY: str = PREFIX + "actor_is_enemy"
     KEY_ACTOR_CUSTOMVALUES: str = PREFIX + "actor_custom_values"

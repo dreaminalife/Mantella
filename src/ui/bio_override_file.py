@@ -23,7 +23,7 @@ from src.games import new_npc_bios
 
 REQUIRED_COLUMNS = ["name", "base_id", "race", "bio"]
 # A JSON entry only ever got these of the other cells written (a CSV row gets all of them), as before
-JSON_CELLS = ("ref_id", "tags_overwrite", "voice_effect")
+JSON_CELLS = ("ref_id", "tags_overwrite", "voice_effect", "tts_service")
 
 
 class NotSaved(Exception):

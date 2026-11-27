@@ -45,21 +45,21 @@ def _rows(df: pd.DataFrame, name: str, base_id: str, race: str) -> pd.Series | N
         return None
 
 
-def effect_of_row(df: pd.DataFrame, name: str, base_id: str, race: str) -> str:
-    """What the NPC's voice_effect column says now, all character files merged"""
+def effect_of_row(df: pd.DataFrame, name: str, base_id: str, race: str, column: str = COLUMN) -> str:
+    """What the NPC's voice_effect column (or another column) says now, all character files merged"""
     rows = _rows(df, name, base_id, race)
-    if rows is None or not rows.any() or COLUMN not in df.columns:
+    if rows is None or not rows.any() or column not in df.columns:
         return ""
-    value = df.loc[rows, COLUMN].iloc[0]
+    value = df.loc[rows, column].iloc[0]
     return "" if value is None or pd.isna(value) or str(value).strip().lower() == "nan" else str(value).strip()
 
 
-def set_in_table(df: pd.DataFrame, name: str, base_id: str, race: str, value: str) -> bool:
-    """Writes the NPC's voice effect into a character table in memory, so new conversations use it without Reload Character Data"""
+def set_in_table(df: pd.DataFrame, name: str, base_id: str, race: str, value: str, column: str = COLUMN) -> bool:
+    """Writes the NPC's voice effect (or another column) into a character table in memory, so new conversations use it without Reload Character Data"""
     rows = _rows(df, name, base_id, race)
     if rows is None or not rows.any():
         return False
-    if COLUMN not in df.columns:
-        df[COLUMN] = ""
-    df.loc[rows, COLUMN] = value
+    if column not in df.columns:
+        df[column] = ""
+    df.loc[rows, column] = value
     return True

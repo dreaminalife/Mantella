@@ -448,6 +448,12 @@ class LLMDefinitions:
         return ConfigValueBool("multi_npc_bios_only", "Send Only Bios (Single + Multi)", description, False, tags=[ConfigValueTag.share_row, ConfigValueTag.advanced])
 
     @staticmethod
+    def get_save_bios_for_new_npcs_config_value() -> ConfigValue:
+        description = """The first time you talk to an NPC with no bio, their one-line bio is added to the Bio Editor so you can edit it.
+                        Crowds that share a name, like Bandit or Whiterun Guard, are left out."""
+        return ConfigValueBool("save_bios_for_new_npcs", "Save a bio for NPCs who don't have one", description, True)
+
+    @staticmethod
     def get_enable_decensor_bypass_config_value() -> ConfigValue:
         description = """Add the decensor assistant commitment to conversation requests. Decensor Assistant Placement sets where it goes, and whether the user handshake is sent before it.
                         Edit both texts in the Prompts tab. An active Prompt Profile for either type replaces the Prompts tab text at runtime.

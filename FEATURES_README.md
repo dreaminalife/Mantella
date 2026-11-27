@@ -190,7 +190,7 @@ Later layers win: mod overrides overwrite the base; personal overrides overwrite
 
 **What it does**
 
-Gives a bio to an NPC who has none, like a guard or an NPC from another mod, without editing a file by hand. Like **Create** in the Tag Editor, the new NPC gets what the **Bio**, **Tags** and **Voice effect** fields show: empty, or a copy of the NPC you have open.
+Gives a bio to an NPC who has none, like a guard or an NPC from another mod, without editing a file by hand. Like **Create** in the Tag Editor, the new NPC gets what the **Bio**, **Tags**, **Voice service** and **Voice effect** fields show: empty, or a copy of the NPC you have open.
 
 **Where to find it**
 
@@ -199,8 +199,8 @@ Gives a bio to an NPC who has none, like a guard or an NPC from another mod, wit
 **How to use it**
 
 1. To start from scratch, leave the NPC list empty. To start from a copy of someone, pick them.
-2. Fill in **Bio**, **Tags** and **Voice effect** as you want the new NPC to have them.
-3. Type the name exactly as the game shows it, e.g. `Whiterun Guard`. **Base ID** and **Race** are optional.
+2. Fill in **Bio**, **Tags**, **Voice service** and **Voice effect** as you want the new NPC to have them.
+3. Type the name exactly as the game shows it, e.g. `Whiterun Guard`. **Base ID**, **Ref ID** and **Race** are optional. The ref ID is saved with the NPC, but it doesn't keep two NPCs with the same name apart: only the base ID or the race does.
 4. Click **Create**. The NPC is saved to the same file as **Save** (the **Override path**, or `character_overrides.csv` in your personal overrides folder), and opens in the list.
 5. Talk to them. The new bio is used from their next conversation.
 
@@ -1393,7 +1393,7 @@ You set it in the character CSV, one row per NPC, with these columns:
 | --- | --- | --- |
 | `llm_service` | `or` (OpenRouter), `nano` (NanoGPT) or `openai` (OpenAI) | The service this NPC's model comes from |
 | `model` | The model name, as the service spells it, e.g. `deepseek/deepseek-v4-pro-0813` | The model this NPC talks with |
-| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`), `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or the name of one of your [voice setups](#text-to-speech-services) | The voice service this NPC is voiced with |
+| `tts_service` | `piper`, `xtts`, `xvasynth` (or `xva`), `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or the name of one of your [voice setups](#text-to-speech-services) | The voice service this NPC is voiced with. The **Bio Editor**'s **Voice service** list writes it for you |
 | `voice_effect` | The name of a [voice effect](#text-to-speech-services), e.g. `ghost`, or `none` | This NPC's voice effect, instead of the one their race gets. Only an effect ticked under **Voice Effects** is heard. The **Bio Editor**'s **Voice effect** list writes it for you |
 
 Leave a cell empty to use your normal setting for that NPC.
@@ -2119,13 +2119,16 @@ NPCs from other mods, and some smaller vanilla ones, have no bio. Mantella gives
 Now, the first time you talk to one of them, their line is saved to the same file the Bio Editor saves to. From then on they're in the **NPC** list of the Bio Editor, and whatever you write there is what they use.
 
 - **Crowds are left out.** NPCs who share their name with many others (Bandit, Whiterun Guard, Stormcloak Soldier) aren't saved. One entry would be every bandit's bio, so editing it would change them all.
+- **Guards with a name of their own know who they are.** When a mod or quest gives one person their own name, like "Njordunn the Fox, Whiterun Guard", they get the bio of the people built like them (here, Whiterun Guard) from their first line, after the line with their own name. If the character list has no bio for those people, they get the one line.
+- **Guards with a name of their own are saved.** They're saved under their own name, with that bio. Other Whiterun guards never get their bio. A name that's already in the character list (Bandit, Afflicted) is never saved this way. Neither are people the game spawns, like most bandits: once they die, the next one gets a new name, so their entry would never be used again. They still get the bio of the people built like them.
+- **The log says who was left out.** The **Bios and lorebook** log topic names each NPC who wasn't saved, and why.
 - **Nothing else changes.** They sound the same and know the same things as before, and their memories stay where they are.
 - **Only conversations you're in.** NPCs talking among themselves, or just standing nearby, aren't saved.
 - **Needs the updated game add-on.** It tells Mantella which NPCs are one of a kind. With an older add-on, nobody is saved.
 
 ### Where to find it
 
-**Bio Editor** tab → **Save a bio for NPCs who don't have one** (on by default), above the **NPC** list.
+**Large Language Model** tab → **Quality of Life** → **Save a bio for NPCs who don't have one** (on by default).
 
 The file is the one in **Override path**, or `Documents\My Games\Mantella\data\Skyrim\character_overrides\character_overrides.csv` when that box is empty.
 
@@ -2730,6 +2733,7 @@ The [Game Master](#game-master-mode), the part of Mantella that decides who spea
 - **Several people can answer one line.** Say "hello Jake and Emily" or "hello guys" and each of them answers before it's your turn again. Who has to answer is set by the talk settings (see [Talk Level](#talk-level)). When you speak to the whole group, **People Who Must Answer a Group Line** sets how many of them count as talked to (with the default talk settings, each of them must speak at least once before your turn), and people you call by name are always included. Each of them is asked to keep it short (**Skyrim Shout Group Answer Note**; empty it to send no note).
 - **Newcomers know what they heard.** **Newcomers Remember** sets what someone who joins by shouting heard before they joined.
 - **Talking to one person still works as before.** While nobody nearby could join, the person answers and then it's your turn. They use the Shout actions (see [NPC Actions](#npc-actions)), however many people are in the conversation.
+- **Switch it on any time, even while someone is talking.** They finish what they're saying, then it's your turn as usual. The game looks for who is around while you type. In a crowded place, a line sent very quickly can take a few seconds longer, while the game finishes looking. People nearby can join from your next line on.
 - Shout stays on until you switch to **Private** or the conversation ends.
 
 **Switching back to Private**
@@ -3688,7 +3692,7 @@ Not sure which service to use? See [Which Voice and Speech Service to Pick](#whi
 
 **Text-to-Speech** tab.
 
-**Bio Editor** tab → **Voice effect**: one NPC's effect.
+**Bio Editor** tab → **Voice service** and **Voice effect**: one NPC's voice service and effect.
 
 ### Quick start
 
@@ -3712,7 +3716,7 @@ The first time, Mantella downloads Pocket TTS (about 8 MB, plus about 220 MB per
 2. **Settings for** → **Your voice setups** → **Ready-made setups** → **Pocket TTS (graphics card)** → **Use ready-made** → **Save**.
 3. Pick **Pocket TTS (graphics card)** as the **TTS Service**.
 
-**Only for one NPC:** write the service in their `tts_service` column: `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or a voice setup's name. See [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service).
+**Only for one NPC:** **Bio Editor** → **Voice service**, then **Save**. Or write the service in their `tts_service` column: `pocket`, `elevenlabs` (or `11labs`), `inworld`, `heygen`, `qwen` (or `alibaba`), `boson` (or `higgs`), `iodine`, or a voice setup's name. See [Per-Character LLM and TTS Service](#per-character-llm-and-tts-service).
 
 ### How NPCs get their voice
 

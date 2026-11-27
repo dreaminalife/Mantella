@@ -142,7 +142,8 @@ class Gameable(ABC):
         return character_df
     
     @abstractmethod
-    def load_external_character_info(self, base_id: str, name: str, race: str, gender: int, actor_voice_model_name: str, tag_outcomes: dict[str, tuple[int, int]] | None = None)-> external_character_info:
+    def load_external_character_info(self, base_id: str, name: str, race: str, gender: int, actor_voice_model_name: str, tag_outcomes: dict[str, tuple[int, int]] | None = None,
+                                     crowd_name: str = "")-> external_character_info:
         """This loads extra information about a character that can not be gained from the game. i.e. bios or voice_model_names for TTS
 
         Args:
@@ -152,6 +153,8 @@ class Gameable(ABC):
             gender (int): the gender of the character to get the extra information from
             actor_voice_model_name (str): the ingame voice model name of the character to get the extra information from
             tag_outcomes (dict[str, tuple[int, int]] | None): the current outcome of each quest tag in the playthrough, and when it was first seen
+            crowd_name (str): Skyrim only, for someone a mod or quest renamed: the name of the people built like them (Whiterun Guard),
+                whose bio they use when they have none of their own. Only passed when the game sends it
 
         Returns:
             external_character_info: the missing information

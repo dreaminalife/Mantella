@@ -44,7 +44,7 @@ def test_picking_an_npc_shows_their_effect_and_save_writes_it_to_their_override(
     handlers = bio_editor(tmp_path)
     df = pd.DataFrame([{"name": "Lydia", "base_id": "000A2C94", "race": "NordRace", "bio": "Housecarl.", "voice_effect": "Ghost"}])
     selected = handlers["on_select"](LABEL, df, {LABEL: KEY}, "", "")
-    assert selected[-1]["value"] == "ghost"
+    assert selected[-2]["value"] == "ghost" # then the voice service
 
     override = tmp_path / "my_overrides.csv"
     handlers["on_save"](LABEL, "Housecarl.", "", {LABEL: KEY}, {KEY: LABEL}, str(override), "none")
