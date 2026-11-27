@@ -459,6 +459,8 @@ The difference: with the Game Master, each NPC is played on their own, so they k
 
 **To switch:** **Large Language Model** tab → **Multi-NPC Game Master Mode**. Shout, Say to Room and NPC Events always use a Game Master, even with it off. Read more: [Game Master Mode](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#game-master-mode).
 
+**How it picks who speaks:** see [A group conversation, step by step](#a-group-conversation-step-by-step) in Part 3.
+
 </details>
 
 <details>
@@ -637,12 +639,49 @@ flowchart LR
 
 Next time you talk, Lydia remembers what happened. With **Private Thoughts** and **Personal Reflection** on (both off at first, shown with dotted lines), the AI also writes how she feels after the talk, and how she sees you over all your time together. She walks into your next talk with those in mind. See [What NPCs remember and feel](#what-npcs-remember-and-feel).
 
+## A group conversation, step by step
+
+With two or more NPCs and **Game Master Mode** on (the starting choice), one more piece joins in: the **Game Master**. It picks who speaks next but never writes a line itself. Each NPC's answer is written on its own. Shout, Say to Room and NPC Events always work this way.
+
+Say you're at a campfire with Lydia and Serana, and you ask: "Serana, what did you make of that ruin?"
+
+```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+    A["You ask Serana<br/>about the ruin"] --> B{"The Game Master<br/>picks who speaks"}
+    B -- "an NPC" --> C["Mantella sends the AI<br/>only that NPC's bio,<br/>memories and the part<br/>of the talk they heard"]
+    C --> D["The NPC answers<br/>in their own voice"]
+    D -- "pick again" --> B
+    B -. "your turn" .-> A
+```
+
+- **The Game Master picks who speaks.** It reads who's there and the whole talk so far, and picks Serana, since you asked her.
+- **Serana answers on her own.** Her answer is written in a request of its own, with only her bio, her memories, her private thoughts and the part of the talk she was there for. Lydia's memories aren't in it at all, so Serana can't know them.
+- **The Game Master picks again:** another NPC, or you. If Serana turns to Lydia ("Your Thane nearly walked into that trap, you know"), Lydia answers her next.
+- **The turn comes back to you** when the Game Master picks you, or after 3 NPC replies in a row. You can change that number for each kind of conversation, on the **Conversation** page.
+- **No waiting.** While Serana is speaking, the Game Master is already picking the next speaker, and their answer is being written. It's usually ready by the time her line ends.
+
+**The talk settings come first.** When you speak, an NPC always answers, by default someone you spoke to. When an NPC speaks to someone, that one answers next, even if the Game Master wanted to give you the turn. All of this can be changed with [Talk Level](https://github.com/dreaminalife/Mantella/blob/personal_use/FEATURES_README.md#talk-level).
+
+**Two kinds of Game Master** (**Large Language Model** tab → **Use Decision Model for Game Master**):
+
+- **A decision model** (on at first): a small, fast, cheap model that doesn't write anything. It's handed a list of everyone in the talk, you included, and picks one name from it, so it can never pick someone who isn't there. It runs on OpenRouter, NanoGPT, or your own PC.
+- **A regular AI model** (with the setting off): any model on any service. It answers with a name and a few words on why.
+
+**If it can't decide** (the request fails, the answer makes no sense, or it takes too long): right after you speak, the NPC who joined the talk last answers. After an NPC speaks, it's your turn.
+
+**What it sees:** the whole talk, but not the NPCs' thoughts. Turn on **Include Turn Thoughts for Game Master** (**Large Language Model** tab → **Thoughts and Reflections**) and it also sees each NPC's [Turn Thoughts](#inner-thoughts-private-thoughts-personal-reflection-and-turn-thoughts), so it knows who is about to say or do something.
+
+**Want to see its picks?** The Mantella log shows a line for each one, like `Game Master: Serana speaks next`.
+
+With Game Master Mode off, a group talk works like the one-on-one steps above, except one request writes every NPC's lines at once.
+
 ## What decides what
 
 | What you notice | What decides it | Read more |
 | --- | --- | --- |
 | How clever and in character the answers are | The AI model, and the prompt | [AI models](#ai-models-who-writes-the-answers), [The instructions sent to the AI](#the-instructions-sent-to-the-ai) |
-| Who talks, and how much | The kind of conversation | [Kinds of conversations](#kinds-of-conversations) |
+| Who talks, and how much | The kind of conversation, and in groups the Game Master | [Kinds of conversations](#kinds-of-conversations), [A group conversation, step by step](#a-group-conversation-step-by-step) |
 | What NPCs know about themselves and the world | Their bio, their tags, and extras such as the lorebook | [Character tags](#character-tags), [What NPCs know](#what-npcs-know) |
 | What they remember of you | Their memories | [What NPCs remember and feel](#what-npcs-remember-and-feel) |
 | How they sound | The voice service | [Text-to-speech](#text-to-speech-how-npcs-sound) |

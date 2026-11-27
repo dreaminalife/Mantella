@@ -152,8 +152,9 @@ ANSWERS_BACK = {"directions-answered": ("CheckDirections", ["Riverwood is", "Can
                 "reportcrime-answered": ("ReportCrime", ["Crime reported against the player", "Cannot report crime without a guard"])}
 
 # The checks MantellaActionTest notes, by id. A check that never shows counts as failed: the test stopped before it
-CHECKS = ["follow-off", "inventory-off", "offended-off", "follow-on", "unfollow-on", "wait-on", "inventory-on", "inventory-typed", "barter-on",
-          "loot-switched-off", "teleport-on", "moveto-on", "brawl-on", "flee-on", "offended-on", "forgiven-on"]
+CHECKS = ["walkover-on", "walkover-released", "follow-off", "inventory-off", "offended-off", "follow-on", "unfollow-on", "wait-on", "inventory-on",
+          "inventory-typed", "barter-on", "loot-switched-off", "teleport-on", "moveto-on", "brawl-on", "flee-on", "offended-on", "forgiven-on",
+          "walkover-off"]
 # The advanced run's. SKIP counts as passed: the game noted why it couldn't check (no guard could be placed, the bounty was already paid)
 ADVANCED_CHECKS = ["follow-tool", "unfollow-tool", "wait-tool", "inventory-tool", "barter-tool", "moveto-npc", "flee-npc", "teleport-tool",
                    "travelto-tool", "canceltravel-tool", "leadto-tool", "loot-tool", "collectingredients-tool", "castspell-known", "castspell-tool", "brawl-tool",

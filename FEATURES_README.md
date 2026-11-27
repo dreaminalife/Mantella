@@ -13,6 +13,7 @@ Trying my best to explain why I added these features and how to make the most of
 - [Lorebook](#lorebook)
 - [Bio Sections to Exclude](#bio-sections-to-exclude)
 - [Send Only Bios](#send-only-bios)
+- [Bios for NPCs Who Have None](#bios-for-npcs-who-have-none)
 - [Vanilla Dialogues](#vanilla-dialogues)
 
 **Roleplay and Immersion Enhancement** — what NPCs remember, think, and feel
@@ -57,6 +58,7 @@ Trying my best to explain why I added these features and how to make the most of
 **During a conversation**
 
 - [NPC Actions](#npc-actions)
+- [NPCs Walk Over to Talk](#npcs-walk-over-to-talk)
 - [Conversation Wheel](#conversation-wheel)
 - [Talk, Nearby and Random Events](#talk-nearby-and-random-events)
 - [Drop Last Sentences](#drop-last-sentences)
@@ -183,6 +185,32 @@ Later layers win: mod overrides overwrite the base; personal overrides overwrite
 - Names are free: `my_edits.csv`, `companions.json`, `whiterun_npcs.csv`, etc. — only the extension matters.
 - Supported extensions: `.csv` and `.json`.
 - Every file in the folder is loaded; there is no required filename.
+
+#### Add an NPC in the Bio Editor
+
+**What it does**
+
+Gives a bio to an NPC who has none, like a guard or an NPC from another mod, without editing a file by hand. Like **Create** in the Tag Editor, the new NPC gets what the **Bio**, **Tags** and **Voice effect** fields show: empty, or a copy of the NPC you have open.
+
+**Where to find it**
+
+**Bio Editor** tab → the **Name of the new NPC** row under the **NPC** list.
+
+**How to use it**
+
+1. To start from scratch, leave the NPC list empty. To start from a copy of someone, pick them.
+2. Fill in **Bio**, **Tags** and **Voice effect** as you want the new NPC to have them.
+3. Type the name exactly as the game shows it, e.g. `Whiterun Guard`. **Base ID** and **Race** are optional.
+4. Click **Create**. The NPC is saved to the same file as **Save** (the **Override path**, or `character_overrides.csv` in your personal overrides folder), and opens in the list.
+5. Talk to them. The new bio is used from their next conversation.
+
+**Nothing is overwritten**
+
+- Create only adds a new NPC. The NPC you had open, and every other NPC in the file, stay exactly as they were.
+- If an NPC with that name already has a bio, Create refuses: the game would mix the two up and the new one would replace the old bio. Pick them from the list instead, or type the new NPC's base ID to keep them apart (for game NPCs, the UESP wiki page of the NPC lists it as BaseID).
+- Before Create or **Save** writes to a file, the file is copied to `<file>.bak`. A file that can't be read is left alone, and nothing is saved.
+- A name with no base ID covers everyone with that name: one `Whiterun Guard` bio is used for every Whiterun Guard.
+- Names that already have one bio for everyone, like `Bandit`, can't get a second NPC, not even with a base ID: the game would no longer know which bio to use, and every Bandit would lose theirs. Pick `Bandit` from the list and change that bio instead.
 
 #### Bio templates (what each tag means)
 
@@ -2082,6 +2110,38 @@ It is meant for **single-NPC and multi-NPC** player conversations, but radiant c
 
 Enable it in the **Large Language Model** tab, start (or continue, with hot swap) a conversation, and confirm the prompt has bios but no “summary of past events” / thought block. Turn it off to send memories again.
 
+## Bios for NPCs Who Have None
+
+### What it does
+
+NPCs from other mods, and some smaller vanilla ones, have no bio. Mantella gives them one line instead, like "You are a female Breton Aveline." Before, that line wasn't kept anywhere, so you couldn't find these NPCs in the Bio Editor to give them a real bio.
+
+Now, the first time you talk to one of them, their line is saved to the same file the Bio Editor saves to. From then on they're in the **NPC** list of the Bio Editor, and whatever you write there is what they use.
+
+- **Crowds are left out.** NPCs who share their name with many others (Bandit, Whiterun Guard, Stormcloak Soldier) aren't saved. One entry would be every bandit's bio, so editing it would change them all.
+- **Nothing else changes.** They sound the same and know the same things as before, and their memories stay where they are.
+- **Only conversations you're in.** NPCs talking among themselves, or just standing nearby, aren't saved.
+- **Needs the updated game add-on.** It tells Mantella which NPCs are one of a kind. With an older add-on, nobody is saved.
+
+### Where to find it
+
+**Bio Editor** tab → **Save a bio for NPCs who don't have one** (on by default), above the **NPC** list.
+
+The file is the one in **Override path**, or `Documents\My Games\Mantella\data\Skyrim\character_overrides\character_overrides.csv` when that box is empty.
+
+### Quick start
+
+1. Talk to an NPC who has no bio.
+2. In the **Bio Editor**, click **Refresh bios**. They're now in the **NPC** list, with their one-line bio.
+3. Write them a real bio and click **Save**. Their next conversation uses it.
+
+**Notes**
+
+- Each NPC is saved once. If they're already in the file, nothing is written.
+- The file is only added to. If a new column has to be added to it, the file as it was is kept next to it as `character_overrides.csv.bak`.
+- Turning the switch off stops new saves. NPCs already saved stay in the file. Delete their rows there if you don't want them.
+- Skyrim only.
+
 ## Reload Character Data
 
 ### What it does
@@ -3254,6 +3314,23 @@ When you update, your old **Actions** list (Other tab) is moved over once: an ac
 1. Open **Conversation** → **Actions** and tick **Wait** and **Follow** under **Actions: One-on-one and NPC Initiative**.
 2. In game, turn on **Allow Follow (Experimental)** in **MCM → Mantella → General → NPC Actions**.
 3. Talk to an NPC and ask them to come with you. They answer with Follow and start following you. Ask them to wait here: they stop where they are.
+
+## NPCs Walk Over to Talk
+
+### What it does
+
+When someone joins a conversation with you from more than about 4.5 m away, they walk over to you first. Once they're next to you, they stand still to talk, as **NPCs Stop to Talk** has them do. You start a group conversation with Hulda behind the bar and Saadia sweeping by the door: Saadia puts her broom down and comes over. It's on by default.
+
+- **Everyone who joins:** at the start, and later too, when someone is added to the conversation or joins by [Shout](#shout).
+- **Sitting and sleeping NPCs get up** and come over too.
+- **Who stays where they are:** followers (they follow you during a conversation anyway), NPCs who are fighting or riding a horse, and NPCs in the middle of a scene, such as a bard singing a song. NPCs who are already close don't move.
+- **Only in conversations you're in.** While you watch an [NPC Event](#npc-events), nobody walks over.
+- **If you walk away before anyone answers,** whoever is walking over keeps following you until they've caught up and someone has spoken. When the conversation ends, anyone still on their way stops where they are.
+- **MoveTo comes first.** If an NPC is asked to walk over to someone else (the [MoveTo action](#npc-actions) with Advanced Actions on), anyone walking over to you stops where they are, and nobody walks over while that NPC is on their way.
+
+### Where to find it
+
+In game: **MCM → Mantella → General → NPC Actions → NPCs Walk Over to Talk**. It needs **NPCs Stop to Talk**, just above it: while that's off, this one can't be changed and does nothing, since NPCs who walked over would just go back to what they were doing.
 
 ## Conversation Wheel
 
