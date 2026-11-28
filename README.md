@@ -209,10 +209,16 @@ Piper is the voice service the original Mantella used. It runs on your PC with n
 
 **Kept the original Mantella on, under Mantella Remake (Step 2):** Piper keeps working. Nothing to do.
 
-**Removing the original Mantella, or never had it:** copy its `piper` folder into a mod of its own, so Piper stays when you update Mantella Remake. Never had the original? Download it from [Nexus](https://www.nexusmods.com/skyrimspecialedition/mods/98631) and take the `piper` folder from the zip instead of from the old mod. Don't install the rest of it.
+**Removing the original Mantella, or never had it:** follow these steps. They put Piper in a mod of its own, so updating Mantella Remake never removes it.
 
-- **MO2:** right-click the original Mantella → **Open in Explorer** to find the old `piper` folder. Then right-click an empty spot in the mod list → **Create empty mod** and name it `Piper`. Right-click the new mod → **Open in Explorer**, make the folders `SKSE\Plugins\MantellaSoftware` inside it, and copy the `piper` folder into `MantellaSoftware`. Turn the new mod on.
-- **Vortex:** on the **Mods** page, open the original Mantella's menu → **Open in File Manager** to find the old `piper` folder. Make a new folder anywhere with `SKSE\Plugins\MantellaSoftware` inside it, copy the `piper` folder into `MantellaSoftware`, zip the `SKSE` folder and install the zip like any mod.
+1. **Download the original Mantella.** Go to the [original Mantella's Nexus page](https://www.nexusmods.com/skyrimspecialedition/mods/98631) → **Files**, and press **Manual download** on the main file (about 4 GB). Don't install it. Open the zip: the `piper` folder is at `SKSE\Plugins\MantellaSoftware\piper`. Unzip just that folder, anywhere.
+2. **Make the Piper mod.**
+   - **MO2:** right-click an empty spot in the mod list → **Create empty mod** and name it `Piper`. Right-click the new mod → **Open in Explorer**, make the folders `SKSE\Plugins\MantellaSoftware` inside it, and copy the `piper` folder into `MantellaSoftware`. Turn the new mod on.
+   - **Vortex:** make a new folder anywhere with `SKSE\Plugins\MantellaSoftware` inside it, copy the `piper` folder into `MantellaSoftware`, zip the `SKSE` folder and install the zip like any mod.
+3. **Check it.** The new mod should have `SKSE\Plugins\MantellaSoftware\piper\piper.exe`. Without `piper.exe`, Mantella can't find Piper.
+4. Now you can remove the original Mantella, if you had it.
+
+**Optional: more Piper voices.** The original Mantella's Nexus page also has **Expanded Piper Models List** under **Files**: 48 more voices, such as Serana, Lord Harkon, vampires, the Dark Elves of Solstheim and children. Install it like any mod, alongside your Piper mod. Without it, those NPCs borrow a voice of their race and sex.
 
 Then open the **Text-to-Speech** tab and pick **Piper** as the **TTS Service**. If Piper was your voice service and Mantella can't find it, it switches you to Pocket TTS by itself and says so in the black window.
 
