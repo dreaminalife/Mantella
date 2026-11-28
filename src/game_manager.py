@@ -1111,12 +1111,14 @@ class GameStateManager:
             return True
         context = self.__talk.context
         settings = self.__shout_settings(input_json)
+        is_switched_on = False
         if bool(input_json[comm_consts.KEY_SHOUT_ENABLED]):
             if not context.shout:
                 if not self.__ensure_game_master_client():
                     game_master_log.error("Shout needs the Game Master model. Set up the Game Master LLM Service and Game Master Model.")
                     return False
                 self.__talk.start_shout(settings)
+                is_switched_on = True
         elif context.shout:
             self.__talk.stop_shout()
         shout_state = context.shout
@@ -1136,6 +1138,8 @@ class GameStateManager:
         # No list while the game is still looking, right after Shout was switched on: the last one is kept
         if comm_consts.KEY_SHOUT_NEARBY_REFIDS in input_json:
             shout_state.update_nearby(self.__label_nearby(input_json[comm_consts.KEY_SHOUT_NEARBY_REFIDS], input_json.get(comm_consts.KEY_SHOUT_NEARBY_NAMES, [])))
+        elif is_switched_on:
+            shout_state.is_nearby_known = False
         failed_refids = input_json.get(comm_consts.KEY_SHOUT_ADDFAILED_REFIDS, [])
         failed_reasons = input_json.get(comm_consts.KEY_SHOUT_ADDFAILED_REASONS, [])
         for index, refid in enumerate(failed_refids):

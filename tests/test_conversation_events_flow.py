@@ -745,9 +745,9 @@ def test_private_after_shouting_sends_away_who_joined(game: FakeGame, model: Fak
     assert game.lines[-1][0] == HULDA.name
 
 
-def test_shout_switched_on_while_the_npcs_talk_lets_them_finish_and_the_players_line_brings_who_is_nearby(game: FakeGame, model: FakeModel):
-    """Shout on while Hulda speaks: Mikael still answers, then it is the player's turn. The game was still looking for who is nearby,
-    so the Game Master offered nobody new until the player's line brought the list, and Ysolda joins"""
+def test_shout_switched_on_while_the_npcs_talk_gives_the_player_the_turn_and_their_line_brings_who_is_nearby(game: FakeGame, model: FakeModel):
+    """Shout on while Hulda speaks: the rest of the turn is dropped (Mikael never answers) and it is the player's turn right away. The game
+    was still looking for who is nearby, so the Game Master offered nobody new until the player's line brought the list, and Ysolda joins"""
     game.start(HULDA, MIKAEL)
     model.picks = [HULDA.name, MIKAEL.name]
     lines_before = len(game.lines)
@@ -755,9 +755,9 @@ def test_shout_switched_on_while_the_npcs_talk_lets_them_finish_and_the_players_
     game.at_line[lines_before + 1] = lambda: game.set_shout(True)
     game.say("Tell me about Whiterun.")
 
-    assert game.speakers(lines_before) == [HULDA.name, MIKAEL.name]
+    assert game.speakers(lines_before) == [HULDA.name]
     assert game.is_player_turn
-    assert shout_state(game.manager) and not shout_state(game.manager).nearby
+    assert shout_state(game.manager) and not shout_state(game.manager).nearby and not shout_state(game.manager).is_nearby_known
     assert all(YSOLDA.name not in choices for choices in model.game_master_choices[asked_before:])
 
     model.picks = [YSOLDA.name]

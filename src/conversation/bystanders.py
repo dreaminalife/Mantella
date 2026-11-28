@@ -92,6 +92,8 @@ class Bystanders:
     join_order: list[str] = field(default_factory=list) # The ref ids of the last people asked for, the first speaker first
     forced_speaker_ref_id: str = "" # Has just joined, so speaks next without asking the Game Master
     logged_nearby: list[str] | None = None # None until first logged, so "nobody" is logged too
+    is_nearby_known: bool = True # False right after Shout was switched on, until the game sends who is nearby: it is still looking
+    logged_looking: bool = field(default=False, repr=False) # "still looking" was logged
 
     def pending_adds(self) -> list[EventPerson]:
         """Everyone who waits to be added by the game, the one who speaks first at the front"""
@@ -142,7 +144,12 @@ class Bystanders:
             extra (list[EventPerson] | None): named after the people nearby, e.g. the player watching an NPC Event once the scene's people can notice them
         """
         names = [p.name for p in self.nearby_people(config, participant_names) + (extra or [])]
-        if sorted(names) != self.logged_nearby: # Logged when someone comes or goes, not each time people move and the order changes
+        if not self.is_nearby_known:
+            # Nobody can be picked yet, but that doesn't mean nobody is there
+            if not self.logged_looking:
+                self.logged_looking = True
+                log.info(f"{self.LOG_PREFIX}: the game is still looking for who is nearby")
+        elif sorted(names) != self.logged_nearby: # Logged when someone comes or goes, not each time people move and the order changes
             self.logged_nearby = sorted(names)
             log.info(f"{self.LOG_PREFIX}: nearby now: {', '.join(names) or NOBODY_NEARBY}")
         return ", ".join(names) or NOBODY_NEARBY
@@ -225,6 +232,7 @@ class ShoutState(Bystanders, TurnAnswers):
 
     def update_nearby(self, people: list[EventPerson]):
         """The people the game sees near the player now, nearest first. Replaces the list from the last request"""
+        self.is_nearby_known = True
         present = {p.refid for p in people}
         self.failed_refids &= present
         self.nearby = [p for p in people if p.refid not in self.failed_refids]

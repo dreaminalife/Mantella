@@ -447,47 +447,7 @@ def test_turning_shout_on_marks_where_it_started():
     assert isinstance(state, ShoutState) and state.max_people == 4
     assert state.start_marker is not None
     assert getattr(thread.get_persistent_messages()[-1], "shout_marker") == state.start_marker
-
-
-def test_turning_shout_on_while_the_npcs_speak_lets_them_finish():
-    conversation = shout_conversation(None)
-    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
-    conversation.context.have_actors_changed = False
-    conversation.start_shout(None)
-    with patch.object(conversation, "_Conversation__update_conversation_type") as update, \
-         patch.object(conversation, "_Conversation__cancel_game_master_turn") as cancel:
-        conversation.update_context(None, 12, [], "", {})
-        conversation.update_context(None, 12, [], "", {})
-    update.assert_called_once_with(keep_npc_turn=True) # Only once: the next update has nothing new
-    cancel.assert_not_called()
-
-
-def test_turning_shout_on_when_someone_also_joined_starts_the_turn_again():
-    conversation = shout_conversation(None)
-    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
-    conversation.start_shout(None)
-    conversation.context.have_actors_changed = True
-    with patch.object(conversation, "_Conversation__update_conversation_type") as update:
-        conversation.update_context(None, 12, [], "", {})
-    update.assert_called_once_with()
-
-
-def test_keeping_the_npcs_turn_does_not_stop_what_they_are_saying():
-    conversation = shout_conversation(None)
-    conversation._Conversation__messages = thread_with_lines(config(), "Quiet.")
-    sentences = conversation._Conversation__sentences = MagicMock()
-    with patch.object(conversation, "_Conversation__cancel_game_master_turn") as cancel, \
-         patch.object(conversation, "_Conversation__stop_generation") as stop, \
-         patch.object(conversation, "_Conversation__select_conversation_type", return_value=MagicMock()), \
-         patch.object(conversation, "reload_and_cull_thread"):
-        conversation._Conversation__update_conversation_type(keep_npc_turn=True)
-        cancel.assert_not_called()
-        stop.assert_not_called()
-        sentences.clear.assert_not_called()
-        conversation._Conversation__update_conversation_type()
-        cancel.assert_called_once()
-        stop.assert_called_once()
-        sentences.clear.assert_called_once()
+    assert conversation.context.have_actors_changed
 
 
 def test_shout_joiner_gets_the_overheard_note_where_shouting_started():
@@ -1178,6 +1138,18 @@ def test_only_the_nearest_most_people_described_get_their_bios():
     assert state.characters_for_game_master(config(), []) == [guard]
     state.apply_settings({"max_described": 0})
     assert state.characters_for_game_master(config(), []) == []
+
+
+def test_while_the_game_still_looks_the_log_says_so_instead_of_nobody(caplog):
+    state = shout_state(nearby=[])
+    state.is_nearby_known = False # Shout was just switched on, and the game's list hasn't arrived
+    caplog.set_level(logging.DEBUG)
+    assert state.nearby_text(config(), []) == "nobody" # Nobody can be picked yet
+    state.nearby_text(config(), []) # Logged once
+    state.update_nearby([]) # The game looked and found nobody
+    state.nearby_text(config(), [])
+    nearby = [r.message for r in caplog.records if r.message.startswith("Shout: ") and "nearby" in r.message]
+    assert nearby == ["Shout: the game is still looking for who is nearby", "Shout: nearby now: nobody"]
 
 
 def test_whose_bios_the_game_master_uses_is_logged_when_it_changes(caplog):
